@@ -1,6 +1,7 @@
 import { chat } from './llm.js';
 import { executeTool, TOOL_DEFINITIONS } from './tools.js';
 import { TaskTracker } from './task-tracker.js';
+import { parseAgentSummary, extractCleanAnswer, getSummaryPromptExtension } from './summary.js';
 import type { AgentConfig, ChatMessage, TaskSummaryDoc } from './types.js';
 
 export interface RunAgentOptions {
@@ -97,31 +98,34 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
     }
 
     // Path B: model returned final text (Done)
-    const text = (message.content ?? '').trim();
-    if (text) {
-      onStep?.({ type: 'final', turn, text });
+    const rawText = (message.content ?? '').trim();
+    if (rawText) {
+      // Parse Agent-supplemented fields from appended JSON
+      const agentFields = parseAgentSummary(rawText);
+      const cleanText = extractCleanAnswer(rawText);
+
+      onStep?.({ type: 'final', turn, text: cleanText });
 
       // Finalize task and generate summary
       if (tracker) {
-        tracker.onAssistantMessage({ role: 'assistant', content: text }, turn);
+        tracker.onAssistantMessage({ role: 'assistant', content: rawText }, turn);
         const taskBlock = tracker.finalizeCurrentTask();
 
         if (taskBlock) {
           const autoFields = tracker.extractAutoFields(taskBlock);
 
-          // TODO: Add Agent-supplemented fields (pending_tasks, current_work)
-          // For now, use the final answer as current_work
+          // Hybrid summary: auto-extracted + Agent-supplemented (~50 tokens)
           const summary: TaskSummaryDoc = {
             ...autoFields,
-            pending_tasks: [],  // Phase 1+: extract from final answer
-            current_work: text.slice(0, 500),  // Truncate for safety
+            pending_tasks: agentFields.pending_tasks,
+            current_work: agentFields.current_work || cleanText.slice(0, 500),
           };
 
           onTaskComplete?.(summary);
         }
       }
 
-      return { text, messages };
+      return { text: cleanText, messages };
     }
 
     // Path C: empty response — nudge and retry (zerostack-style continue)
@@ -137,4 +141,4 @@ const SYSTEM_PROMPT = `You are a minimal coding assistant in a learning demo.
 You have tools: read_file, write_file, run_shell.
 - Prefer read_file before editing.
 - Explain briefly what you are doing.
-- When the task is done, reply with a short summary and stop calling tools.`;
+- When the task is done, reply with a short summary and stop calling tools.${getSummaryPromptExtension()}`;
