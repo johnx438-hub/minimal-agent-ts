@@ -55,9 +55,9 @@ async function main(): Promise<void> {
   const rawArgv = process.argv.slice(2);
   const { prompt, cwd, resumeSessionId } = parseArgs(rawArgv);
 
-  const apiKey = env('OPENROUTER_API_KEY') ?? env('OPENAI_API_KEY');
+  const apiKey = env('OPENAI_API_KEY') ?? env('OPENROUTER_API_KEY');
   if (!apiKey) {
-    console.error('Missing OPENROUTER_API_KEY or OPENAI_API_KEY');
+    console.error('Missing OPENAI_API_KEY or OPENROUTER_API_KEY');
     process.exit(1);
   }
 
