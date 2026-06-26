@@ -383,6 +383,50 @@ src/
 
 ---
 
+## 📋 Phase 1.5: Agent 能力增强（可选拓展）
+
+**目标**: 在 Phase 1 基础上，通过小改动快速提升 Agent 实用性和开发体验
+
+### 功能清单
+
+#### 🔧 工具扩展
+- [ ] **grep_search tool** — 在项目目录搜索关键词（类似 ripgrep）
+  ```typescript
+  {
+    name: "grep_search",
+    parameters: { pattern: string, path?: string, context_lines?: number }
+  }
+  ```
+  
+- [ ] **list_files tool** — 列出目录结构（tree/ls -R）
+  ```typescript
+  {
+    name: "list_files", 
+    parameters: { path: string, max_depth?: number, include_hidden?: boolean }
+  }
+  ```
+
+- [ ] **web_fetch tool** — 抓取网页内容（让 Agent 具备联网能力）
+  ```typescript
+  {
+    name: "web_fetch",
+    parameters: { url: string, format?: "text" | "markdown" }
+  }
+  ```
+
+#### ⚡ 性能优化
+- [ ] **流式输出 (Streaming)** — 改造 `llm.ts` 支持 SSE，`onStep` 实时打印 token
+- [ ] **工具并行调用** — 检测无依赖的 tool_calls，用 `Promise.all()` 并行执行
+
+### 验收标准
+| 功能 | 验收方式 |
+|------|---------|
+| grep_search | Agent 能搜索 "import.*from" 并返回匹配行 |
+| list_files | Agent 能输出树状目录结构 |
+| Streaming | 终端实时显示 LLM 输出的每个 token（非阻塞等待） |
+
+---
+
 ## 📋 Phase 2: Recall Query Tool + 动态提示词
 
 **目标**: Agent 能主动检索历史细节，系统提示词根据压缩状态动态调整
