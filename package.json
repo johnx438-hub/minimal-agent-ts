@@ -1,0 +1,19 @@
+{
+  "name": "minimal-agent-ts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Minimal ReAct agent loop in TypeScript for learning",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "tsx": "^4.21.0",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
