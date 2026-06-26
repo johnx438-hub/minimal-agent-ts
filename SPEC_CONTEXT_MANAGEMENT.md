@@ -169,6 +169,8 @@ interface ActionDoc {
 
 ### TaskSummary 文档结构 (Phase 1+)
 
+**混合版设计**: 自动提取字段（零 LLM 开销）+ Agent 补充字段（~50 tokens/task）
+
 ```typescript
 interface TaskSummaryDoc {
   task_id: string;           // "task_a1b2c3_005"
@@ -177,16 +179,51 @@ interface TaskSummaryDoc {
   turn_range: [number, number];  // [15, 22]
   action_count: number;          // 8 (包含多少个 actions)
   
-  summary_text: string;    // Agent 返回的最终总结
-  key_outcome: string;     // 关键成果描述
+  // === 自动提取字段（零 LLM 开销，从 messages/tool_calls 解析）===
   
-  entities_touched: string[];  // 涉及的文件/实体
-  tools_used: string[];        // 使用的工具列表
+  // 1. 用户意图 → 取第一条 user message
+  user_intent: string;           // "主要请求和意图"
   
+  // 6. 所有用户消息 → 过滤 role=user（非工具结果）
+  user_messages: string[];       // "对于理解用户反馈至关重要"
+  
+  // 2. 技术概念 → 从文件扩展名/工具名推断
+  tech_concepts: string[];       // ["TypeScript", "Node.js", "Zvec"]
+  
+  // 3. 文件与工作区 → 从 tool_calls.args.path 提取
+  files_touched: string[];       // ["src/config.ts", "README.md"]
+  
+  // tools_used → 从 tool_calls.name 去重
+  tools_used: string[];          // ["read_file", "write_file"]
+  
+  // === Agent 补充字段（task 结束时输出，~50 tokens）===
+  
+  // 7. Pending Tasks → Outline any pending tasks explicitly asked to work on
+  pending_tasks: string[];       // ["测试连接", "更新文档"]
+  
+  // 8. Current Work → Describe in detail what was worked on immediately before summary
+  current_work: string;          // "已修改 config.ts 的 API_URL，包含文件名和代码片段"
+  
+  // === 可选扩展（Phase 2+）===
+  errors_encountered?: Array<{ error: string, fix?: string }>;  // 4-5. 错误与修复
+  
+  // === 向量检索字段（Phase 2+）===
   content: string;         // 组合文本（用于 embedding）
-  embedding: float[];      // task 级别向量
+  embedding: float[];      // task 级别向量 (384 维)
 }
 ```
+
+### 摘要生成策略
+
+| 字段 | 来源 | Token 开销 | 实现方式 |
+|------|------|-----------|---------|
+| user_intent | 第一条 user message | 0 | 直接提取 |
+| user_messages | 过滤 role=user | 0 | 数组筛选 |
+| files_touched | tool_calls.args.path | 0 | Set 去重 |
+| tech_concepts | 文件扩展名映射 | 0 | 规则推断 |
+| tools_used | tool_calls.name | 0 | Set 去重 |
+| pending_tasks | Agent 最终回答后处理 | ~20 | 正则/LLM 提取 |
+| current_work | Agent 最终回答 | ~30 | 一句话摘要 |
 
 ### SessionSummary 文档结构 (Phase 3)
 
@@ -254,39 +291,95 @@ interface SessionSummaryDoc {
 
 ---
 
-## 📋 Phase 1: 基础滑动窗口 + Task 摘要
+## 📋 Phase 1: 会话续接 + Task 摘要 + 滑动窗口
 
-**目标**: 实现 token 驱动的滑动窗口，task 结束时生成结构化摘要
+**目标**: 实现会话持久化（关闭后可 resume）、Task 混合版摘要、Token 驱动滑动窗口
 
 ### 功能清单
-- [ ] **Token 预算管理器**
-  - 估算每条消息 token 数（使用 `tiktoken` 或简化方案）
-  - 按 40/30/20/10 比例切分近期/中期/早期/当前
-  
-- [ ] **Task Block 识别**
-  - 一次用户提问 → 多轮工具调用 → Agent 返回总结 = 一个 task_block
-  - 每个 task_block 带唯一 ID 和时间戳
 
-- [ ] **结构化摘要模板**
+#### Step 1: Session ID 生成器与持久化
+- [ ] **Session ID 生成**
+  - 格式: `session_YYYYMMDD_HHMMSS`
+  - 启动时自动生成或加载已有 session_id
+  
+- [ ] **session.json 持久化**
   ```typescript
-  interface TaskSummary {
-    task_id: string;           // "task_20260626_003"
-    turn_range: [number, number];  // [15, 22]
-    summary: string;           // "修改了 config.ts 的 API_URL"
-    entities_touched: string[];    // ["config.ts", "API_URL"]
-    tools_used: string[];          // ["read_file", "write_file"]
-    key_outcome: string;           // "将 API_URL 从 localhost 改为 openrouter"
+  interface SessionFile {
+    session_id: string;
+    user_id: string;
+    created_at: number;
+    tasks: TaskSummaryDoc[];      // 已完成的任务摘要
+    current_messages: ChatMessage[];  // 当前未完成任务的消息
   }
   ```
+  
+- [ ] **CLI 支持 --resume-session-id**
+  - `npm start -- --resume session_20260627_203000 "继续上次的工作"`
+
+#### Step 2: Task Block 识别器
+- [ ] **Task 边界检测**
+  - 开始: 用户新消息（role=user）
+  - 结束: LLM 返回无 tool_calls 的文本答案
+  - 每个 task_block 带唯一 ID: `task_{session_hash}_{seq}`
+
+#### Step 3: TaskSummary 混合版生成器
+- [ ] **自动提取字段（零 LLM 开销）**
+  ```typescript
+  // 从 messages/tool_calls 解析，不调 LLM
+  user_intent: string;           // 第一条 user message
+  user_messages: string[];       // 所有 role=user 消息
+  files_touched: string[];       // 从 tool_calls.args.path 提取
+  tech_concepts: string[];       // 从文件扩展名推断 (.ts→TypeScript)
+  tools_used: string[];          // 从 tool_calls.name 去重
+  ```
+
+- [ ] **Agent 补充字段（~50 tokens/task）**
+  ```typescript
+  pending_tasks: string[];    // task 结束时输出未完成任务
+  current_work: string;       // 最近一轮工作描述（含文件名/代码片段）
+  ```
+
+- [ ] **System Prompt 扩展**
+  ```
+  When finishing a task, output a brief JSON summary at the end:
+  {"pending_tasks": [...], "current_work": "..."}
+  ```
+
+#### Step 4: Token 预算管理器（滑动窗口）
+- [ ] **Token 估算**
+  - 使用 `tiktoken` 或简化方案（每词 ~1.3 tokens）
+  
+- [ ] **预算切分策略**
+  | 层级 | 比例 | 内容 |
+  |------|------|------|
+  | 近期 (Recent) | 40% | 完整 action_block，最近 2-3 个 task |
+  | 中期 (Mid-term) | 30% | TaskSummary 结构化摘要，往前 5-8 个 task |
+  | 早期 (Early) | 20% | Session 级压缩摘要 |
+  | 当前任务 | 10% | 用户提问 + 工作目录信息 |
 
 - [ ] **惰性压缩机制**
   - 只在预算快满时触发压缩，平时零开销
-  - task 结束时用 Agent 自己的总结当摘要（不额外调 LLM）
+  - 压缩优先级: 早期 task → TaskSummary，中期 task → 一句话摘要
 
 ### 验收标准
-- ✅ 30+ 轮对话不爆 token 上限
-- ✅ 近期内容完整保留，中期有结构化摘要
-- ✅ Agent 在长对话中仍能准确完成当前任务
+| 功能 | 验收方式 |
+|------|---------|
+| **会话续接** | 关闭终端 → 重新 `npm start -- --resume <session_id>` → 能加载历史 tasks |
+| **Task 摘要** | 每个 task 结束时生成 TaskSummary（混合版），存入 session.json |
+| **滑动窗口** | 30+ 轮对话不爆 token，近期完整、中期有摘要、早期压缩 |
+| **Token 开销** | 自动提取字段 0 tokens，Agent 补充 ~50 tokens/task |
+
+### 📁 新增文件结构
+```
+src/
+├── types.ts          # 已有 + 扩展 SessionState, TaskSummaryDoc
+├── session.ts        # 新建：Session ID 生成 + session.json 持久化
+├── task-tracker.ts   # 新建：Task Block 识别 + 边界检测
+├── summary.ts        # 新建：TaskSummary 混合版生成器（自动提取+Agent补充）
+├── context-budget.ts # 新建：Token 预算 + 滑动窗口构建
+├── agent.ts          # 修改：集成 task-tracker + summary
+└── main.ts           # 修改：支持 --resume-session-id 参数
+```
 
 ---
 
@@ -308,9 +401,10 @@ interface SessionSummaryDoc {
   }
   ```
 
-- [ ] **本地向量索引**
-  - 使用 ChromaDB（与 MemFileCli 一致）存储 action_block 向量
-  - 支持按 `entities_touched`、`tools_used`、`turn_range` 过滤
+- [ ] **Zvec 向量索引**
+  - 使用 Zvec v0.5+ 存储 action_block 向量 (384 维) + 全文索引
+  - 支持按 `files_touched`、`tools_used`、`turn_range` 标量过滤
+  - 混合检索: 向量相似度 + FTS 关键词 + 标量条件
   
 - [ ] **动态系统提示词生成器**
   ```typescript
@@ -399,9 +493,9 @@ LLM → tool_calls → executeTool → 结果回注 (循环)
 Agent 返回总结 → [Task Block 结束]
    ↓
 生成 TaskSummary (结构化模板)
-   ↓
-存入 ChromaDB (向量索引) + session.json (持久化)
-   ↓
+    ↓
+ 存入 Zvec (384维向量+全文索引) + session.json (持久化)
+    ↓
 预算检查 → 需要压缩？
    ├─ 否 → 继续对话
    └─ 是 → 早期 task → session 摘要，中期 task → 结构化摘要
@@ -426,4 +520,15 @@ Agent 返回总结 → [Task Block 结束]
 
 ---
 
-*创建者: 小千 & 哥 💛 | 最后更新: 2026-06-26*
+---
+
+## 📝 版本历史
+
+| 日期 | 版本 | 变更内容 |
+|------|------|---------|
+| 2026-06-27 | v1.1 | **Phase 1 细化**: 混合版 TaskSummary（自动提取+Agent补充）、会话续接 (--resume)、滑动窗口预算策略、Zvec 替代 ChromaDB |
+| 2026-06-26 | v1.0 | 初始版本: 核心概念模型（四层 ID）、数据结构设计、三阶段规划、技术选型 (Zvec + all-MiniLM-L6-v2) |
+
+---
+
+*创建者: 小千 & 哥 💛 | 最后更新: 2026-06-27*
