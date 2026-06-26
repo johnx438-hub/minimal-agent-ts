@@ -2,12 +2,14 @@ import { chat } from './llm.js';
 import { executeTool, TOOL_DEFINITIONS } from './tools.js';
 import { TaskTracker } from './task-tracker.js';
 import { parseAgentSummary, extractCleanAnswer, getSummaryPromptExtension } from './summary.js';
-import type { AgentConfig, ChatMessage, TaskSummaryDoc } from './types.js';
+import { buildContext, createBudgetConfig, shouldCompress, estimateTokens } from './context-budget.js';
+import type { AgentConfig, ChatMessage, TaskSummaryDoc, SessionFile } from './types.js';
 
 export interface RunAgentOptions {
   prompt: string;
   config: AgentConfig;
-  initialMessages?: ChatMessage[];  // Pre-loaded messages from session
+  session?: SessionFile;            // Session state for context building
+  initialMessages?: ChatMessage[];  // Pre-loaded messages from session (deprecated, use session)
   sessionId?: string;               // Session ID for task tracking
   onStep?: (event: AgentStepEvent) => void;
   onTaskComplete?: (summary: TaskSummaryDoc) => void;  // Callback when task finishes
@@ -30,16 +32,34 @@ export interface AgentResult {
  *   Reason+Act (LLM) → Observe (tool results) → repeat until text answer or maxTurns.
  */
 export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
-  const { prompt, config, initialMessages, sessionId, onStep, onTaskComplete } = opts;
+  const { prompt, config, session, initialMessages, sessionId, onStep, onTaskComplete } = opts;
 
-  // Use provided messages or build from scratch
-  const messages: ChatMessage[] = initialMessages ?? [
-    { role: 'system', content: SYSTEM_PROMPT },
-    {
-      role: 'user',
-      content: `Working directory: ${config.cwd}\n\nTask:\n${prompt}`,
-    },
-  ];
+  // Build context messages using sliding window budget
+  let messages: ChatMessage[];
+  
+  if (session && session.tasks.length > 0) {
+    // Use budget-based context building for sessions with history
+    const budget = createBudgetConfig(config.model);
+    
+    // Check if compression is needed
+    const allMessages = [...session.current_messages];
+    if (shouldCompress(estimateTokens(allMessages), budget)) {
+      messages = buildContext(session, budget);
+    } else {
+      messages = [...session.current_messages];
+    }
+  } else if (initialMessages) {
+    messages = [...initialMessages];
+  } else {
+    // Fresh start - build from scratch
+    messages = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      {
+        role: 'user',
+        content: `Working directory: ${config.cwd}\n\nTask:\n${prompt}`,
+      },
+    ];
+  }
 
   // Initialize task tracker if session ID is provided
   const tracker = sessionId ? new TaskTracker(sessionId) : null;

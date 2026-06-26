@@ -115,7 +115,7 @@ You have tools: read_file, write_file, run_shell.
   const answer = await runAgent({
     prompt,
     config,
-    initialMessages,
+    session,  // Pass session for context budget management
     sessionId: session.session_id,
     onStep(event) {
       switch (event.type) {
