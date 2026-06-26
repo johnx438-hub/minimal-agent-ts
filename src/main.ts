@@ -1,14 +1,28 @@
 import { resolve } from 'node:path';
 
 import { runAgent } from './agent.js';
-import type { AgentConfig } from './types.js';
+import { createSession, loadSession, saveSession } from './session.js';
+import type { AgentConfig, ChatMessage } from './types.js';
 
 function env(name: string, fallback?: string): string | undefined {
   const v = process.env[name]?.trim();
   return v || fallback;
 }
 
-function parseArgs(argv: string[]): { prompt: string; cwd: string } {
+function parseArgs(argv: string[]): {
+  prompt: string;
+  cwd: string;
+  resumeSessionId?: string;
+} {
+  // Check for --resume <session_id>
+  let resumeSessionId: string | undefined;
+  const resumeIdx = argv.indexOf('--resume');
+  if (resumeIdx >= 0 && argv[resumeIdx + 1]) {
+    resumeSessionId = argv[resumeIdx + 1];
+    // Remove --resume and its arg from argv for further parsing
+    argv = [...argv.slice(0, resumeIdx), ...argv.slice(resumeIdx + 2)];
+  }
+
   const dash = argv.indexOf('--');
   const prompt =
     dash >= 0 ? argv.slice(dash + 1).join(' ').trim() : argv.join(' ').trim();
@@ -23,6 +37,7 @@ function parseArgs(argv: string[]): { prompt: string; cwd: string } {
     console.error('Usage:');
     console.error('  OPENROUTER_API_KEY=... npm start -- "你的任务"');
     console.error('  npm start -- --cwd /path/to/project "你的任务"');
+    console.error('  npm start -- --resume <session_id> "继续上次的工作"');
     console.error('');
     console.error('Optional env:');
     console.error('  OPENAI_BASE_URL  (default: https://openrouter.ai/api/v1)');
@@ -32,12 +47,12 @@ function parseArgs(argv: string[]): { prompt: string; cwd: string } {
     process.exit(1);
   }
 
-  return { prompt, cwd };
+  return { prompt, cwd, resumeSessionId };
 }
 
 async function main(): Promise<void> {
   const rawArgv = process.argv.slice(2);
-  const { prompt, cwd } = parseArgs(rawArgv);
+  const { prompt, cwd, resumeSessionId } = parseArgs(rawArgv);
 
   const apiKey = env('OPENROUTER_API_KEY') ?? env('OPENAI_API_KEY');
   if (!apiKey) {
@@ -54,17 +69,54 @@ async function main(): Promise<void> {
     allowShell: env('ALLOW_SHELL') === '1',
   };
 
+  // Session management: load existing or create new
+  let session;
+  if (resumeSessionId) {
+    session = loadSession(resumeSessionId);
+    if (!session) {
+      console.error(`Session not found: ${resumeSessionId}`);
+      process.exit(1);
+    }
+    console.log(`Resumed session: ${session.session_id} (${session.tasks.length} previous tasks)`);
+  } else {
+    session = createSession(env('USER_ID') ?? 'user_default');
+    console.log(`New session: ${session.session_id}`);
+  }
+
+  // Build initial messages from session history + new prompt
+  const systemMessage: ChatMessage = {
+    role: 'system',
+    content: `You are a minimal coding assistant in a learning demo.
+
+You have tools: read_file, write_file, run_shell.
+- Prefer read_file before editing.
+- Explain briefly what you are doing.
+- When the task is done, reply with a short summary and stop calling tools.`,
+  };
+
+  const initialMessages: ChatMessage[] = [
+    systemMessage,
+    ...session.current_messages,  // Load ongoing conversation
+    {
+      role: 'user',
+      content: `Working directory: ${config.cwd}\n\nTask:\n${prompt}`,
+    },
+  ];
+
   console.log('─'.repeat(60));
   console.log('minimal-agent-ts');
   console.log(`model: ${config.model}`);
   console.log(`cwd:   ${config.cwd}`);
   console.log(`shell: ${config.allowShell ? 'on' : 'off'}`);
+  console.log(`session: ${session.session_id}`);
   console.log('─'.repeat(60));
   console.log(`task: ${prompt}\n`);
 
   const answer = await runAgent({
     prompt,
     config,
+    initialMessages,
+    sessionId: session.session_id,
     onStep(event) {
       switch (event.type) {
         case 'turn_start':
@@ -91,10 +143,20 @@ async function main(): Promise<void> {
           break;
       }
     },
+    onTaskComplete(taskSummary) {
+      // Save task summary to session
+      session.tasks.push(taskSummary);
+      saveSession(session);
+      console.log(`\n💾 Task saved: ${taskSummary.task_id}`);
+    },
   });
 
+  // Update session with final messages
+  session.current_messages = answer.messages;
+  saveSession(session);
+
   console.log('\n' + '─'.repeat(60));
-  console.log(answer);
+  console.log(answer.text);
   console.log('─'.repeat(60));
 }
 
