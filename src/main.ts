@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import 'dotenv/config';  // Load .env file
 
 import { runAgent } from './agent.js';
 import { createSession, loadSession, saveSession } from './session.js';
