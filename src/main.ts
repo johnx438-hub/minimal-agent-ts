@@ -62,8 +62,8 @@ async function main(): Promise<void> {
 
   const config: AgentConfig = {
     apiKey,
-    baseUrl: env('OPENAI_BASE_URL', 'https://openrouter.ai/api/v1')!,
-    model: env('MODEL', 'deepseek/deepseek-chat')!,
+    baseUrl: env('OPENAI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta/openai')!,
+    model: env('MODEL', 'gemini-2.0-flash')!,
     maxTurns: Number(env('MAX_TURNS', '10')),
     cwd,
     allowShell: env('ALLOW_SHELL') === '1',

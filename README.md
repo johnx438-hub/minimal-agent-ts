@@ -31,7 +31,8 @@ turn 1..N:
 cd /home/archer/zerostack-analysis/minimal-agent-ts
 npm install
 
-export OPENROUTER_API_KEY="your-key"
+# 使用 Gemini API（默认）
+export OPENAI_API_KEY="your-gemini-key"
 
 # 只读任务（默认关闭 run_shell）
 npm start -- "列出当前目录有哪些文件，读 README 如果有的话，用一句话总结"
@@ -41,17 +42,21 @@ ALLOW_SHELL=1 npm start -- "运行 npm run typecheck 并汇报结果"
 
 # 指定工作目录
 npm start -- --cwd /home/archer/zerostack-analysis/zerostack "用一句话说明这个项目是做什么的"
+
+# 续接之前的会话
+npm start -- --resume session_20260627203000 "继续上次的工作"
 ```
 
 ## 环境变量
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `OPENROUTER_API_KEY` | — | 与 `OPENAI_API_KEY` 二选一 |
-| `OPENAI_BASE_URL` | `https://openrouter.ai/api/v1` | OpenAI 兼容端点 |
-| `MODEL` | `deepseek/deepseek-chat` | 模型名 |
+| `OPENAI_API_KEY` | — | API Key（Gemini/OpenAI 兼容） |
+| `OPENAI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai` | Gemini OpenAI 兼容端点 |
+| `MODEL` | `gemini-2.0-flash` | 模型名 |
 | `MAX_TURNS` | `10` | 最大 ReAct 轮数 |
 | `ALLOW_SHELL` | `0` | 设为 `1` 才启用 `run_shell` |
+| `MAX_CONTEXT_TOKENS` | — | 手动覆盖模型上下文上限（如 262000） |
 
 ## 建议学习顺序
 
