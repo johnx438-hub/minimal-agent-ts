@@ -3,7 +3,7 @@ import 'dotenv/config';  // Load .env file
 
 import { runAgent } from './agent.js';
 import { createSession, loadSession, saveSession } from './session.js';
-import type { AgentConfig, ChatMessage } from './types.js';
+import type { AgentConfig } from './types.js';
 
 function env(name: string, fallback?: string): string | undefined {
   const v = process.env[name]?.trim();
@@ -84,26 +84,6 @@ async function main(): Promise<void> {
     console.log(`New session: ${session.session_id}`);
   }
 
-  // Build initial messages from session history + new prompt
-  const systemMessage: ChatMessage = {
-    role: 'system',
-    content: `You are a minimal coding assistant in a learning demo.
-
-You have tools: read_file, write_file, run_shell.
-- Prefer read_file before editing.
-- Explain briefly what you are doing.
-- When the task is done, reply with a short summary and stop calling tools.`,
-  };
-
-  const initialMessages: ChatMessage[] = [
-    systemMessage,
-    ...session.current_messages,  // Load ongoing conversation
-    {
-      role: 'user',
-      content: `Working directory: ${config.cwd}\n\nTask:\n${prompt}`,
-    },
-  ];
-
   console.log('─'.repeat(60));
   console.log('minimal-agent-ts');
   console.log(`model: ${config.model}`);
@@ -116,7 +96,7 @@ You have tools: read_file, write_file, run_shell.
   const answer = await runAgent({
     prompt,
     config,
-    session,  // Pass session for context budget management
+    session,
     sessionId: session.session_id,
     onStep(event) {
       switch (event.type) {

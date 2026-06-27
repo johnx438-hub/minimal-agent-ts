@@ -21,8 +21,9 @@ export class TaskTracker {
   private currentTask: TaskBlock | null = null;
   private completedTasks: TaskBlock[] = [];
 
-  constructor(sessionId: string) {
+  constructor(sessionId: string, initialTaskCount = 0) {
     this.sessionId = sessionId;
+    this.taskCounter = initialTaskCount;
   }
 
   /**

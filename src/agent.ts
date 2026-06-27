@@ -8,11 +8,10 @@ import type { AgentConfig, ChatMessage, TaskSummaryDoc, SessionFile } from './ty
 export interface RunAgentOptions {
   prompt: string;
   config: AgentConfig;
-  session?: SessionFile;            // Session state for context building
-  initialMessages?: ChatMessage[];  // Pre-loaded messages from session (deprecated, use session)
-  sessionId?: string;               // Session ID for task tracking
+  session?: SessionFile;
+  sessionId?: string;
   onStep?: (event: AgentStepEvent) => void;
-  onTaskComplete?: (summary: TaskSummaryDoc) => void;  // Callback when task finishes
+  onTaskComplete?: (summary: TaskSummaryDoc) => void;
 }
 
 export type AgentStepEvent =
@@ -31,38 +30,60 @@ export interface AgentResult {
  * Minimal ReAct loop with task tracking and session support:
  *   Reason+Act (LLM) → Observe (tool results) → repeat until text answer or maxTurns.
  */
-export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
-  const { prompt, config, session, initialMessages, sessionId, onStep, onTaskComplete } = opts;
+function stripSystemMessages(msgs: ChatMessage[]): ChatMessage[] {
+  return msgs.filter((m) => m.role !== 'system');
+}
 
-  // Build context messages using sliding window budget
-  let messages: ChatMessage[];
-  
-  if (session && session.tasks.length > 0) {
-    // Use budget-based context building for sessions with history
-    const budget = createBudgetConfig(config.model);
-    
-    // Check if compression is needed
-    const allMessages = [...session.current_messages];
-    if (shouldCompress(estimateTokens(allMessages), budget)) {
-      messages = buildContext(session, budget);
-    } else {
-      messages = [...session.current_messages];
-    }
-  } else if (initialMessages) {
-    messages = [...initialMessages];
-  } else {
-    // Fresh start - build from scratch
-    messages = [
-      { role: 'system', content: SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: `Working directory: ${config.cwd}\n\nTask:\n${prompt}`,
-      },
-    ];
+function buildUserTaskMessage(cwd: string, prompt: string): ChatMessage {
+  return {
+    role: 'user',
+    content: `Working directory: ${cwd}\n\nTask:\n${prompt}`,
+  };
+}
+
+/** Assemble the first message batch: system + history (+ compression) + new user task. */
+function resolveInitialMessages(opts: RunAgentOptions): {
+  messages: ChatMessage[];
+  userTask: ChatMessage;
+} {
+  const { prompt, config, session } = opts;
+  const system: ChatMessage = { role: 'system', content: SYSTEM_PROMPT };
+  const userTask = buildUserTaskMessage(config.cwd, prompt);
+
+  if (!session) {
+    return { messages: [system, userTask], userTask };
   }
 
-  // Initialize task tracker if session ID is provided
-  const tracker = sessionId ? new TaskTracker(sessionId) : null;
+  const history = stripSystemMessages(session.current_messages);
+  const budget = createBudgetConfig(config.model);
+
+  if (
+    session.tasks.length > 0 &&
+    shouldCompress(estimateTokens(session.current_messages), budget)
+  ) {
+    const compressed = stripSystemMessages(buildContext(session, budget));
+    return { messages: [system, ...compressed, userTask], userTask };
+  }
+
+  if (history.length > 0) {
+    return { messages: [system, ...history, userTask], userTask };
+  }
+
+  return { messages: [system, userTask], userTask };
+}
+
+export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
+  const { config, session, sessionId, onStep, onTaskComplete } = opts;
+
+  const { messages: initial, userTask } = resolveInitialMessages(opts);
+  const messages = [...initial];
+
+  const tracker = sessionId
+    ? new TaskTracker(sessionId, session?.tasks.length ?? 0)
+    : null;
+  if (tracker) {
+    tracker.onUserMessage(userTask, 1);
+  }
 
   for (let turn = 1; turn <= config.maxTurns; turn++) {
     onStep?.({ type: 'turn_start', turn });

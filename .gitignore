@@ -20,3 +20,6 @@ Thumbs.db
 # Zvec data (Phase 1+)
 *.zvec
 agent_memory.zvec
+
+# Session runtime data
+.sessions/

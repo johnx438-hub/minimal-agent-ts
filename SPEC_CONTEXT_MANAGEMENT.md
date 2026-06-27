@@ -2,16 +2,41 @@
 
 > **目标**: 让最简 ReAct Agent 具备分层上下文管理能力，支持长对话不丢失关键信息  
 > **日期**: 2026-06-26  
-> **状态**: Draft v1.0
+> **状态**: Draft v1.3 (长期路线图)
+
+---
+
+## 🗺️ 总路线图（Phase 1 → 6）
+
+| Phase | 主题 | 优先级 | 依赖 | 状态 |
+|-------|------|--------|------|------|
+| **1** | 会话续接 + TaskSummary + 滑动窗口 | P0 学习核心 | — | ✅ 已实现 |
+| **2** | 冷存储 + 指针化 + recall + context-policy | P0 长会话质量 | Phase 1 | 📋 spec 就绪 |
+| **3** | Session 层压缩 + 跨 session 索引 | P1 记忆纵深 | Phase 2d | 📋 草案 |
+| **4** | 工具扩展 + 并行执行 + SSE 流式 | P1 实用性与体感 | Phase 1 | 📋 本版新增 |
+| **5** | MCP / Skills 插件层 | P2 生态扩展 | Phase 4a | 📋 本版新增 |
+| **6** | 多角色工作流（config 驱动 Agent Loop） | P2 编排能力 | Phase 4c + 稳定 ReAct | 📋 本版新增 |
+
+**原则**：先让「单 Agent + 干净上下文」跑稳（Phase 2），再叠工具与运行时（Phase 4），最后做编排（Phase 6）。Phase 1.5 内容并入 Phase 4，避免两条线并行改 `agent.ts`。
+
+```
+Phase 1 ──► Phase 2 (上下文) ──► Phase 3 (跨 session)
+                │
+                └──► Phase 4 (工具/并行/流式) ──► Phase 5 (MCP/Skills)
+                                              └──► Phase 6 (多角色 Loop)
+```
 
 ---
 
 ## 🎯 核心设计理念
 
-**渐进式上下文 + 动态提示词**：
-- 近期内容完整回填，中期给 task 摘要，早期给 session 摘要
-- 系统提示词根据当前压缩状态动态调整，按需激活 recall_query tool
-- 结构化摘要模板保证分层可追溯，避免信息断裂
+**热路径瘦身 + 冷存储保全 + 按需召回**（借鉴 OpenCode prune 哲学，用指针化 + recall 增强可恢复性）：
+
+- **热路径**（API `messages[]`）：近期完整、中期摘要、大 tool 结果降级为 `[action:…]` 指针卡片
+- **冷路径**（`ActionStore`）：每次 tool 执行双写全文，供 `recall_query` 与索引检索
+- **假删除而非真销毁**：OpenCode 式 `compacted_at` 整段隐藏 + 指针化内容降级，数据均可回溯
+- **压缩是事件**：摘要/指针一旦写入即 frozen，利于前缀缓存；动态提示走 **压缩事件消息**，不改 system
+- 结构化 `TaskSummary` + `action_id` 保证分层可追溯，避免信息断裂
 
 ---
 
@@ -265,28 +290,31 @@ interface SessionSummaryDoc {
 
 ---
 
-## 📐 上下文分层架构
+## 📐 上下文分层架构（热路径 + 冷路径）
 
 ```
-┌─────────────────────────────────────────────────┐
-│  System Prompt (动态生成)                        │
-│  → 基础指令 + 条件性 recall_query 提示           │
-├─────────────────────────────────────────────────┤
-│  Layer 1: 近期 (Recent) ~40% budget             │
-│  → 完整 action_block，保留所有工具调用细节        │
-│  → 最近 2-3 个 task                             │
-├─────────────────────────────────────────────────┤
-│  Layer 2: 中期 (Mid-term) ~30% budget           │
-│  → task_block 结构化摘要                         │
-│  → 往前 5-8 个 task，每个只留 summary            │
-├─────────────────────────────────────────────────┤
-│  Layer 3: 早期 (Early) ~20% budget              │
-│  → session 级压缩摘要                            │
-│  → 更早内容合并为一段话                          │
-├─────────────────────────────────────────────────┤
-│  Current Task (~10%)                             │
-│  → 当前用户提问 + 工作目录信息                   │
-└─────────────────────────────────────────────────┘
+冷路径 ActionStore (.sessions/actions/)     热路径 API messages[]
+─────────────────────────────────────     ─────────────────────────
+全文 args + result（永不指针化丢失）          ┌──────────────────────────────┐
+Zvec 索引（recall_query 语义检索）           │ System Prompt (immutable)     │
+                                           │ + 固定 recall 使用说明         │
+                                           ├──────────────────────────────┤
+                                           │ Layer 1 近期 ~40%              │
+                                           │ → 当前 turn: inline 工具结果    │
+                                           │ → 较早 turn: [action:…] 指针   │
+                                           │ → 最近 2-3 task               │
+                                           ├──────────────────────────────┤
+                                           │ Layer 2 中期 ~30%              │
+                                           │ → TaskSummary（frozen）        │
+                                           ├──────────────────────────────┤
+                                           │ Layer 3 早期 ~20%              │
+                                           │ → session 摘要                 │
+                                           │ → compacted_at 消息已隐藏      │
+                                           ├──────────────────────────────┤
+                                           │ Current Task ~10%              │
+                                           │ → 用户提问 + cwd               │
+                                           │ → 压缩事件通知（append 一次）   │
+                                           └──────────────────────────────┘
 ```
 
 ---
@@ -383,99 +411,350 @@ src/
 
 ---
 
-## 📋 Phase 1.5: Agent 能力增强（可选拓展）
+## 📋 Phase 1.5: （已并入 Phase 4）
 
-**目标**: 在 Phase 1 基础上，通过小改动快速提升 Agent 实用性和开发体验
-
-### 功能清单
-
-#### 🔧 工具扩展
-- [ ] **grep_search tool** — 在项目目录搜索关键词（类似 ripgrep）
-  ```typescript
-  {
-    name: "grep_search",
-    parameters: { pattern: string, path?: string, context_lines?: number }
-  }
-  ```
-  
-- [ ] **list_files tool** — 列出目录结构（tree/ls -R）
-  ```typescript
-  {
-    name: "list_files", 
-    parameters: { path: string, max_depth?: number, include_hidden?: boolean }
-  }
-  ```
-
-- [ ] **web_fetch tool** — 抓取网页内容（让 Agent 具备联网能力）
-  ```typescript
-  {
-    name: "web_fetch",
-    parameters: { url: string, format?: "text" | "markdown" }
-  }
-  ```
-
-#### ⚡ 性能优化
-- [ ] **流式输出 (Streaming)** — 改造 `llm.ts` 支持 SSE，`onStep` 实时打印 token
-- [ ] **工具并行调用** — 检测无依赖的 tool_calls，用 `Promise.all()` 并行执行
-
-### 验收标准
-| 功能 | 验收方式 |
-|------|---------|
-| grep_search | Agent 能搜索 "import.*from" 并返回匹配行 |
-| list_files | Agent 能输出树状目录结构 |
-| Streaming | 终端实时显示 LLM 输出的每个 token（非阻塞等待） |
+> Phase 1.5 原「grep / list_files / streaming / 并行」清单已升级为 **Phase 4** 正式 spec。  
+> 若想在 Phase 2 之前快速尝鲜，可只做 **4a-1 + 4c**（工具 + 流式），跳过指针化。
 
 ---
 
-## 📋 Phase 2: Recall Query Tool + 动态提示词
+## 📋 Phase 2: 冷存储 + 指针化 + Recall Query + 上下文策略
 
-**目标**: Agent 能主动检索历史细节，系统提示词根据压缩状态动态调整
+**目标**: 在 Phase 1 会话续接与滑动窗口之上，实现 **Hot/Cold 双写**、**指针化 tool 结果**、**OpenCode 式假删除**、**recall_query 按需解引用**，并在干净上下文与前缀缓存之间取得平衡。
 
-### 功能清单
-- [ ] **recall_query tool**
+**设计参照**: OpenCode `compaction.ts`（Prune 标记隐藏 → LLM Summary）；本方案用 **指针卡片 + ActionStore** 替代「整段消失后只能靠重跑 tool」。
+
+---
+
+### 2.0 架构总览
+
+```
+executeTool(raw)
+    │
+    ├─► ActionStore (冷路径，always 全文)
+    │     .sessions/actions/<action_id>.json
+    │     + Zvec 索引 (embedding + FTS)
+    │
+    └─► messages[] (热路径)
+          ├─ 小结果 / 错误 / write 确认 → inline 原文
+          ├─ 大结果（本 turn）→ inline 截断版（可选）
+          ├─ 大结果（下 turn 起）→ [action:…] 指针卡片 (frozen)
+          └─ 超老整块（压缩事件）→ compacted_at 整段隐藏 或 task summary 替代
+
+模型需要细节 → recall_query(action_id | query) → head_tail 切片
+文件已变更   → recall 标注 stale + 建议 read_file 重读
+```
+
+| 维度 | OpenCode Prune | 本方案 Phase 2 |
+|------|----------------|----------------|
+| 冷存储 | Session DB 全消息保留 | `ActionStore` 存 `ActionBlock` 全文 |
+| 热路径 | `compacted` 消息从 API 视图消失 | 指针卡片降级 或 整段 `compacted_at` 隐藏 |
+| 捞回 | 重跑 read/grep/bash | `recall_query` 解引用；文件变更时 fallback 重读 |
+| 第二阶段 | LLM 5 段 session summary | `TaskSummary`（Phase 1 已有）+ 压缩事件消息 |
+| 缓存 | 消息变短，前缀可能变化 | 指针/摘要 frozen 一次写入，前缀较稳定 |
+
+---
+
+### 2.1 数据结构扩展
+
+#### ChatMessage 元数据（session 持久化，不一定发给 API）
+
+```typescript
+interface ChatMessage {
+  role: Role;
+  content: string | null;
+  tool_calls?: ToolCall[];
+  tool_call_id?: string;
+
+  // Phase 2 扩展（组装 API 请求时使用）
+  action_id?: string;        // 关联 ActionStore 记录
+  pointerized?: boolean;     // 热路径内容为指针卡片
+  compacted_at?: number;     // OpenCode 式：>0 则从 API 视图整段跳过
+}
+```
+
+#### ActionBlock（冷存储单元）
+
+```typescript
+interface ActionBlock {
+  action_id: string;         // "action_{task_hash}_{seq}"
+  task_id: string;
+  session_id: string;
+  turn_number: number;
+  tool_name: string;
+  args_json: string;
+  result_text: string;         // 完整 tool 输出
+  result_hash: string;         // sha256 前 16 位，用于变更检测
+  byte_size: number;
+  line_count: number;
+  pointerized: boolean;
+  files_touched: string[];     // 从 args 提取
+  timestamp: number;
+  token_cost: number;          // 估算即可
+}
+```
+
+#### Recall 请求 / 响应
+
+```typescript
+interface RecallQueryParams {
+  query?: string;              // 自然语言 / 关键词（向量+FTS）
+  action_id?: string;          // 精确解引用（优先）
+  task_id?: string;
+  scope?: 'action' | 'task' | 'session';
+  offset?: number;             // 行偏移（read_file / grep）
+  limit?: number;
+  format?: 'full' | 'head_tail' | 'grep';  // 默认 head_tail
+}
+
+interface RecallResult {
+  action_id: string;
+  tool_name: string;
+  matched: boolean;
+  content: string;
+  total_chars: number;
+  has_more: boolean;
+  stale?: boolean;             // 源文件 mtime 已变
+  hint?: string;               // "use offset=201 limit=200" / "use read_file for latest"
+}
+```
+
+---
+
+### 2.2 统一上下文策略：`context-policy.ts`
+
+所有「留热 / 踢冷 / 隐藏 / 指针化」规则集中在此模块，避免散落在 agent loop。
+
+#### 2.2.1 免疫区（永不指针化、永不 prune）
+
+| 类型 | 规则 |
+|------|------|
+| `error:` 开头 | 必须 inline，模型需立刻看到 |
+| `write_file` 成功确认 | `ok: wrote N bytes` 永远 inline |
+| `skill` 类输出（未来） | 参考 OpenCode，含操作指令的不 prune |
+| 当前 turn 内刚产生的 tool 结果 | 本 turn 不 pointerize（防 hallucinate） |
+
+#### 2.2.2 指针化阈值（按工具类型）
+
+```typescript
+const POINTER_RULES = {
+  read_file:   { minChars: 600,  alwaysIfLines: 40 },
+  run_shell:   { minChars: 800,  alwaysIfLines: 30 },
+  write_file:  { minChars: Infinity },  // 永不指针化（结果短）
+  grep_search: { minChars: 500,  alwaysIfLines: 20 },  // Phase 1.5
+} as const;
+```
+
+#### 2.2.3 OpenCode 式 Prune 阈值（整段隐藏）
+
+仅在 **预计腾出 > 20_000 tokens** 时触发（小清理不做）：
+
+| 规则 | 值 |
+|------|-----|
+| 保护区 | 最近 **40_000 tokens** 内消息不 prune |
+| User 保护 | 最近 **2 轮** user 消息全文保留 |
+| 免疫 | `skill` 输出、`error:`、当前 turn 全部消息 |
+| 操作 | 对符合条件的旧 tool/assistant 消息设 `compacted_at = Date.now()` |
+| API 组装 | `compacted_at > 0` 的消息 **不进入** LLM 请求 |
+
+> Prune 与指针化分工：**近期大结果** → 指针卡片（保留句柄）；**更老的整块对话** → `compacted_at` 整段隐藏（靠 TaskSummary + recall）。
+
+#### 2.2.4 三个执行时机
+
+| 时机 | 触发 | 行为 |
+|------|------|------|
+| **A — 执行当下** | `executeTool` 返回 | 双写 ActionStore；小结果 inline，大结果 inline 截断版（同 turn） |
+| **B — Turn 边界** | 每 turn 结束 | 非当前 turn 且超阈值 → 原地替换为 pointer 卡片（**仅一次，frozen**） |
+| **C — 压缩事件** | `shouldCompress()` 为 true | 最老 task → TaskSummary；相关 messages 设 `compacted_at`；append 压缩通知消息 |
+
+#### 2.2.5 指针卡片格式（稳定模板）
+
+```text
+[action:action_x9y8z7_012]
+tool=read_file path=src/agent.ts lines=1-93 chars=2841 sha256=8f3a…c21
+preview="export async function runAgent…"
+recall=recall_query(action_id="action_x9y8z7_012", offset?, limit?)
+```
+
+- `action_id` 一次生成永不修改
+- `preview`：首 80 字符或首 2 行
+- 若 `tools.ts` 已截断：`stored=truncated_at_8000 original_chars=245000`
+
+#### 2.2.6 缓存与干净上下文平衡
+
+```
+immutable 区（session 级冻结）:
+  SYSTEM_PROMPT + TOOL_DEFINITIONS + recall 使用说明（固定一句）
+
+可变区（append-only，写入后 frozen）:
+  历史 messages / pointer 卡片 / TaskSummary 消息 / 压缩事件通知
+
+禁止:
+  每轮改写 system prompt（改走压缩事件 append 一条 user/dev 通知）
+
+压缩事件消息示例（append 一次，不再改）:
+  [context-notice] 早期对话已压缩为摘要。大 tool 输出以 [action:…] 卡片呈现。
+  细节请用 recall_query(action_id=...) 获取。已讨论主题: {topics}.
+```
+
+压缩后 **replay 最后一条 user task**（借鉴 OpenCode）：在 messages 末尾再 append 当前任务描述，锚定模型注意力。
+
+---
+
+### 2.3 功能清单
+
+#### Step 1: ActionStore（冷存储）
+
+- [ ] `src/action-store.ts`
+  - `saveAction(block: ActionBlock): void` → `.sessions/actions/<action_id>.json`
+  - `getAction(action_id, slice?: { offset, limit }): ActionBlock | null`
+  - `isStale(action_id): boolean` — 对比 `files_touched` 的 mtime vs `timestamp`
+- [ ] `TaskTracker` 扩展：`recordToolCall()` 生成 `action_id` 并返回
+- [ ] `write_file` 冷存策略：`result_text` 只存确认信息；全文仅在 `args_json`
+
+#### Step 2: 指针化模块
+
+- [ ] `src/pointerize.ts`
+  - `shouldPointerize(tool, raw): boolean`
+  - `buildPointerCard(block: ActionBlock): string`
+  - `materializeAtTurnEnd(messages, currentTurn): ChatMessage[]` — turn 边界替换
+- [ ] `agent.ts` 集成：executeTool 后双写 + 按策略决定 inline/pointer
+
+#### Step 3: 上下文策略模块
+
+- [ ] `src/context-policy.ts`
+  - `estimateProtectedTokens(messages): number`
+  - `shouldPrune(session, budget): boolean` — 是否值得 prune（>20k 收益）
+  - `applyPrune(messages): ChatMessage[]` — 打 `compacted_at`
+  - `assembleApiMessages(messages): ChatMessage[]` — 过滤 compacted、展开 pointer
+  - `appendCompressionNotice(session, topics): ChatMessage`
+  - `replayLastUserTask(prompt, cwd): ChatMessage`
+
+#### Step 4: recall_query tool
+
+- [ ] `src/recall.ts` + 注册到 `tools.ts`
   ```typescript
   {
     name: "recall_query",
-    description: "检索早期对话的历史细节。当滑动窗口中的摘要不够详细时使用。",
+    description: "检索早期 tool 执行的完整结果。热路径中的 [action:…] 卡片可用 action_id 精确解引用；也可用 query 做语义/关键词搜索。",
     parameters: {
-      query: string,   // 搜索关键词或自然语言描述
-      scope?: "task" | "action" | "session",  // 可选粒度
-      turn_range?: [number, number]            // 可选时间范围
-    }
+      query: { type: "string", description: "搜索关键词或自然语言（与 action_id 二选一或组合）" },
+      action_id: { type: "string", description: "精确解引用，优先于 query" },
+      task_id: { type: "string" },
+      scope: { type: "string", enum: ["action", "task", "session"] },
+      offset: { type: "integer", description: "行偏移" },
+      limit: { type: "integer", description: "最多返回行数/字符块" },
+      format: { type: "string", enum: ["full", "head_tail", "grep"], description: "默认 head_tail" },
+    },
   }
   ```
+- [ ] 默认 `head_tail`：≤2000 字符全文；否则前 800 + `…[more via offset]…` + 后 200
+- [ ] `isStale` 时返回 `stale: true` + 片段 + hint 建议 `read_file`
 
-- [ ] **Zvec 向量索引**
-  - 使用 Zvec v0.5+ 存储 action_block 向量 (384 维) + 全文索引
-  - 支持按 `files_touched`、`tools_used`、`turn_range` 标量过滤
-  - 混合检索: 向量相似度 + FTS 关键词 + 标量条件
-  
-- [ ] **动态系统提示词生成器**
-  ```typescript
-  function buildSystemPrompt(context: ContextState): string {
-    let prompt = BASE_PROMPT;
-    
-    if (context.hasCompressedHistory) {
-      prompt += `\n\n可选工具: recall_query — 用于检索早期对话的历史细节。`;
-    }
-    
-    if (context.compressionLevel === "heavy") {
-      prompt += `\n本次会话已讨论多个主题，需要历史详情时优先使用 recall_query。`;
-    }
-    
-    return prompt;
-  }
+#### Step 5: Zvec 向量索引
+
+- [ ] `src/action-index.ts`（或复用 MemFileCli 模式）
+  - Collection `agent_memory`，384 维 cosine + FTS `content` 字段
+  - 索引文本：`tool + args + result[:4000] + files_touched`
+  - 标量过滤：`session_id`, `task_id`, `tool_name`, `turn_number`, `pointerized`
+- [ ] task 完成 / 压缩事件时异步 upsert（不阻塞主 loop）
+
+#### Step 6: System Prompt 调整（静态为主）
+
+- [ ] `SYSTEM_PROMPT` 追加 **固定** recall 说明（immutable）：
   ```
+  Large tool outputs appear as [action:…] cards. Use recall_query(action_id=...) for details.
+  If recall marks stale, use read_file for the latest file content.
+  ```
+- [ ] **废弃**每轮动态 `buildSystemPrompt()`；压缩级别提示改由 `appendCompressionNotice()` 一次写入
 
-- [ ] **提示词分层策略**
-  - 无压缩: 基础指令 + 工具列表
-  - 轻度压缩: + "recall_query 可用于早期细节"
-  - 重度压缩: + "本次会话已讨论 X、Y、Z 主题，需要详情用 recall_query"
+---
 
-### 验收标准
-- ✅ Agent 能在摘要不够时主动调用 recall_query
-- ✅ recall_query 返回相关 action_blocks（准确率 >80%）
-- ✅ 短对话不触发 recall_query（避免无意义调用）
+### 2.4 数据流（Phase 2 完整路径）
+
+```
+用户提问 → TaskTracker.onUserMessage
+    ↓
+ReAct loop (每 turn):
+    LLM → tool_calls → executeTool(raw)
+        ├─ ActionStore.saveAction (冷，全文)
+        └─ messages.push (热，inline 或截断)
+    ↓
+turn 结束 → context-policy:
+    ├─ materializeAtTurnEnd (大结果 → pointer, frozen)
+    └─ shouldPrune? → applyPrune (compacted_at)
+    ↓
+预算检查 shouldCompress?
+    ├─ 否 → assembleApiMessages → 下一轮 LLM
+    └─ 是 → 压缩事件:
+            ├─ 老 task → TaskSummary (frozen)
+            ├─ compacted_at 标记
+            ├─ appendCompressionNotice
+            ├─ replayLastUserTask
+            └─ Zvec upsert
+    ↓
+模型调用 recall_query → recall.ts → head_tail 切片 → 作为 tool result 回注
+    ↓
+task 结束 → TaskSummary 写入 session.tasks (Phase 1)
+```
+
+---
+
+### 2.5 新增文件结构
+
+```
+src/
+├── action-store.ts      # 冷存储 CRUD
+├── action-index.ts      # Zvec 索引（可选 Phase 2b） 
+├── pointerize.ts        # 指针卡片生成 + turn 边界物化
+├── context-policy.ts    # Prune / 指针 / 组装 API messages / 压缩事件
+├── recall.ts            # recall_query 实现
+├── agent.ts             # 集成双写 + assembleApiMessages
+├── task-tracker.ts      # + recordToolCall / action_id
+└── types.ts             # + ActionBlock, RecallQueryParams, message 元数据
+
+.sessions/
+├── session_<id>.json
+└── actions/
+    └── action_<hash>_<seq>.json
+```
+
+---
+
+### 2.6 实施顺序（推荐）
+
+| 顺序 | 模块 | 依赖 Zvec | 说明 |
+|------|------|-----------|------|
+| 2a | action-store + pointerize + context-policy (不含 prune) | 否 | 最小闭环：双写 + turn 边界指针化 |
+| 2b | recall_query (action_id 精确解引用) | 否 | 先不做语义搜索 |
+| 2c | context-policy prune + 压缩事件消息 | 否 | OpenCode 式假删除 |
+| 2d | action-index + query 语义检索 | 是 | 混合检索 |
+
+---
+
+### 2.7 验收标准
+
+| 功能 | 验收方式 |
+|------|---------|
+| **冷存储双写** | 大 `read_file` 后 `.sessions/actions/<action_id>.json` 含完整 result |
+| **指针化** | 第 2 turn 起，热路径 tool 消息变为 `[action:…]` 卡片，字符数 < 300 |
+| **同 turn 不指针化** | 第 1 turn 大 read 仍为 inline/截断，模型能继续推理 |
+| **recall 解引用** | `recall_query(action_id=…)` 返回 head_tail 切片，`has_more` 正确 |
+| **stale 检测** | 文件修改后 recall 返回 `stale: true` 并 hint `read_file` |
+| **prune 假删除** | 长会话触发后，旧 tool 消息 `compacted_at > 0` 且不进 API 请求 |
+| **压缩事件** | 触发压缩后 append 通知 + replay user task；system prompt 不变 |
+| **短对话零开销** | <600 字符 tool 结果无 pointer、无 prune、无 recall 提示泛滥 |
+| **语义 recall** (2d) | `recall_query(query="auth middleware")` 命中正确 action，准确率 >80% |
+
+---
+
+### 2.8 已知陷阱（实现时必读）
+
+1. **指针化太早** → 同 turn 看不到全文，幻觉文件内容；严格遵守「本 turn inline，下 turn pointer」
+2. **recall 返回全文** → 干净上下文前功尽弃；默认 `head_tail`，大结果分次拉取
+3. **每轮改 system** → 打碎前缀缓存；压缩提示走 append-only 事件消息
+4. **write_file 双重存储** → `result_text` 不存 content 全文，避免 ActionStore 膨胀
+5. **prune 与 pointer 重复操作** → 已 pointerize 的不再 compacted；已 compacted 的无需 pointer
 
 ---
 
@@ -514,6 +793,364 @@ src/
 
 ---
 
+## 📋 Phase 4: 工具扩展 + 并行执行 + SSE 流式
+
+**目标**: 在稳定 ReAct 内核上提升 **开发实用性**（更多工具）、**执行效率**（并行 tool）、**终端体感**（流式 token）。与 Phase 2 正交，可并行开发，但 **合并 PR 时 Phase 2 优先**（指针化需覆盖新工具的大结果）。
+
+---
+
+### 4.0 设计原则
+
+- 新工具遵循 Phase 2 **POINTER_RULES**（大结果 → 冷存 + 指针卡片）
+- 工具实现与注册分离：`tools/` 目录 + `tools/registry.ts`
+- 并行执行 **默认保守**：不确定依赖时串行，避免写读竞态
+- 流式与 tool_calls **互斥展示**：有 tool_calls 时缓冲 assistant 文本，final 路径才逐 token 打印
+
+---
+
+### 4.1 内置工具扩展（4a）
+
+#### 4a-1 文件探索三件套（优先）
+
+| 工具 | 实现 | 参数 | 指针化 |
+|------|------|------|--------|
+| `grep_search` | `rg` 子进程，fallback `grep -rn` | `pattern`, `path?`, `glob?`, `context_lines?`, `max_matches?` | 是（>500 chars） |
+| `list_files` | `fs.readdir` 递归 | `path`, `max_depth?`, `include_hidden?` | 是（>40 entries 展平） |
+| `diff_file` | `diff -u` 或自研行 diff | `path`, `before_action_id?`, `before_text?` | 是（大 diff） |
+
+`diff_file` 与冷存储联动：
+
+```typescript
+// 优先从 ActionStore 取 write_file 之前的快照；无则 read 当前文件
+diff_file({ path: "src/agent.ts", before_action_id: "action_xxx_003" })
+```
+
+#### 4a-2 联网
+
+| 工具 | 实现 | 安全 |
+|------|------|------|
+| `web_fetch` | `fetch` + `text/html` → markdown 简化 | 域名 allowlist（config）；默认关闭，`ALLOW_WEB=1` |
+
+#### 4a-3 文件结构
+
+```
+src/tools/
+├── registry.ts       # 汇总 TOOL_DEFINITIONS + executeTool 路由
+├── read-write.ts     # 现有 read_file / write_file
+├── explore.ts        # grep_search / list_files / diff_file
+├── shell.ts          # run_shell
+└── web.ts            # web_fetch
+```
+
+---
+
+### 4.2 工具并行执行（4b）
+
+**问题**：当前 `agent.ts` 对 `message.tool_calls` 串行 `for` 循环；多文件 `read_file` 浪费 wall-clock。
+
+#### 4b-1 启发式分批（MVP，推荐先做）
+
+同一 turn 内多个 tool_call，按 **资源键** 分桶后并行：
+
+```typescript
+interface ToolCallPlan {
+  parallel: ToolCall[];   // Promise.all
+  serial: ToolCall[];   // 顺序执行
+}
+
+// 规则（保守）:
+// - read/grep/list/diff/web → 默认 parallel（路径不同即可）
+// - write_file / run_shell → 默认 serial
+// - 同一 path 的 read+write → serial（写优先或读优先由拓扑决定）
+// - run_shell 含 ">" 重定向到某 path → 与对该 path 的 read 串行
+```
+
+实现：`src/tool-scheduler.ts`
+
+```typescript
+export function scheduleToolCalls(calls: ToolCall[]): ToolCallPlan[];
+export async function executeToolBatch(
+  plan: ToolCallPlan,
+  config: AgentConfig,
+  hooks: { onResult: (call, output) => void },
+): Promise<void>;
+```
+
+**消息顺序**：并行结果按 **原始 tool_calls 数组顺序** 回注 `messages[]`（与 OpenAI API 期望一致），仅 **执行** 并行。
+
+#### 4b-2 依赖图（进阶，4b+）
+
+当启发式不够时，引入显式 **Tool Dependency Graph**：
+
+```typescript
+interface ToolDependencyEdge {
+  from: string;          // tool_call_id
+  to: string;
+  reason: 'same_path' | 'write_before_read' | 'shell_redirect';
+}
+
+// 拓扑排序 → 每层 Promise.all，层间串行
+export function buildDependencyGraph(calls: ToolCall[]): ToolDependencyEdge[];
+export function topologicalLayers(calls, edges): ToolCall[][];
+```
+
+可选：让模型在 tool schema 里声明 `depends_on: [tool_call_id]`（Phase 5+，多数模型做不好，**不依赖**）。
+
+#### 4b-3 与 ActionStore / 指针化
+
+- 并行执行的每个结果 **独立** `action_id`、独立双写
+- `onStep` 事件新增 `{ type: 'tool_batch_start', count, parallel: number }`
+
+---
+
+### 4.3 SSE 流式输出（4c）
+
+**目标**：改造 `llm.ts`，final 回答路径逐 token 输出；`onStep` 增加 `token` 事件。
+
+#### API 形态
+
+```typescript
+// llm.ts
+export interface StreamChatOptions {
+  stream: boolean;
+  onToken?: (delta: string) => void;
+  onToolCallsComplete?: (toolCalls: ToolCall[]) => void;
+}
+
+export async function chat(..., opts): Promise<LlmResult> {
+  if (!opts.stream) { /* 现有非流式路径 */ }
+  // stream: true → fetch + ReadableStream / SSE 解析
+}
+```
+
+#### 请求体
+
+```json
+{ "model": "...", "messages": [...], "tools": [...], "stream": true }
+```
+
+#### 解析策略
+
+- `delta.content` → `onToken` / `onStep({ type: 'token', delta })`
+- `delta.tool_calls` → 累积至完整 tool_call 后 **一次性** 触发 `tool_call` 事件（流式 tool args 可选手枪模式拼接）
+- `finish_reason` → 结束
+
+#### agent.ts 集成
+
+```typescript
+onStep?.({ type: 'token', turn, delta });  // main.ts 直接 process.stdout.write(delta)
+// tool 路径不流式打印 assistant 中间废话，避免与 tool_call 日志交错
+```
+
+#### 验收
+
+- 无 tool_calls 的 final 回答：终端逐字输出
+- 有 tool_calls：行为与现版一致，不 broken
+- `stream: false` 回归路径不变
+
+---
+
+### 4.4 Phase 4 实施顺序
+
+| 步骤 | 内容 | 预估耦合 |
+|------|------|----------|
+| 4a-1 | grep + list_files + diff_file + tools/ 拆分 | 低 |
+| 4c | SSE 流式 | 低（仅 llm.ts + main.ts） |
+| 4b-1 | 启发式并行 scheduler | 中（agent.ts） |
+| 4a-2 | web_fetch + allowlist | 低 |
+| 4b-2 | 依赖图拓扑分层 | 中 |
+
+---
+
+### 4.5 Phase 4 验收标准
+
+| 功能 | 验收方式 |
+|------|---------|
+| grep_search | `grep_search("import.*from")` 返回匹配行 + 文件路径 |
+| list_files | 输出树状结构，`max_depth` 生效 |
+| diff_file | 对 `before_action_id` 与当前文件输出 unified diff |
+| 并行读 | 同 turn 3 个 `read_file` 不同路径，wall-clock < 串行 50% |
+| 写读安全 | 同 path read+write 同 turn 保持串行，无竞态 |
+| 流式 | final 回答逐 token 打印；tool turn 不乱序 |
+| 指针化兼容 | 大 grep 结果在 Phase 2 启用后正确 pointerize |
+
+---
+
+## 📋 Phase 5: MCP / Skills 插件层
+
+**目标**: 在不改 ReAct 内核的前提下，外接 MCP server 与本地 Skills（类似 Cursor / OpenCode 的 `@skill`），工具定义 **运行时合并** 进 `TOOL_DEFINITIONS`。
+
+**依赖**: Phase 4a 的 `tools/registry.ts` 抽象到位。
+
+---
+
+### 5.1 架构
+
+```
+config.json / agent.json
+    │
+    ├─ builtin_tools: ["read_file", "grep_search", ...]
+    ├─ mcp_servers: [{ name, command, args, env }]
+    └─ skills_dirs: ["./skills", "~/.minimal-agent/skills"]
+
+启动时:
+    registry.loadBuiltin()
+    registry.loadMcp()      // stdio MCP → ToolDefinition[]
+    registry.loadSkills()   // SKILL.md frontmatter → 注入 system 或 skill 工具
+```
+
+### 5.2 MCP 集成（5a）
+
+- 传输：stdio（先不做 HTTP MCP）
+- 每个 MCP tool → 映射为 `mcp_<server>_<tool>` 名称，避免冲突
+- 权限：`mcp.json` 里 `allow` / `deny` 列表
+- 指针化：MCP 大结果走 Phase 2 同一套 `POINTER_RULES`
+
+### 5.3 Skills 集成（5b）
+
+| 方式 | 行为 |
+|------|------|
+| **System 注入** | `skill load <name>` 将 `SKILL.md` body prepend 到 immutable system 子段（需新 session 生效，保缓存） |
+| **Skill 工具** | `invoke_skill(name, query)` 由运行时读 SKILL.md 并返回指引文本（轻量，学习项目推荐） |
+
+### 5.4 验收标准
+
+- ✅ 配置一个 MCP server（如 filesystem）后 Agent 可调用其工具
+- ✅ `skills/` 下 SKILL.md 可通过 `invoke_skill` 触发
+- ✅ 禁用列表中的 MCP tool 不出现在 API tools 数组
+
+---
+
+## 📋 Phase 6: 多角色工作流（Config 驱动 Agent Loop）
+
+**目标**: 用 **JSON/YAML/Markdown frontmatter** 定义多个 Agent 角色与它们之间的 **工作循环**，实现「planner → solver → reviewer → 循环或结束」等 DIY 编排，而无需改 TypeScript 代码。
+
+**依赖**: 单 Agent ReAct 稳定（Phase 2–4）；每个角色 = 不同 `system` + `tools` 子集 + 可选 `model`。
+
+> 这是 **编排层**，不是替代 ReAct 内核。每个角色内部仍跑 `runAgent()`。
+
+---
+
+### 6.1 配置文件形态
+
+支持两种（二选一，JSON 优先实现）：
+
+**`workflows/debug-loop.json`**
+
+```json
+{
+  "name": "debug-loop",
+  "roles": {
+    "planner": {
+      "prompt_file": "./roles/planner.md",
+      "tools": ["read_file", "grep_search", "list_files"],
+      "model": "gemini-2.0-flash",
+      "max_turns": 5
+    },
+    "solver": {
+      "prompt_file": "./roles/solver.md",
+      "tools": ["read_file", "write_file", "run_shell", "diff_file"],
+      "max_turns": 10
+    },
+    "reviewer": {
+      "prompt_file": "./roles/reviewer.md",
+      "tools": ["read_file", "grep_search", "diff_file"],
+      "model": "gemini-2.0-flash",
+      "max_turns": 3
+    }
+  },
+  "flow": [
+    { "role": "planner", "input": "{{user_task}}" },
+    { "role": "solver", "input": "Plan:\n{{planner.output}}" },
+    {
+      "role": "reviewer",
+      "input": "Changes:\n{{solver.output}}\n\nDiff summary requested."
+    },
+    {
+      "loop": {
+        "when": "{{reviewer.verdict}} == 'needs_revision'",
+        "max_rounds": 3,
+        "steps": [
+          { "role": "solver", "input": "Review feedback:\n{{reviewer.output}}" },
+          { "role": "reviewer", "input": "Re-review:\n{{solver.output}}" }
+        ]
+      }
+    },
+    { "emit": "{{reviewer.verdict}} == 'approved' ? solver.output : reviewer.output" }
+  ]
+}
+```
+
+**`roles/planner.md`**（OpenCode 风格 frontmatter）
+
+```markdown
+---
+name: planner
+description: 分析问题并输出步骤计划，不直接改代码
+tools: [read_file, grep_search, list_files]
+---
+
+你是规划者。只输出计划，不调用 write_file。
+```
+
+### 6.2 运行时：`WorkflowRunner`
+
+```typescript
+interface WorkflowContext {
+  user_task: string;
+  [role: string]: { output: string; messages: ChatMessage[]; summary?: TaskSummaryDoc };
+}
+
+// src/workflow-runner.ts
+export async function runWorkflow(
+  workflowPath: string,
+  userTask: string,
+  config: AgentConfig,
+): Promise<WorkflowResult>;
+```
+
+- 每步调用 `runAgent({ prompt, config, session, roleSystem })`
+- 步骤间 **共享 session**（同 `session_id`）或 **子 session**（reviewer 只看 solver 摘要，省 token）——config 可选 `share_session: true|false`
+- `{{role.output}}` 模板替换；`verdict` 由 reviewer 末尾 JSON 约定：`{"verdict":"approved"|"needs_revision"}`
+
+### 6.3 与 Phase 2 上下文策略的配合
+
+| 模式 | 行为 |
+|------|------|
+| `share_session: true` | 全角色共用一个 context-policy / ActionStore，recall 可跨角色 |
+| `share_session: false` | 每角色独立 `current_messages`，只传递上一步 `output` 摘要（更干净，推荐 reviewer） |
+
+### 6.4 CLI
+
+```bash
+npm start -- --workflow workflows/debug-loop.json "修复登录 401"
+npm start -- --role planner "只分析不改代码：..."
+```
+
+### 6.5 实施顺序
+
+| 步骤 | 内容 |
+|------|------|
+| 6a | JSON workflow 解析 + 线性 flow（无 loop） |
+| 6b | `loop` + `when` 条件 + `max_rounds` |
+| 6c | Markdown role 文件 + frontmatter |
+| 6d | `share_session` 策略 + 跨角色 TaskSummary |
+
+### 6.6 验收标准
+
+- ✅ 三角色线性流：planner → solver → reviewer 跑通
+- ✅ reviewer 返回 `needs_revision` 时 solver↔reviewer 循环 ≤ `max_rounds`
+- ✅ `--workflow` 与 `--resume` 可组合（workflow 状态写入 session）
+- ✅ 改 `planner.md` 无需改 TypeScript
+
+### 6.7 刻意不做（避免 scope 膨胀）
+
+- 非 DAG 的任意图编排（先限 loop + 线性）
+- 角色间并行（Phase 6+ 再考虑）
+- 可视化 workflow 编辑器
+
+---
+
 ## 🔧 技术选型
 
 | 组件 | 选择 | 理由 |
@@ -525,42 +1162,41 @@ src/
 
 ---
 
-## 📊 数据流图
+## 📊 数据流图（含 Phase 2）
 
 ```
-用户提问
+用户提问 → [Task Block 开始]
    ↓
-[Task Block 开始]
+LLM → tool_calls → executeTool
+   ├─ ActionStore 冷写 (全文)
+   └─ messages 热写 (inline / 截断)
    ↓
-LLM → tool_calls → executeTool → 结果回注 (循环)
+turn 结束 → pointerize (frozen) / prune (compacted_at)
    ↓
-Agent 返回总结 → [Task Block 结束]
+预算检查 → shouldCompress?
+   ├─ 否 → assembleApiMessages → 继续 ReAct
+   └─ 是 → TaskSummary + 压缩事件消息 + replay user task
    ↓
-生成 TaskSummary (结构化模板)
-    ↓
- 存入 Zvec (384维向量+全文索引) + session.json (持久化)
-    ↓
-预算检查 → 需要压缩？
-   ├─ 否 → 继续对话
-   └─ 是 → 早期 task → session 摘要，中期 task → 结构化摘要
+需要历史细节 → recall_query → head_tail 回注
    ↓
-构建上下文 (近期完整 + 中期摘要 + 早期摘要)
-   ↓
-动态生成系统提示词
-   ↓
-注入 LLM → 下一轮
+Agent 返回总结 → [Task Block 结束] → session.tasks + Zvec upsert
 ```
 
 ---
 
 ## 🎓 学习对照点
 
-| 概念 | minimal-agent-ts | Scream Code | Zerostack |
-|------|------------------|-------------|-----------|
-| 上下文管理 | Token 驱动滑动窗口 | 短期/长期记忆分离 | 委托 rig 处理 |
-| 历史检索 | recall_query tool | memory_recall hook | 无（依赖上下文） |
-| 摘要生成 | 结构化模板 + Agent 自身总结 | LLM summarize | 无 |
-| 持久化 | session.json | SQLite + 向量库 | 内存为主 |
+| 概念 | minimal-agent-ts | OpenCode | Scream Code | Zerostack |
+|------|------------------|----------|-------------|-----------|
+| 上下文管理 | 滑动窗口 + 指针化 + prune | Prune 标记隐藏 → LLM summary | 短期/长期记忆分离 | 委托 rig 处理 |
+| 大 tool 结果 | 指针卡片 + 冷存储 | `compacted` 整段隐藏 | 结构化 action blocks | 在上下文中流转 |
+| 历史检索 | recall_query (action_id / 语义) | 重跑 read/grep | memory_recall hook | 无 |
+| 假删除 | `compacted_at` + `pointerized` | `compacted` 时间戳 | SQL 持久化 | session compaction |
+| 摘要生成 | TaskSummary 混合版 | LLM 5 段 summary | LLM summarize | rig 侧压缩 |
+| 缓存策略 | frozen 指针 + immutable system | 未特别强调 | 未特别强调 | rig prompt caching |
+| 持久化 | session.json + actions/ | DB 全消息 | SQLite + 向量库 | 内存为主 |
+| 工具并行 | 依赖图 + 启发式分批 (Phase 4b) | 内置 | — | — |
+| 多角色编排 | JSON/MD workflow (Phase 6) | `@agent` 切换 | subagent | `.` prompt 切换 |
 
 ---
 
@@ -570,9 +1206,11 @@ Agent 返回总结 → [Task Block 结束]
 
 | 日期 | 版本 | 变更内容 |
 |------|------|---------|
+| 2026-06-27 | v1.3 | **长期路线图**: 总览 Phase 1–6；Phase 1.5 并入 Phase 4（工具扩展、diff_file、并行 scheduler、依赖图、SSE 流式）；新增 Phase 5 MCP/Skills、Phase 6 多角色 workflow（JSON/MD config） |
+| 2026-06-27 | v1.2 | **Phase 2 整合版**: 冷存储 ActionStore、指针化 tool 结果、OpenCode 式 `compacted_at` prune、`context-policy.ts` 统一策略、`recall_query` 解引用协议（head_tail / stale）、缓存平衡（immutable system + 压缩事件消息）、分阶段实施 2a–2d |
 | 2026-06-27 | v1.1 | **Phase 1 细化**: 混合版 TaskSummary（自动提取+Agent补充）、会话续接 (--resume)、滑动窗口预算策略、Zvec 替代 ChromaDB |
 | 2026-06-26 | v1.0 | 初始版本: 核心概念模型（四层 ID）、数据结构设计、三阶段规划、技术选型 (Zvec + all-MiniLM-L6-v2) |
 
 ---
 
-*创建者: 小千Chikusa & 哥Jawn  | 最后更新: 2026-06-27*
+*创建者: 小千Chikusa & 哥Jawn  | 最后更新: 2026-06-27 (v1.3)*
