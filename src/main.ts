@@ -114,6 +114,13 @@ async function main(): Promise<void> {
             `\n  finish=${event.finishReason ?? 'null'} tokens=${JSON.stringify(event.usage ?? {})}`,
           );
           break;
+        case 'compression':
+          console.log(
+            event.pruned
+              ? `  📦 pruned ${event.pruned} messages (compacted_at)`
+              : `  📦 compression event: summaries + notice + replay user task`,
+          );
+          break;
         case 'tool_batch':
           if (event.parallel > 1) {
             console.log(`  ⚡ parallel batch: ${event.parallel}/${event.total} tools`);

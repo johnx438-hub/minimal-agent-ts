@@ -1,5 +1,9 @@
 import { saveAction } from './action-store.js';
-import { assembleApiMessages } from './context-policy.js';
+import {
+  assembleApiMessages,
+  maybePrune,
+  runCompressionEvent,
+} from './context-policy.js';
 import { chat } from './llm.js';
 import { materializePriorTurnTools } from './pointerize.js';
 import { parseAgentSummary, extractCleanAnswer, getSummaryPromptExtension } from './summary.js';
@@ -26,6 +30,7 @@ export type AgentStepEvent =
   | { type: 'tool_batch'; turn: number; total: number; parallel: number }
   | { type: 'tool_call'; turn: number; name: string; args: string }
   | { type: 'tool_result'; turn: number; name: string; output: string }
+  | { type: 'compression'; turn: number; pruned?: number }
   | { type: 'final'; turn: number; text: string };
 
 export interface AgentResult {
@@ -97,11 +102,34 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
     tracker.onUserMessage(userTask, 1);
   }
 
+  const budget = createBudgetConfig(config.model);
+  let compressionEventDone = false;
+
   for (let turn = 1; turn <= config.maxTurns; turn++) {
     onStep?.({ type: 'turn_start', turn });
 
     if (turn > 1) {
       materializePriorTurnTools(messages, turn);
+
+      if (!compressionEventDone) {
+        const pruned = maybePrune(messages, turn);
+        if (pruned > 0) {
+          onStep?.({ type: 'compression', turn, pruned });
+        }
+
+        if (
+          runCompressionEvent({
+            messages,
+            session,
+            currentTurn: turn,
+            budget,
+            userTask,
+          })
+        ) {
+          compressionEventDone = true;
+          onStep?.({ type: 'compression', turn });
+        }
+      }
     }
 
     const apiMessages = assembleApiMessages(messages);
