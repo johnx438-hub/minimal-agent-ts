@@ -15,6 +15,29 @@ export interface ChatMessage {
   content: string | null;
   tool_calls?: ToolCall[];
   tool_call_id?: string;
+  /** Phase 2: linkage to ActionStore (not sent to LLM API). */
+  action_id?: string;
+  pointerized?: boolean;
+  compacted_at?: number;
+  turn?: number;
+}
+
+/** Cold-storage unit for one tool invocation (Phase 2). */
+export interface ActionBlock {
+  action_id: string;
+  task_id: string;
+  session_id: string;
+  turn_number: number;
+  tool_name: string;
+  args_json: string;
+  result_text: string;
+  result_hash: string;
+  byte_size: number;
+  line_count: number;
+  pointerized: boolean;
+  files_touched: string[];
+  timestamp: number;
+  token_cost: number;
 }
 
 /** Tool definition sent to the API. */

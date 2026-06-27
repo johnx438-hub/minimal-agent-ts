@@ -1,8 +1,11 @@
+import { saveAction } from './action-store.js';
+import { assembleApiMessages } from './context-policy.js';
 import { chat } from './llm.js';
-import { executeTool, TOOL_DEFINITIONS } from './tools.js';
-import { TaskTracker } from './task-tracker.js';
+import { materializePriorTurnTools } from './pointerize.js';
 import { parseAgentSummary, extractCleanAnswer, getSummaryPromptExtension } from './summary.js';
 import { buildContext, createBudgetConfig, shouldCompress, estimateTokens } from './context-budget.js';
+import { executeTool, TOOL_DEFINITIONS } from './tools.js';
+import { TaskTracker } from './task-tracker.js';
 import type { AgentConfig, ChatMessage, TaskSummaryDoc, SessionFile } from './types.js';
 
 export interface RunAgentOptions {
@@ -88,7 +91,13 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
   for (let turn = 1; turn <= config.maxTurns; turn++) {
     onStep?.({ type: 'turn_start', turn });
 
-    const { message, finishReason, usage } = await chat(messages, TOOL_DEFINITIONS, {
+    if (turn > 1) {
+      materializePriorTurnTools(messages, turn);
+    }
+
+    const apiMessages = assembleApiMessages(messages);
+
+    const { message, finishReason, usage } = await chat(apiMessages, TOOL_DEFINITIONS, {
       apiKey: config.apiKey,
       baseUrl: config.baseUrl,
       model: config.model,
@@ -121,11 +130,21 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
         onStep?.({ type: 'tool_result', turn, name, output });
 
-        // Observe: feed tool result back into history
+        let actionId: string | undefined;
+        if (tracker) {
+          const block = tracker.recordToolCall(name, args, output, turn);
+          if (block) {
+            saveAction(block);
+            actionId = block.action_id;
+          }
+        }
+
         const toolMsg: ChatMessage = {
           role: 'tool',
           tool_call_id: call.id,
           content: output,
+          action_id: actionId,
+          turn,
         };
 
         if (tracker) {
@@ -182,4 +201,5 @@ const SYSTEM_PROMPT = `You are a minimal coding assistant in a learning demo.
 You have tools: read_file, write_file, run_shell.
 - Prefer read_file before editing.
 - Explain briefly what you are doing.
-- When the task is done, reply with a short summary and stop calling tools.${getSummaryPromptExtension()}`;
+- When the task is done, reply with a short summary and stop calling tools.
+- Large tool outputs may appear as [action:…] cards; full text is stored and can be retrieved via recall_query (Phase 2b).${getSummaryPromptExtension()}`;

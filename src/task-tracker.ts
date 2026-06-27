@@ -1,4 +1,5 @@
-import type { ChatMessage, TaskSummaryDoc } from './types.js';
+import { buildActionBlock } from './action-store.js';
+import type { ActionBlock, ChatMessage, TaskSummaryDoc } from './types.js';
 
 /**
  * A complete task block: user prompt → tool calls → final answer.
@@ -18,6 +19,7 @@ export interface TaskBlock {
 export class TaskTracker {
   private sessionId: string;
   private taskCounter = 0;
+  private actionCounter = 0;
   private currentTask: TaskBlock | null = null;
   private completedTasks: TaskBlock[] = [];
 
@@ -47,6 +49,7 @@ export class TaskTracker {
     }
 
     // Start new task
+    this.actionCounter = 0;
     this.currentTask = {
       task_id: this.generateTaskId(),
       session_id: this.sessionId,
@@ -55,6 +58,37 @@ export class TaskTracker {
       messages: [message],
       tool_calls: [],
     };
+  }
+
+  private generateActionId(): string {
+    this.actionCounter++;
+    const shortHash = (this.currentTask?.task_id ?? this.sessionId).slice(-6);
+    return `action_${shortHash}_${String(this.actionCounter).padStart(3, '0')}`;
+  }
+
+  /**
+   * Record a tool invocation and build an ActionBlock for cold storage.
+   */
+  recordToolCall(
+    toolName: string,
+    argsJson: string,
+    resultText: string,
+    turn: number,
+  ): ActionBlock | null {
+    if (!this.currentTask) {
+      return null;
+    }
+
+    const actionId = this.generateActionId();
+    return buildActionBlock({
+      action_id: actionId,
+      task_id: this.currentTask.task_id,
+      session_id: this.sessionId,
+      turn_number: turn,
+      tool_name: toolName,
+      args_json: argsJson,
+      result_text: resultText,
+    });
   }
 
   /**
