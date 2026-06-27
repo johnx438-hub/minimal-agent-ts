@@ -229,7 +229,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
     }
 
     if (turn > 1) {
-      materializePriorTurnTools(messages, turn);
+      materializePriorTurnTools(messages, turn, {
+        keepInlineTurns: config.keepInlineTurns ?? 2,
+      });
 
       if (!compressionEventDone) {
         const pruned = maybePrune(messages, turn);
@@ -397,6 +399,6 @@ You have builtin tools (read_file, write_file, grep_search, list_files, diff_fil
 - Prefer read_file before editing.
 - Explain briefly what you are doing.
 - When the task is done, reply with a short summary and stop calling tools.
-- Large tool outputs appear as [action:…] cards. Use recall_query(action_id=...) for stored details (default head_tail slice).
+- Large tool outputs become [action:…] cards after a few turns; recent turns stay inline. Use recall_query(action_id=...) — returns full text up to 24KB by default.
 - If recall marks stale, use read_file for the latest file content.${skillTools}${skillExt}${getSummaryPromptExtension()}`;
 }

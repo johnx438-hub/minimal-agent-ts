@@ -61,15 +61,24 @@ export function buildPointerCard(block: ActionBlock, opts?: { truncated?: boolea
  * Replace prior-turn inline tool results with frozen pointer cards (once per message).
  * Called at the start of turn N to pointerize tool messages from turns < N.
  */
+export interface PointerizeOptions {
+  /** Tool messages from turns >= beforeTurn - keepInlineTurns stay inline. */
+  keepInlineTurns?: number;
+}
+
 export function materializePriorTurnTools(
   messages: ChatMessage[],
   beforeTurn: number,
+  opts?: PointerizeOptions,
 ): void {
+  const keepInlineTurns = Math.max(0, opts?.keepInlineTurns ?? 0);
+  const pointerizeBeforeTurn = beforeTurn - keepInlineTurns;
+
   for (const msg of messages) {
     if (msg.role !== 'tool' || msg.pointerized || !msg.action_id) {
       continue;
     }
-    if (msg.turn === undefined || msg.turn >= beforeTurn) {
+    if (msg.turn === undefined || msg.turn >= pointerizeBeforeTurn) {
       continue;
     }
 

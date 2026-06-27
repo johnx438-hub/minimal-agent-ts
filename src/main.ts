@@ -105,6 +105,16 @@ async function main(): Promise<void> {
 
   const loopGuardMode = parseLoopGuardMode(env('LOOP_GUARD', 'inject'));
 
+  const pluginConfig = loadAgentPluginConfig(cwd);
+  if (loadSkills.length > 0) {
+    pluginConfig.loaded_skills = [
+      ...new Set([...(pluginConfig.loaded_skills ?? []), ...loadSkills]),
+    ];
+  }
+
+  const keepInlineTurns = pluginConfig.pointerize_policy?.keep_inline_turns ?? 2;
+  const recallAutoFullMaxChars = pluginConfig.recall_policy?.auto_full_max_chars ?? 24_000;
+
   const config: AgentConfig = {
     apiKey,
     baseUrl: env('OPENAI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta/openai')!,
@@ -117,14 +127,9 @@ async function main(): Promise<void> {
       mode: loopGuardMode,
       hardCeiling: Number(env('LOOP_HARD_CEILING', '200')),
     },
+    keepInlineTurns,
+    recallAutoFullMaxChars,
   };
-
-  const pluginConfig = loadAgentPluginConfig(cwd);
-  if (loadSkills.length > 0) {
-    pluginConfig.loaded_skills = [
-      ...new Set([...(pluginConfig.loaded_skills ?? []), ...loadSkills]),
-    ];
-  }
 
   await ensureToolRegistry(cwd, pluginConfig);
 

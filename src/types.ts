@@ -63,6 +63,10 @@ export interface AgentConfig {
   /** Set at runtime for recall_query session scoping. */
   sessionId?: string;
   loopGuard?: LoopGuardConfig;
+  /** Recent tool turns kept inline before pointerize. */
+  keepInlineTurns?: number;
+  /** recall_query auto format=full when action_id hit and body is below this size. */
+  recallAutoFullMaxChars?: number;
 }
 
 /** recall_query response shape (Phase 2b). */

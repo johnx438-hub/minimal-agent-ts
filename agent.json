@@ -11,6 +11,12 @@
   ],
   "skills_dirs": ["./skills"],
   "loaded_skills": [],
+  "pointerize_policy": {
+    "keep_inline_turns": 2
+  },
+  "recall_policy": {
+    "auto_full_max_chars": 24000
+  },
   "mcp_policy": {
     "allow": ["*"],
     "deny": []

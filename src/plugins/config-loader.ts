@@ -25,6 +25,8 @@ export function defaultAgentPluginConfig(): AgentPluginConfig {
     mcp_servers: [],
     skills_dirs: ['./skills', resolve(homedir(), '.minimal-agent/skills')],
     mcp_policy: { allow: ['*'], deny: [] },
+    pointerize_policy: { keep_inline_turns: 2 },
+    recall_policy: { auto_full_max_chars: 24_000 },
     loaded_skills: [],
   };
 }
@@ -37,6 +39,8 @@ function mergeConfig(base: AgentPluginConfig, patch: Partial<AgentPluginConfig>)
     mcp_servers: patch.mcp_servers ?? base.mcp_servers,
     skills_dirs: patch.skills_dirs ?? base.skills_dirs,
     mcp_policy: { ...base.mcp_policy, ...patch.mcp_policy },
+    pointerize_policy: { ...base.pointerize_policy, ...patch.pointerize_policy },
+    recall_policy: { ...base.recall_policy, ...patch.recall_policy },
     loaded_skills: patch.loaded_skills ?? base.loaded_skills,
   };
 }

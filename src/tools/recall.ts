@@ -7,7 +7,7 @@ export const RECALL_DEFINITIONS: ToolDefinition[] = [
     function: {
       name: 'recall_query',
       description:
-        'Retrieve full text of a prior tool result from cold storage. Use action_id from [action:…] cards, or search by query keyword.',
+        'Retrieve a prior tool result from cold storage. With action_id, returns full text up to ~24KB by default; larger bodies use offset/limit. Keyword search uses head_tail unless format=full.',
       parameters: {
         type: 'object',
         properties: {

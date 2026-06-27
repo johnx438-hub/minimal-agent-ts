@@ -21,6 +21,26 @@ export interface RecallQueryParams {
 const HEAD_TAIL_FULL_MAX = 2000;
 const HEAD_CHARS = 800;
 const TAIL_CHARS = 200;
+const DEFAULT_AUTO_FULL_MAX_CHARS = 24_000;
+
+export function resolveRecallFormat(
+  params: RecallQueryParams,
+  block: ActionBlock | null,
+  autoFullMaxChars: number,
+): RecallFormat {
+  if (params.format) return params.format;
+  if (params.offset !== undefined || params.limit !== undefined) {
+    return 'full';
+  }
+  if (
+    params.action_id &&
+    block &&
+    block.result_text.length <= autoFullMaxChars
+  ) {
+    return 'full';
+  }
+  return 'head_tail';
+}
 
 export async function isActionStale(block: ActionBlock, cwd: string): Promise<boolean> {
   if (block.files_touched.length === 0) return false;
@@ -163,8 +183,10 @@ export async function recallQuery(
   params: RecallQueryParams,
   config: AgentConfig,
 ): Promise<RecallResult> {
-  const format: RecallFormat = params.format ?? 'head_tail';
+  const autoFullMaxChars =
+    config.recallAutoFullMaxChars ?? DEFAULT_AUTO_FULL_MAX_CHARS;
   const block = await resolveActionBlock(params, config);
+  const format = resolveRecallFormat(params, block, autoFullMaxChars);
 
   if (!block) {
     return {
@@ -192,14 +214,10 @@ export async function recallQuery(
     has_more = sliced.has_more;
     hint = sliced.hint;
   } else if (format === 'full') {
-    if (params.offset !== undefined || params.limit !== undefined) {
-      const sliced = sliceLines(text, params.offset, params.limit);
-      text = sliced.content;
-      has_more = sliced.has_more;
-      hint = sliced.hint;
-    } else {
-      text = block.result_text;
-      has_more = false;
+    text = block.result_text;
+    if (text.length > autoFullMaxChars) {
+      has_more = true;
+      hint = `full payload is ${text.length} chars; use offset=1 limit=200 (or smaller slices)`;
     }
   } else {
     const ht = applyHeadTail(text);
