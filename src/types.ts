@@ -57,6 +57,20 @@ export interface AgentConfig {
   maxTurns: number;
   cwd: string;
   allowShell: boolean;
+  /** Set at runtime for recall_query session scoping. */
+  sessionId?: string;
+}
+
+/** recall_query response shape (Phase 2b). */
+export interface RecallResult {
+  action_id: string;
+  tool_name: string;
+  matched: boolean;
+  content: string;
+  total_chars: number;
+  has_more: boolean;
+  stale?: boolean;
+  hint?: string;
 }
 
 /** Task summary with hybrid fields (auto-extract + Agent supplement). */

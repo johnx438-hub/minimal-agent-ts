@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import type { ActionBlock } from './types.js';
@@ -75,4 +75,24 @@ export function loadAction(actionId: string): ActionBlock | null {
   } catch {
     return null;
   }
+}
+
+/** List actions from cold storage, newest first. */
+export function listActions(sessionId?: string, taskId?: string): ActionBlock[] {
+  if (!existsSync(ACTIONS_DIR)) {
+    return [];
+  }
+
+  const blocks: ActionBlock[] = [];
+  for (const entry of readdirSync(ACTIONS_DIR)) {
+    if (!entry.endsWith('.json')) continue;
+    const block = loadAction(entry.replace(/\.json$/, ''));
+    if (!block) continue;
+    if (sessionId && block.session_id !== sessionId) continue;
+    if (taskId && block.task_id !== taskId) continue;
+    blocks.push(block);
+  }
+
+  blocks.sort((a, b) => b.timestamp - a.timestamp);
+  return blocks;
 }

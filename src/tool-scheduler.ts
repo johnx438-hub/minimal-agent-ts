@@ -5,6 +5,7 @@ const PARALLEL_SAFE = new Set([
   'grep_search',
   'list_files',
   'diff_file',
+  'recall_query',
 ]);
 
 const SERIAL_ONLY = new Set(['write_file', 'run_shell']);

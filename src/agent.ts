@@ -82,6 +82,11 @@ function resolveInitialMessages(opts: RunAgentOptions): {
 export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
   const { config, session, sessionId, stream = true, onStep, onTaskComplete } = opts;
 
+  const toolConfig: AgentConfig = {
+    ...config,
+    sessionId: sessionId ?? session?.session_id,
+  };
+
   const { messages: initial, userTask } = resolveInitialMessages(opts);
   const messages = [...initial];
 
@@ -144,7 +149,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
         onStep?.({ type: 'tool_call', turn, name, args });
 
-        const output = await executeTool(name, args, config);
+        const output = await executeTool(name, args, toolConfig);
 
         onStep?.({ type: 'tool_result', turn, name, output });
 
@@ -228,8 +233,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
 const SYSTEM_PROMPT = `You are a minimal coding assistant in a learning demo.
 
-You have tools: read_file, write_file, grep_search, list_files, diff_file, run_shell.
+You have tools: read_file, write_file, grep_search, list_files, diff_file, recall_query, run_shell.
 - Prefer read_file before editing.
 - Explain briefly what you are doing.
 - When the task is done, reply with a short summary and stop calling tools.
-- Large tool outputs may appear as [action:…] cards; full text is stored and can be retrieved via recall_query (Phase 2b).${getSummaryPromptExtension()}`;
+- Large tool outputs appear as [action:…] cards. Use recall_query(action_id=...) for stored details (default head_tail slice).
+- If recall marks stale, use read_file for the latest file content.${getSummaryPromptExtension()}`;
