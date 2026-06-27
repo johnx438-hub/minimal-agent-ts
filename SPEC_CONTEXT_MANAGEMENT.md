@@ -2,7 +2,7 @@
 
 > **目标**: 让最简 ReAct Agent 具备分层上下文管理能力，支持长对话不丢失关键信息  
 > **日期**: 2026-06-26  
-> **状态**: Draft v1.4 (Phase 2a–2c 已实现)
+> **状态**: Draft v1.5 (Phase 2 完整)
 
 ---
 
@@ -1207,6 +1207,8 @@ Agent 返回总结 → [Task Block 结束] → session.tasks + Zvec upsert
 | 日期 | 版本 | 变更内容 |
 |------|------|---------|
 | 2026-06-27 | v1.4 | **Phase 2c 实现**: OpenCode 式 `compacted_at` prune（40k/2-user 保护、20k 阈值）、`runCompressionEvent`（摘要注入 + notice + replay user task） |
+| 2026-06-27 | v1.5 | **Phase 2d**: Zvec `agent_memory` 混合检索（向量+FTS）、`embedding.ts`、recall query 语义搜索 |
+| 2026-06-27 | v1.4 | **Phase 2c**: `compacted_at` prune、`runCompressionEvent`（摘要 + notice + replay） |
 | 2026-06-27 | v1.3 | **长期路线图**: 总览 Phase 1–6；Phase 1.5 并入 Phase 4（工具扩展、diff_file、并行 scheduler、依赖图、SSE 流式）；新增 Phase 5 MCP/Skills、Phase 6 多角色 workflow（JSON/MD config） |
 | 2026-06-27 | v1.2 | **Phase 2 整合版**: 冷存储 ActionStore、指针化 tool 结果、OpenCode 式 `compacted_at` prune、`context-policy.ts` 统一策略、`recall_query` 解引用协议（head_tail / stale）、缓存平衡（immutable system + 压缩事件消息）、分阶段实施 2a–2d |
 | 2026-06-27 | v1.1 | **Phase 1 细化**: 混合版 TaskSummary（自动提取+Agent补充）、会话续接 (--resume)、滑动窗口预算策略、Zvec 替代 ChromaDB |

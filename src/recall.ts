@@ -1,6 +1,7 @@
 import { stat } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 
+import { searchActions } from './action-index.js';
 import { listActions, loadAction } from './action-store.js';
 import type { ActionBlock, AgentConfig, RecallResult } from './types.js';
 
@@ -109,7 +110,10 @@ function scoreAction(block: ActionBlock, query: string): number {
   return score;
 }
 
-function resolveActionId(params: RecallQueryParams, config: AgentConfig): ActionBlock | null {
+async function resolveActionBlock(
+  params: RecallQueryParams,
+  config: AgentConfig,
+): Promise<ActionBlock | null> {
   if (params.action_id) {
     const block = loadAction(params.action_id);
     if (!block) return null;
@@ -117,12 +121,27 @@ function resolveActionId(params: RecallQueryParams, config: AgentConfig): Action
     return block;
   }
 
-  if (!params.query?.trim()) return null;
+  const query = params.query?.trim();
+  if (!query) return null;
 
   const scope = params.scope ?? 'session';
   const sessionId = scope === 'session' ? config.sessionId : undefined;
-  let candidates = listActions(sessionId, params.task_id);
+  const taskId = scope === 'task' || params.task_id ? params.task_id : undefined;
 
+  const indexedIds = await searchActions({
+    query,
+    sessionId,
+    taskId,
+    topk: 5,
+  });
+
+  for (const id of indexedIds) {
+    const block = loadAction(id);
+    if (block) return block;
+  }
+
+  // Fallback: keyword scan of cold storage when index miss / disabled
+  let candidates = listActions(sessionId, taskId);
   if (scope === 'task' && params.task_id) {
     candidates = candidates.filter((b) => b.task_id === params.task_id);
   }
@@ -130,7 +149,7 @@ function resolveActionId(params: RecallQueryParams, config: AgentConfig): Action
   let best: ActionBlock | null = null;
   let bestScore = 0;
   for (const block of candidates) {
-    const s = scoreAction(block, params.query.trim());
+    const s = scoreAction(block, query);
     if (s > bestScore) {
       bestScore = s;
       best = block;
@@ -145,7 +164,7 @@ export async function recallQuery(
   config: AgentConfig,
 ): Promise<RecallResult> {
   const format: RecallFormat = params.format ?? 'head_tail';
-  const block = resolveActionId(params, config);
+  const block = await resolveActionBlock(params, config);
 
   if (!block) {
     return {

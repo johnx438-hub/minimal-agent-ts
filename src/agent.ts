@@ -1,3 +1,4 @@
+import { indexActionAsync, scheduleIndexSync } from './action-index.js';
 import { saveAction } from './action-store.js';
 import {
   assembleApiMessages,
@@ -102,6 +103,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
     tracker.onUserMessage(userTask, 1);
   }
 
+  scheduleIndexSync(toolConfig.sessionId);
+
   const budget = createBudgetConfig(config.model);
   let compressionEventDone = false;
 
@@ -186,6 +189,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
           const block = tracker.recordToolCall(name, args, output, turn);
           if (block) {
             saveAction(block);
+            indexActionAsync(block);
             actionId = block.action_id;
           }
         }

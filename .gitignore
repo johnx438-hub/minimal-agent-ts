@@ -23,3 +23,6 @@ agent_memory.zvec
 
 # Session runtime data
 .sessions/
+
+# Zvec index (Phase 2d)
+.sessions/agent_memory/
