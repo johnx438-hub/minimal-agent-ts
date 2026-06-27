@@ -47,13 +47,8 @@ async function chatBlocking(
   opts: ChatOptions,
 ): Promise<LlmResult> {
   const url = `${opts.baseUrl.replace(/\/$/, '')}/chat/completions`;
-  const bodyText = await postChat(url, opts.apiKey, {
-    model: opts.model,
-    messages,
-    tools,
-    tool_choice: 'auto',
-    stream: false,
-  });
+  const body = buildChatBody(opts.model, messages, tools, false);
+  const bodyText = await postChat(url, opts.apiKey, body);
 
   const data = JSON.parse(bodyText) as ChatCompletionResponse;
   return parseCompletion(data);
@@ -71,13 +66,7 @@ async function chatStream(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${opts.apiKey}`,
     },
-    body: JSON.stringify({
-      model: opts.model,
-      messages,
-      tools,
-      tool_choice: 'auto',
-      stream: true,
-    }),
+    body: JSON.stringify(buildChatBody(opts.model, messages, tools, true)),
   });
 
   if (!res.ok) {
@@ -180,6 +169,26 @@ async function chatStream(
     finishReason,
     usage,
   };
+}
+
+function buildChatBody(
+  model: string,
+  messages: ChatMessage[],
+  tools: ToolDefinition[],
+  stream: boolean,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    model,
+    messages,
+    stream,
+  };
+  if (tools.length > 0) {
+    body.tools = tools;
+    body.tool_choice = 'auto';
+  } else {
+    body.tool_choice = 'none';
+  }
+  return body;
 }
 
 async function postChat(

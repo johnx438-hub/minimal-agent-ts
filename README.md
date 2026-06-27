@@ -55,7 +55,9 @@ npm start -- --resume session_20260627203000 "继续上次的工作"
 | `OPENAI_API_KEY` | — | API Key（Gemini/OpenAI 兼容） |
 | `OPENAI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai` | Gemini OpenAI 兼容端点 |
 | `MODEL` | `gemini-2.0-flash` | 模型名 |
-| `MAX_TURNS` | `10` | 最大 ReAct 轮数 |
+| `MAX_TURNS` | `0` | `0` = 不限轮次；设正整数则硬上限 |
+| `LOOP_HARD_CEILING` | `200` | `MAX_TURNS=0` 时的安全顶 |
+| `LOOP_GUARD` | `inject` | 循环检测：`inject`（收口总结）/ `terminate` / `off` |
 | `ALLOW_SHELL` | `0` | 设为 `1` 启用 `run_shell`（等同 `--allow-shell`） |
 | `MAX_CONTEXT_TOKENS` | — | 手动覆盖模型上下文上限（如 262000） |
 

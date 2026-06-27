@@ -1,3 +1,5 @@
+import type { LoopGuardConfig } from './loop-guard.js';
+
 /** OpenAI-compatible chat message (subset we need for the loop). */
 export type Role = 'system' | 'user' | 'assistant' | 'tool';
 
@@ -54,11 +56,13 @@ export interface AgentConfig {
   apiKey: string;
   baseUrl: string;
   model: string;
+  /** 0 = unlimited (loop guard + hard ceiling apply). */
   maxTurns: number;
   cwd: string;
   allowShell: boolean;
   /** Set at runtime for recall_query session scoping. */
   sessionId?: string;
+  loopGuard?: LoopGuardConfig;
 }
 
 /** recall_query response shape (Phase 2b). */

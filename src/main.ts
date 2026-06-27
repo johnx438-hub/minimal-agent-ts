@@ -4,6 +4,7 @@ import 'dotenv/config';  // Load .env file
 import { loadAgentPluginConfig } from './plugins/config-loader.js';
 import { runAgent } from './agent.js';
 import { createSession, loadSession, saveSession } from './session.js';
+import { parseLoopGuardMode } from './loop-guard.js';
 import { ensureToolRegistry, toolRegistry } from './tools/registry.js';
 import type { AgentConfig } from './types.js';
 
@@ -77,7 +78,9 @@ function parseArgs(argv: string[]): {
     console.error('Optional env:');
     console.error('  OPENAI_BASE_URL  (default: Gemini OpenAI-compatible URL)');
     console.error('  MODEL            (default: gemini-2.0-flash)');
-    console.error('  MAX_TURNS        (default: 10)');
+    console.error('  MAX_TURNS        (default: 0 = unlimited; loop guard + hard ceiling)');
+    console.error('  LOOP_HARD_CEILING (default: 200)');
+    console.error('  LOOP_GUARD       inject | terminate | off (default: inject)');
     console.error('  --allow-shell    enable run_shell tool (or ALLOW_SHELL=1)');
     console.error('');
     console.error('Plugins: agent.json (builtin_tools, mcp_servers, skills_dirs)');
@@ -100,13 +103,20 @@ async function main(): Promise<void> {
 
   const useStream = env('STREAM', '1') !== '0';
 
+  const loopGuardMode = parseLoopGuardMode(env('LOOP_GUARD', 'inject'));
+
   const config: AgentConfig = {
     apiKey,
     baseUrl: env('OPENAI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta/openai')!,
     model: env('MODEL', 'gemini-2.0-flash')!,
-    maxTurns: Number(env('MAX_TURNS', '10')),
+    maxTurns: Number(env('MAX_TURNS', '0')),
     cwd,
     allowShell: cliAllowShell || env('ALLOW_SHELL') === '1',
+    loopGuard: {
+      enabled: loopGuardMode !== 'off',
+      mode: loopGuardMode,
+      hardCeiling: Number(env('LOOP_HARD_CEILING', '200')),
+    },
   };
 
   const pluginConfig = loadAgentPluginConfig(cwd);
@@ -188,6 +198,11 @@ async function main(): Promise<void> {
             event.pruned
               ? `  📦 pruned ${event.pruned} messages (compacted_at)`
               : `  📦 compression event: summaries + notice + replay user task`,
+          );
+          break;
+        case 'loop_guard':
+          console.log(
+            `  🔄 loop_guard: ${event.action}${event.reason ? ` (${event.reason})` : ''}`,
           );
           break;
         case 'tool_batch':

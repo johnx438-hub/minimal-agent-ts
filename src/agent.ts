@@ -7,6 +7,12 @@ import {
   runCompressionEvent,
 } from './context-policy.js';
 import { chat } from './llm.js';
+import {
+  LoopGuard,
+  resolveTurnCeiling,
+  type LoopGuardConfig,
+  type ToolTurnRecord,
+} from './loop-guard.js';
 import { materializePriorTurnTools } from './pointerize.js';
 import { parseAgentSummary, extractCleanAnswer, getSummaryPromptExtension } from './summary.js';
 import { buildContext, createBudgetConfig, shouldCompress, estimateTokens } from './context-budget.js';
@@ -33,17 +39,25 @@ export type AgentStepEvent =
   | { type: 'tool_call'; turn: number; name: string; args: string }
   | { type: 'tool_result'; turn: number; name: string; output: string }
   | { type: 'compression'; turn: number; pruned?: number }
+  | {
+      type: 'loop_guard';
+      turn: number;
+      action: 'soft_nudge' | 'forced_summary' | 'terminate';
+      reason?: string;
+    }
   | { type: 'final'; turn: number; text: string };
 
 export interface AgentResult {
-  text: string;           // Final answer text
-  messages: ChatMessage[]; // All messages (for session persistence)
+  text: string;
+  messages: ChatMessage[];
 }
 
-/**
- * Minimal ReAct loop with task tracking and session support:
- *   Reason+Act (LLM) → Observe (tool results) → repeat until text answer or maxTurns.
- */
+const DEFAULT_LOOP_GUARD: LoopGuardConfig = {
+  enabled: true,
+  mode: 'inject',
+  hardCeiling: 200,
+};
+
 function stripSystemMessages(msgs: ChatMessage[]): ChatMessage[] {
   return msgs.filter((m) => m.role !== 'system');
 }
@@ -55,7 +69,6 @@ function buildUserTaskMessage(cwd: string, prompt: string): ChatMessage {
   };
 }
 
-/** Assemble the first message batch: system + history (+ compression) + new user task. */
 function resolveInitialMessages(opts: RunAgentOptions): {
   messages: ChatMessage[];
   userTask: ChatMessage;
@@ -86,6 +99,50 @@ function resolveInitialMessages(opts: RunAgentOptions): {
   return { messages: [system, userTask], userTask };
 }
 
+function buildStoppedResult(
+  messages: ChatMessage[],
+  reason: string,
+  turn: number,
+  onStep?: RunAgentOptions['onStep'],
+): AgentResult {
+  const text = `[Agent stopped: ${reason}]`;
+  messages.push({ role: 'assistant', content: text });
+  onStep?.({ type: 'loop_guard', turn, action: 'terminate', reason });
+  onStep?.({ type: 'final', turn, text });
+  return { text, messages };
+}
+
+function finalizeSuccess(
+  messages: ChatMessage[],
+  rawText: string,
+  turn: number,
+  tracker: TaskTracker | null,
+  onStep?: RunAgentOptions['onStep'],
+  onTaskComplete?: RunAgentOptions['onTaskComplete'],
+): AgentResult {
+  const agentFields = parseAgentSummary(rawText);
+  const cleanText = extractCleanAnswer(rawText);
+
+  onStep?.({ type: 'final', turn, text: cleanText });
+
+  if (tracker) {
+    tracker.onAssistantMessage({ role: 'assistant', content: rawText }, turn);
+    const taskBlock = tracker.finalizeCurrentTask();
+
+    if (taskBlock) {
+      const autoFields = tracker.extractAutoFields(taskBlock);
+      const summary: TaskSummaryDoc = {
+        ...autoFields,
+        pending_tasks: agentFields.pending_tasks,
+        current_work: agentFields.current_work || cleanText.slice(0, 500),
+      };
+      onTaskComplete?.(summary);
+    }
+  }
+
+  return { text: cleanText, messages };
+}
+
 export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
   const { config, session, sessionId, stream = true, onStep, onTaskComplete } = opts;
 
@@ -93,6 +150,10 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
     ...config,
     sessionId: sessionId ?? session?.session_id,
   };
+
+  const loopGuardConfig = config.loopGuard ?? DEFAULT_LOOP_GUARD;
+  const loopGuard = new LoopGuard(loopGuardConfig);
+  const turnCeiling = resolveTurnCeiling(config.maxTurns, loopGuardConfig.hardCeiling);
 
   const { messages: initial, userTask } = resolveInitialMessages(opts);
   const messages = [...initial];
@@ -109,8 +170,63 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
   const budget = createBudgetConfig(config.model);
   let compressionEventDone = false;
 
-  for (let turn = 1; turn <= config.maxTurns; turn++) {
+  for (let turn = 1; ; turn++) {
+    if (turn > turnCeiling) {
+      return buildStoppedResult(
+        messages,
+        `turn ceiling reached (${turnCeiling})`,
+        turn,
+        onStep,
+      );
+    }
+
     onStep?.({ type: 'turn_start', turn });
+
+    if (loopGuard.shouldForceSummaryTurn()) {
+      loopGuard.activateForcedSummary();
+      onStep?.({
+        type: 'loop_guard',
+        turn,
+        action: 'forced_summary',
+        reason: 'repeated tool calls with no progress',
+      });
+
+      const apiMessages = assembleApiMessages(messages);
+      const { message, finishReason, usage } = await chat(apiMessages, [], {
+        apiKey: config.apiKey,
+        baseUrl: config.baseUrl,
+        model: config.model,
+        stream,
+        onToken: stream
+          ? (delta) => onStep?.({ type: 'token', turn, delta })
+          : undefined,
+      });
+
+      onStep?.({ type: 'llm_done', turn, finishReason, usage });
+
+      if (message.tool_calls && message.tool_calls.length > 0) {
+        const decision = loopGuard.onForcedSummaryViolation();
+        return buildStoppedResult(messages, decision.reason ?? 'forced summary violated', turn, onStep);
+      }
+
+      const rawText = (message.content ?? '').trim();
+      if (rawText) {
+        messages.push({ role: 'assistant', content: rawText });
+        loopGuard.afterTextResponse();
+        return finalizeSuccess(messages, rawText, turn, tracker, onStep, onTaskComplete);
+      }
+
+      messages.push({ role: 'assistant', content: '' });
+      const emptyDecision = loopGuard.afterEmptyResponse();
+      if (emptyDecision.action === 'terminate') {
+        return buildStoppedResult(messages, emptyDecision.reason ?? 'empty during summary', turn, onStep);
+      }
+      messages.push({
+        role: 'user',
+        content: 'Please provide a plain-text summary without calling tools.',
+      });
+      continue;
+    }
 
     if (turn > 1) {
       materializePriorTurnTools(messages, turn);
@@ -137,7 +253,6 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
     }
 
     const apiMessages = assembleApiMessages(messages);
-
     const toolDefs = getToolDefinitions(toolConfig);
 
     const { message, finishReason, usage } = await chat(apiMessages, toolDefs, {
@@ -152,7 +267,6 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
     onStep?.({ type: 'llm_done', turn, finishReason, usage });
 
-    // Path A: model wants to call tools (Act)
     if (message.tool_calls && message.tool_calls.length > 0) {
       const assistantMsg: ChatMessage = {
         role: 'assistant',
@@ -160,7 +274,6 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         tool_calls: message.tool_calls,
       };
 
-      // Track task progress
       if (tracker) {
         tracker.onAssistantMessage(assistantMsg, turn);
       }
@@ -176,6 +289,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
       });
 
       const resultById = new Map<string, { output: string; actionId?: string }>();
+      const turnRecords: ToolTurnRecord[] = [];
 
       async function runOne(call: ToolCall): Promise<void> {
         const name = call.function.name;
@@ -186,6 +300,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         const output = await executeTool(name, args, toolConfig);
 
         onStep?.({ type: 'tool_result', turn, name, output });
+        turnRecords.push({ name, argsJson: args, output });
 
         let actionId: string | undefined;
         if (tracker) {
@@ -224,46 +339,50 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         messages.push(toolMsg);
       }
 
-      continue; // next turn — LLM sees tool results (ReAct loop)
-    }
-
-    // Path B: model returned final text (Done)
-    const rawText = (message.content ?? '').trim();
-    if (rawText) {
-      // Parse Agent-supplemented fields from appended JSON
-      const agentFields = parseAgentSummary(rawText);
-      const cleanText = extractCleanAnswer(rawText);
-
-      onStep?.({ type: 'final', turn, text: cleanText });
-
-      // Finalize task and generate summary
-      if (tracker) {
-        tracker.onAssistantMessage({ role: 'assistant', content: rawText }, turn);
-        const taskBlock = tracker.finalizeCurrentTask();
-
-        if (taskBlock) {
-          const autoFields = tracker.extractAutoFields(taskBlock);
-
-          // Hybrid summary: auto-extracted + Agent-supplemented (~50 tokens)
-          const summary: TaskSummaryDoc = {
-            ...autoFields,
-            pending_tasks: agentFields.pending_tasks,
-            current_work: agentFields.current_work || cleanText.slice(0, 500),
-          };
-
-          onTaskComplete?.(summary);
-        }
+      const loopDecision = loopGuard.afterToolTurn(turn, turnRecords);
+      if (loopDecision.action === 'soft_nudge' && loopDecision.message) {
+        messages.push({ role: 'user', content: loopDecision.message });
+        onStep?.({ type: 'loop_guard', turn, action: 'soft_nudge' });
+      } else if (loopDecision.action === 'forced_summary' && loopDecision.message) {
+        messages.push({ role: 'user', content: loopDecision.message });
+        onStep?.({
+          type: 'loop_guard',
+          turn,
+          action: 'forced_summary',
+          reason: loopDecision.reason,
+        });
+      } else if (loopDecision.action === 'terminate') {
+        return buildStoppedResult(messages, loopDecision.reason ?? 'loop detected', turn, onStep);
       }
 
-      return { text: cleanText, messages };
+      continue;
     }
 
-    // Path C: empty response — nudge and retry (zerostack-style continue)
+    const rawText = (message.content ?? '').trim();
+    if (rawText) {
+      messages.push({ role: 'assistant', content: rawText });
+      loopGuard.afterTextResponse();
+      return finalizeSuccess(messages, rawText, turn, tracker, onStep, onTaskComplete);
+    }
+
     messages.push({ role: 'assistant', content: '' });
+    const emptyDecision = loopGuard.afterEmptyResponse();
+    if (emptyDecision.action === 'forced_summary' && emptyDecision.message) {
+      messages.push({ role: 'user', content: emptyDecision.message });
+      onStep?.({
+        type: 'loop_guard',
+        turn,
+        action: 'forced_summary',
+        reason: emptyDecision.reason,
+      });
+      continue;
+    }
+    if (emptyDecision.action === 'terminate') {
+      return buildStoppedResult(messages, emptyDecision.reason ?? 'empty responses', turn, onStep);
+    }
+
     messages.push({ role: 'user', content: 'Please continue or summarize what you found.' });
   }
-
-  throw new Error(`max turns exceeded (${config.maxTurns})`);
 }
 
 function buildSystemPrompt(): string {
