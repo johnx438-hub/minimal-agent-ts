@@ -12,6 +12,7 @@ const DEFAULT_BUILTIN_TOOLS = [
   'diff_file',
   'recall_query',
   'invoke_skill',
+  'run_shell',
 ];
 
 function expandHome(path: string): string {

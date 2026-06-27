@@ -38,7 +38,8 @@ export OPENAI_API_KEY="your-gemini-key"
 npm start -- "列出当前目录有哪些文件，读 README 如果有的话，用一句话总结"
 
 # 允许执行 shell（慎用）
-ALLOW_SHELL=1 npm start -- "运行 npm run typecheck 并汇报结果"
+npm start -- --allow-shell "运行 npm run typecheck 并汇报结果"
+# 或: ALLOW_SHELL=1 npm start -- "..."
 
 # 指定工作目录
 npm start -- --cwd /home/archer/zerostack-analysis/zerostack "用一句话说明这个项目是做什么的"
@@ -55,7 +56,7 @@ npm start -- --resume session_20260627203000 "继续上次的工作"
 | `OPENAI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai` | Gemini OpenAI 兼容端点 |
 | `MODEL` | `gemini-2.0-flash` | 模型名 |
 | `MAX_TURNS` | `10` | 最大 ReAct 轮数 |
-| `ALLOW_SHELL` | `0` | 设为 `1` 才启用 `run_shell` |
+| `ALLOW_SHELL` | `0` | 设为 `1` 启用 `run_shell`（等同 `--allow-shell`） |
 | `MAX_CONTEXT_TOKENS` | — | 手动覆盖模型上下文上限（如 262000） |
 
 ## 建议学习顺序

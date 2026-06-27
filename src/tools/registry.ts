@@ -130,7 +130,7 @@ export class ToolRegistry {
       const builtin = ALL_BUILTIN[name];
       if (builtin && this.enabledBuiltin.has(name)) {
         if (name === 'run_shell' && !config.allowShell) {
-          return 'error: run_shell is disabled. Set ALLOW_SHELL=1 to enable.';
+          return 'error: run_shell is disabled. Use --allow-shell or set ALLOW_SHELL=1.';
         }
         const result = await builtin.handler(name, args, config);
         if (result !== null) return result;

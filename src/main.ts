@@ -18,9 +18,17 @@ function parseArgs(argv: string[]): {
   resumeSessionId?: string;
   listTools: boolean;
   loadSkills: string[];
+  allowShell: boolean;
 } {
   let listTools = false;
   const loadSkills: string[] = [];
+  let allowShell = false;
+
+  const shellIdx = argv.indexOf('--allow-shell');
+  if (shellIdx >= 0) {
+    allowShell = true;
+    argv = [...argv.slice(0, shellIdx), ...argv.slice(shellIdx + 1)];
+  }
 
   const listIdx = argv.indexOf('--list-tools');
   if (listIdx >= 0) {
@@ -70,18 +78,19 @@ function parseArgs(argv: string[]): {
     console.error('  OPENAI_BASE_URL  (default: Gemini OpenAI-compatible URL)');
     console.error('  MODEL            (default: gemini-2.0-flash)');
     console.error('  MAX_TURNS        (default: 10)');
-    console.error('  ALLOW_SHELL=1    enable run_shell tool');
+    console.error('  --allow-shell    enable run_shell tool (or ALLOW_SHELL=1)');
     console.error('');
     console.error('Plugins: agent.json (builtin_tools, mcp_servers, skills_dirs)');
     process.exit(1);
   }
 
-  return { prompt, cwd, resumeSessionId, listTools, loadSkills };
+  return { prompt, cwd, resumeSessionId, listTools, loadSkills, allowShell };
 }
 
 async function main(): Promise<void> {
   const rawArgv = process.argv.slice(2);
-  const { prompt, cwd, resumeSessionId, listTools, loadSkills } = parseArgs(rawArgv);
+  const { prompt, cwd, resumeSessionId, listTools, loadSkills, allowShell: cliAllowShell } =
+    parseArgs(rawArgv);
 
   const apiKey = env('OPENAI_API_KEY') ?? env('OPENROUTER_API_KEY');
   if (!apiKey) {
@@ -97,7 +106,7 @@ async function main(): Promise<void> {
     model: env('MODEL', 'gemini-2.0-flash')!,
     maxTurns: Number(env('MAX_TURNS', '10')),
     cwd,
-    allowShell: env('ALLOW_SHELL') === '1',
+    allowShell: cliAllowShell || env('ALLOW_SHELL') === '1',
   };
 
   const pluginConfig = loadAgentPluginConfig(cwd);
@@ -116,6 +125,9 @@ async function main(): Promise<void> {
       console.log(`  - ${def.function.name}`);
     }
     console.log(`Skills: ${toolRegistry.listSkillNames().join(', ') || '(none)'}`);
+    if (!config.allowShell) {
+      console.log('Note: run_shell hidden until --allow-shell or ALLOW_SHELL=1');
+    }
     await toolRegistry.shutdown();
     return;
   }
@@ -147,7 +159,7 @@ async function main(): Promise<void> {
   console.log('minimal-agent-ts');
   console.log(`model: ${config.model}`);
   console.log(`cwd:   ${config.cwd}`);
-  console.log(`shell: ${config.allowShell ? 'on' : 'off'}`);
+  console.log(`shell: ${config.allowShell ? 'on' : 'off (use --allow-shell)'}`);
   console.log(`session: ${session.session_id}`);
   console.log('─'.repeat(60));
   console.log(`task: ${prompt}\n`);

@@ -6,7 +6,8 @@
     "list_files",
     "diff_file",
     "recall_query",
-    "invoke_skill"
+    "invoke_skill",
+    "run_shell"
   ],
   "skills_dirs": ["./skills"],
   "loaded_skills": [],
