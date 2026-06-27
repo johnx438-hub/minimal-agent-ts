@@ -61,6 +61,8 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const useStream = env('STREAM', '1') !== '0';
+
   const config: AgentConfig = {
     apiKey,
     baseUrl: env('OPENAI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta/openai')!,
@@ -98,15 +100,24 @@ async function main(): Promise<void> {
     config,
     session,
     sessionId: session.session_id,
+    stream: useStream,
     onStep(event) {
       switch (event.type) {
         case 'turn_start':
           console.log(`\n[turn ${event.turn}] ── LLM ──`);
           break;
+        case 'token':
+          process.stdout.write(event.delta);
+          break;
         case 'llm_done':
           console.log(
-            `  finish=${event.finishReason ?? 'null'} tokens=${JSON.stringify(event.usage ?? {})}`,
+            `\n  finish=${event.finishReason ?? 'null'} tokens=${JSON.stringify(event.usage ?? {})}`,
           );
+          break;
+        case 'tool_batch':
+          if (event.parallel > 1) {
+            console.log(`  ⚡ parallel batch: ${event.parallel}/${event.total} tools`);
+          }
           break;
         case 'tool_call':
           console.log(`  → ${event.name}(${event.args})`);
@@ -137,7 +148,9 @@ async function main(): Promise<void> {
   saveSession(session);
 
   console.log('\n' + '─'.repeat(60));
-  console.log(answer.text);
+  if (!useStream) {
+    console.log(answer.text);
+  }
   console.log('─'.repeat(60));
 }
 

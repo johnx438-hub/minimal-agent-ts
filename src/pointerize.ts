@@ -10,6 +10,7 @@ export const POINTER_RULES: Record<
   write_file: { minChars: Number.POSITIVE_INFINITY },
   grep_search: { minChars: 500, alwaysIfLines: 20 },
   list_files: { minChars: 500, alwaysIfLines: 30 },
+  diff_file: { minChars: 600, alwaysIfLines: 30 },
 };
 
 const NEVER_POINTERIZE_PREFIXES = ['error:', 'ok: wrote'];

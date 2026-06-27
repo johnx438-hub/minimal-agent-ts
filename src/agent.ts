@@ -4,22 +4,26 @@ import { chat } from './llm.js';
 import { materializePriorTurnTools } from './pointerize.js';
 import { parseAgentSummary, extractCleanAnswer, getSummaryPromptExtension } from './summary.js';
 import { buildContext, createBudgetConfig, shouldCompress, estimateTokens } from './context-budget.js';
+import { scheduleToolCalls } from './tool-scheduler.js';
 import { executeTool, TOOL_DEFINITIONS } from './tools.js';
 import { TaskTracker } from './task-tracker.js';
-import type { AgentConfig, ChatMessage, TaskSummaryDoc, SessionFile } from './types.js';
+import type { AgentConfig, ChatMessage, TaskSummaryDoc, SessionFile, ToolCall } from './types.js';
 
 export interface RunAgentOptions {
   prompt: string;
   config: AgentConfig;
   session?: SessionFile;
   sessionId?: string;
+  stream?: boolean;
   onStep?: (event: AgentStepEvent) => void;
   onTaskComplete?: (summary: TaskSummaryDoc) => void;
 }
 
 export type AgentStepEvent =
   | { type: 'turn_start'; turn: number }
+  | { type: 'token'; turn: number; delta: string }
   | { type: 'llm_done'; turn: number; finishReason: string | null; usage?: object }
+  | { type: 'tool_batch'; turn: number; total: number; parallel: number }
   | { type: 'tool_call'; turn: number; name: string; args: string }
   | { type: 'tool_result'; turn: number; name: string; output: string }
   | { type: 'final'; turn: number; text: string };
@@ -76,7 +80,7 @@ function resolveInitialMessages(opts: RunAgentOptions): {
 }
 
 export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
-  const { config, session, sessionId, onStep, onTaskComplete } = opts;
+  const { config, session, sessionId, stream = true, onStep, onTaskComplete } = opts;
 
   const { messages: initial, userTask } = resolveInitialMessages(opts);
   const messages = [...initial];
@@ -101,6 +105,10 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
       apiKey: config.apiKey,
       baseUrl: config.baseUrl,
       model: config.model,
+      stream,
+      onToken: stream
+        ? (delta) => onStep?.({ type: 'token', turn, delta })
+        : undefined,
     });
 
     onStep?.({ type: 'llm_done', turn, finishReason, usage });
@@ -120,7 +128,17 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
       messages.push(assistantMsg);
 
-      for (const call of message.tool_calls) {
+      const plan = scheduleToolCalls(message.tool_calls);
+      onStep?.({
+        type: 'tool_batch',
+        turn,
+        total: message.tool_calls.length,
+        parallel: plan.parallel.length,
+      });
+
+      const resultById = new Map<string, { output: string; actionId?: string }>();
+
+      async function runOne(call: ToolCall): Promise<void> {
         const name = call.function.name;
         const args = call.function.arguments;
 
@@ -139,11 +157,23 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
           }
         }
 
+        resultById.set(call.id, { output, actionId });
+      }
+
+      await Promise.all(plan.parallel.map(runOne));
+      for (const call of plan.serial) {
+        await runOne(call);
+      }
+
+      for (const call of message.tool_calls) {
+        const result = resultById.get(call.id);
+        if (!result) continue;
+
         const toolMsg: ChatMessage = {
           role: 'tool',
           tool_call_id: call.id,
-          content: output,
-          action_id: actionId,
+          content: result.output,
+          action_id: result.actionId,
           turn,
         };
 
@@ -198,7 +228,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
 const SYSTEM_PROMPT = `You are a minimal coding assistant in a learning demo.
 
-You have tools: read_file, write_file, run_shell.
+You have tools: read_file, write_file, grep_search, list_files, diff_file, run_shell.
 - Prefer read_file before editing.
 - Explain briefly what you are doing.
 - When the task is done, reply with a short summary and stop calling tools.
