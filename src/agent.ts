@@ -1,4 +1,5 @@
 import { indexActionAsync, scheduleIndexSync } from './action-index.js';
+import { toolRegistry } from './tools/registry.js';
 import { saveAction } from './action-store.js';
 import {
   assembleApiMessages,
@@ -10,7 +11,7 @@ import { materializePriorTurnTools } from './pointerize.js';
 import { parseAgentSummary, extractCleanAnswer, getSummaryPromptExtension } from './summary.js';
 import { buildContext, createBudgetConfig, shouldCompress, estimateTokens } from './context-budget.js';
 import { scheduleToolCalls } from './tool-scheduler.js';
-import { executeTool, TOOL_DEFINITIONS } from './tools.js';
+import { executeTool, getToolDefinitions } from './tools.js';
 import { TaskTracker } from './task-tracker.js';
 import type { AgentConfig, ChatMessage, TaskSummaryDoc, SessionFile, ToolCall } from './types.js';
 
@@ -60,7 +61,7 @@ function resolveInitialMessages(opts: RunAgentOptions): {
   userTask: ChatMessage;
 } {
   const { prompt, config, session } = opts;
-  const system: ChatMessage = { role: 'system', content: SYSTEM_PROMPT };
+  const system: ChatMessage = { role: 'system', content: buildSystemPrompt() };
   const userTask = buildUserTaskMessage(config.cwd, prompt);
 
   if (!session) {
@@ -137,7 +138,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
     const apiMessages = assembleApiMessages(messages);
 
-    const { message, finishReason, usage } = await chat(apiMessages, TOOL_DEFINITIONS, {
+    const toolDefs = getToolDefinitions(toolConfig);
+
+    const { message, finishReason, usage } = await chat(apiMessages, toolDefs, {
       apiKey: config.apiKey,
       baseUrl: config.baseUrl,
       model: config.model,
@@ -263,11 +266,18 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
   throw new Error(`max turns exceeded (${config.maxTurns})`);
 }
 
-const SYSTEM_PROMPT = `You are a minimal coding assistant in a learning demo.
+function buildSystemPrompt(): string {
+  const skillExt = toolRegistry.isInitialized() ? toolRegistry.getSkillSystemExtension() : '';
+  const skillTools = toolRegistry.isInitialized()
+    ? '\n- Use invoke_skill(name) to load local SKILL.md guidance when a task matches a skill.'
+    : '';
 
-You have tools: read_file, write_file, grep_search, list_files, diff_file, recall_query, run_shell.
+  return `You are a minimal coding assistant in a learning demo.
+
+You have builtin tools (read_file, write_file, grep_search, list_files, diff_file, recall_query, invoke_skill) plus any MCP tools exposed as mcp_<server>_<tool>.
 - Prefer read_file before editing.
 - Explain briefly what you are doing.
 - When the task is done, reply with a short summary and stop calling tools.
 - Large tool outputs appear as [action:…] cards. Use recall_query(action_id=...) for stored details (default head_tail slice).
-- If recall marks stale, use read_file for the latest file content.${getSummaryPromptExtension()}`;
+- If recall marks stale, use read_file for the latest file content.${skillTools}${skillExt}${getSummaryPromptExtension()}`;
+}

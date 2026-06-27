@@ -2,7 +2,7 @@
 
 > **目标**: 让最简 ReAct Agent 具备分层上下文管理能力，支持长对话不丢失关键信息  
 > **日期**: 2026-06-26  
-> **状态**: Draft v1.5 (Phase 2 完整)
+> **状态**: Draft v1.6 (Phase 5 完整)
 
 ---
 
@@ -11,10 +11,10 @@
 | Phase | 主题 | 优先级 | 依赖 | 状态 |
 |-------|------|--------|------|------|
 | **1** | 会话续接 + TaskSummary + 滑动窗口 | P0 学习核心 | — | ✅ 已实现 |
-| **2** | 冷存储 + 指针化 + recall + context-policy | P0 长会话质量 | Phase 1 | 📋 spec 就绪 |
+| **2** | 冷存储 + 指针化 + recall + context-policy | P0 长会话质量 | Phase 1 | ✅ 已实现 |
 | **3** | Session 层压缩 + 跨 session 索引 | P1 记忆纵深 | Phase 2d | 📋 草案 |
-| **4** | 工具扩展 + 并行执行 + SSE 流式 | P1 实用性与体感 | Phase 1 | 📋 本版新增 |
-| **5** | MCP / Skills 插件层 | P2 生态扩展 | Phase 4a | 📋 本版新增 |
+| **4** | 工具扩展 + 并行执行 + SSE 流式 | P1 实用性与体感 | Phase 1 | ✅ 已实现 |
+| **5** | MCP / Skills 插件层 | P2 生态扩展 | Phase 4a | ✅ 已实现 |
 | **6** | 多角色工作流（config 驱动 Agent Loop） | P2 编排能力 | Phase 4c + 稳定 ReAct | 📋 本版新增 |
 
 **原则**：先让「单 Agent + 干净上下文」跑稳（Phase 2），再叠工具与运行时（Phase 4），最后做编排（Phase 6）。Phase 1.5 内容并入 Phase 4，避免两条线并行改 `agent.ts`。
@@ -1019,6 +1019,24 @@ config.json / agent.json
 - ✅ `skills/` 下 SKILL.md 可通过 `invoke_skill` 触发
 - ✅ 禁用列表中的 MCP tool 不出现在 API tools 数组
 
+### 5.5 实现（v1.6）
+
+| 模块 | 文件 | 说明 |
+|------|------|------|
+| 配置 | `agent.json`, `src/plugins/config-loader.ts` | cwd + `~/.minimal-agent/agent.json` 合并 |
+| MCP | `src/plugins/mcp-manager.ts`, `agent.mcp.example.json` | stdio MCP → `mcp_<server>_<tool>`，`allow`/`deny` 过滤 |
+| Skills | `src/plugins/skills.ts`, `src/tools/skills-tool.ts`, `skills/` | 发现 `**/SKILL.md`，`invoke_skill` 工具 |
+| 注册表 | `src/tools/registry.ts` | `ToolRegistry.initialize()` 运行时合并 builtin + MCP |
+| CLI | `src/main.ts` | `--list-tools`、`--load-skills <name>` |
+
+**CLI 示例**
+
+```bash
+npm start -- --list-tools
+npm start -- --load-skills context-design "你的任务"
+# MCP: 复制 agent.mcp.example.json → agent.json，设 enabled: true
+```
+
 ---
 
 ## 📋 Phase 6: 多角色工作流（Config 驱动 Agent Loop）
@@ -1206,6 +1224,7 @@ Agent 返回总结 → [Task Block 结束] → session.tasks + Zvec upsert
 
 | 日期 | 版本 | 变更内容 |
 |------|------|---------|
+| 2026-06-28 | v1.6 | **Phase 5 实现**: `agent.json` 插件配置、stdio MCP（`@modelcontextprotocol/sdk`）、`invoke_skill` + `--load-skills`、`ToolRegistry` 运行时合并、`--list-tools` |
 | 2026-06-27 | v1.4 | **Phase 2c 实现**: OpenCode 式 `compacted_at` prune（40k/2-user 保护、20k 阈值）、`runCompressionEvent`（摘要注入 + notice + replay user task） |
 | 2026-06-27 | v1.5 | **Phase 2d**: Zvec `agent_memory` 混合检索（向量+FTS）、`embedding.ts`、recall query 语义搜索 |
 | 2026-06-27 | v1.4 | **Phase 2c**: `compacted_at` prune、`runCompressionEvent`（摘要 + notice + replay） |
@@ -1216,4 +1235,4 @@ Agent 返回总结 → [Task Block 结束] → session.tasks + Zvec upsert
 
 ---
 
-*创建者: 小千Chikusa & 哥Jawn  | 最后更新: 2026-06-27 (v1.3)*
+*创建者: 小千Chikusa & 哥Jawn  | 最后更新: 2026-06-28 (v1.6)*

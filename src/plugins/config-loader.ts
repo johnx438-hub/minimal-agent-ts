@@ -1,0 +1,73 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { resolve } from 'node:path';
+
+import type { AgentPluginConfig } from './types.js';
+
+const DEFAULT_BUILTIN_TOOLS = [
+  'read_file',
+  'write_file',
+  'grep_search',
+  'list_files',
+  'diff_file',
+  'recall_query',
+  'invoke_skill',
+];
+
+function expandHome(path: string): string {
+  return path.startsWith('~/') ? resolve(homedir(), path.slice(2)) : path;
+}
+
+export function defaultAgentPluginConfig(): AgentPluginConfig {
+  return {
+    builtin_tools: [...DEFAULT_BUILTIN_TOOLS],
+    mcp_servers: [],
+    skills_dirs: ['./skills', resolve(homedir(), '.minimal-agent/skills')],
+    mcp_policy: { allow: ['*'], deny: [] },
+    loaded_skills: [],
+  };
+}
+
+function mergeConfig(base: AgentPluginConfig, patch: Partial<AgentPluginConfig>): AgentPluginConfig {
+  return {
+    ...base,
+    ...patch,
+    builtin_tools: patch.builtin_tools ?? base.builtin_tools,
+    mcp_servers: patch.mcp_servers ?? base.mcp_servers,
+    skills_dirs: patch.skills_dirs ?? base.skills_dirs,
+    mcp_policy: { ...base.mcp_policy, ...patch.mcp_policy },
+    loaded_skills: patch.loaded_skills ?? base.loaded_skills,
+  };
+}
+
+function readJsonFile(path: string): Partial<AgentPluginConfig> | null {
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as Partial<AgentPluginConfig>;
+  } catch {
+    return null;
+  }
+}
+
+/** Load agent.json from cwd, then ~/.minimal-agent/agent.json. */
+export function loadAgentPluginConfig(cwd: string): AgentPluginConfig {
+  let config = defaultAgentPluginConfig();
+
+  const paths = [
+    resolve(cwd, 'agent.json'),
+    resolve(homedir(), '.minimal-agent/agent.json'),
+  ];
+
+  for (const path of paths) {
+    const patch = readJsonFile(path);
+    if (patch) {
+      config = mergeConfig(config, patch);
+    }
+  }
+
+  config.skills_dirs = (config.skills_dirs ?? []).map((d) => {
+    if (d.startsWith('~/') || d === '~') return expandHome(d);
+    return resolve(cwd, d);
+  });
+  return config;
+}

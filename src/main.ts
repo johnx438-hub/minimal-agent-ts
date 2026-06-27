@@ -1,8 +1,10 @@
 import { resolve } from 'node:path';
 import 'dotenv/config';  // Load .env file
 
+import { loadAgentPluginConfig } from './plugins/config-loader.js';
 import { runAgent } from './agent.js';
 import { createSession, loadSession, saveSession } from './session.js';
+import { ensureToolRegistry, toolRegistry } from './tools/registry.js';
 import type { AgentConfig } from './types.js';
 
 function env(name: string, fallback?: string): string | undefined {
@@ -14,7 +16,29 @@ function parseArgs(argv: string[]): {
   prompt: string;
   cwd: string;
   resumeSessionId?: string;
+  listTools: boolean;
+  loadSkills: string[];
 } {
+  let listTools = false;
+  const loadSkills: string[] = [];
+
+  const listIdx = argv.indexOf('--list-tools');
+  if (listIdx >= 0) {
+    listTools = true;
+    argv = [...argv.slice(0, listIdx), ...argv.slice(listIdx + 1)];
+  }
+
+  const skillsIdx = argv.indexOf('--load-skills');
+  if (skillsIdx >= 0 && argv[skillsIdx + 1]) {
+    loadSkills.push(
+      ...argv[skillsIdx + 1]
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
+    argv = [...argv.slice(0, skillsIdx), ...argv.slice(skillsIdx + 2)];
+  }
+
   // Check for --resume <session_id>
   let resumeSessionId: string | undefined;
   const resumeIdx = argv.indexOf('--resume');
@@ -34,26 +58,30 @@ function parseArgs(argv: string[]): {
     cwd = resolve(argv[cwdIdx + 1]);
   }
 
-  if (!prompt) {
+  if (!prompt && !listTools) {
     console.error('Usage:');
     console.error('  OPENROUTER_API_KEY=... npm start -- "你的任务"');
     console.error('  npm start -- --cwd /path/to/project "你的任务"');
     console.error('  npm start -- --resume <session_id> "继续上次的工作"');
+    console.error('  npm start -- --list-tools');
+    console.error('  npm start -- --load-skills context-design "任务"');
     console.error('');
     console.error('Optional env:');
-    console.error('  OPENAI_BASE_URL  (default: https://openrouter.ai/api/v1)');
-    console.error('  MODEL            (default: deepseek/deepseek-chat)');
+    console.error('  OPENAI_BASE_URL  (default: Gemini OpenAI-compatible URL)');
+    console.error('  MODEL            (default: gemini-2.0-flash)');
     console.error('  MAX_TURNS        (default: 10)');
     console.error('  ALLOW_SHELL=1    enable run_shell tool');
+    console.error('');
+    console.error('Plugins: agent.json (builtin_tools, mcp_servers, skills_dirs)');
     process.exit(1);
   }
 
-  return { prompt, cwd, resumeSessionId };
+  return { prompt, cwd, resumeSessionId, listTools, loadSkills };
 }
 
 async function main(): Promise<void> {
   const rawArgv = process.argv.slice(2);
-  const { prompt, cwd, resumeSessionId } = parseArgs(rawArgv);
+  const { prompt, cwd, resumeSessionId, listTools, loadSkills } = parseArgs(rawArgv);
 
   const apiKey = env('OPENAI_API_KEY') ?? env('OPENROUTER_API_KEY');
   if (!apiKey) {
@@ -71,6 +99,35 @@ async function main(): Promise<void> {
     cwd,
     allowShell: env('ALLOW_SHELL') === '1',
   };
+
+  const pluginConfig = loadAgentPluginConfig(cwd);
+  if (loadSkills.length > 0) {
+    pluginConfig.loaded_skills = [
+      ...new Set([...(pluginConfig.loaded_skills ?? []), ...loadSkills]),
+    ];
+  }
+
+  await ensureToolRegistry(cwd, pluginConfig);
+
+  if (listTools) {
+    const defs = toolRegistry.getDefinitions(config);
+    console.log('Available tools:');
+    for (const def of defs) {
+      console.log(`  - ${def.function.name}`);
+    }
+    console.log(`Skills: ${toolRegistry.listSkillNames().join(', ') || '(none)'}`);
+    await toolRegistry.shutdown();
+    return;
+  }
+
+  const mcpCount = defsCountMcp(toolRegistry.getDefinitions(config));
+  if (mcpCount > 0) {
+    console.log(`mcp: ${mcpCount} tools loaded`);
+  }
+  const skillNames = toolRegistry.listSkillNames();
+  if (skillNames.length > 0) {
+    console.log(`skills: ${skillNames.join(', ')}`);
+  }
 
   // Session management: load existing or create new
   let session;
@@ -161,7 +218,15 @@ async function main(): Promise<void> {
   console.log('─'.repeat(60));
 }
 
-main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+function defsCountMcp(defs: { function: { name: string } }[]): number {
+  return defs.filter((d) => d.function.name.startsWith('mcp_')).length;
+}
+
+main()
+  .catch((err) => {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
+  })
+  .finally(() => {
+    void toolRegistry.shutdown();
+  });

@@ -6,7 +6,12 @@ const PARALLEL_SAFE = new Set([
   'list_files',
   'diff_file',
   'recall_query',
+  'invoke_skill',
 ]);
+
+function isParallelSafeMcp(name: string): boolean {
+  return name.startsWith('mcp_');
+}
 
 const SERIAL_ONLY = new Set(['write_file', 'run_shell']);
 
@@ -57,7 +62,7 @@ export function scheduleToolCalls(calls: ToolCall[]): ToolCallPlan {
       continue;
     }
 
-    if (PARALLEL_SAFE.has(name)) {
+    if (PARALLEL_SAFE.has(name) || isParallelSafeMcp(name)) {
       parallelCandidates.push(call);
     } else {
       serial.push(call);

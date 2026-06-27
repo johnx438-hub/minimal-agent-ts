@@ -1,0 +1,24 @@
+{
+  "builtin_tools": [
+    "read_file",
+    "write_file",
+    "grep_search",
+    "list_files",
+    "diff_file",
+    "recall_query",
+    "invoke_skill"
+  ],
+  "skills_dirs": ["./skills"],
+  "mcp_policy": {
+    "allow": ["mcp_filesystem_*"],
+    "deny": []
+  },
+  "mcp_servers": [
+    {
+      "name": "filesystem",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
+      "enabled": false
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "builtin_tools": [
+    "read_file",
+    "write_file",
+    "grep_search",
+    "list_files",
+    "diff_file",
+    "recall_query",
+    "invoke_skill"
+  ],
+  "skills_dirs": ["./skills"],
+  "loaded_skills": [],
+  "mcp_policy": {
+    "allow": ["*"],
+    "deny": []
+  },
+  "mcp_servers": []
+}

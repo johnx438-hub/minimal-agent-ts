@@ -1,2 +1,8 @@
-/** @deprecated Import from ./tools/registry.js — kept for backward compatibility. */
-export { TOOL_DEFINITIONS, executeTool } from './tools/registry.js';
+/** Re-exports from tools/registry.js */
+export {
+  TOOL_DEFINITIONS,
+  executeTool,
+  getToolDefinitions,
+  ensureToolRegistry,
+  toolRegistry,
+} from './tools/registry.js';
