@@ -30,7 +30,7 @@ export function defaultAgentPluginConfig(): AgentPluginConfig {
       preview_min_chars: 120,
       preview_max_chars: 480,
       preview_ratio: 0.04,
-      preview_mode: 'generic',
+      preview_mode: 'smart',
       preview_max_lines: 5,
       summary_max_chars: 120,
     },
