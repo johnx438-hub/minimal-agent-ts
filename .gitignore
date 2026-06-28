@@ -5,9 +5,13 @@ node_modules/
 dist/
 out/
 
-# Environment
+# Environment & secrets (never commit)
 .env
 .env.*
+!.env.example
+
+# Session runtime: conversations, cold storage, vector index
+.sessions/
 
 # OS files
 .DS_Store
@@ -17,12 +21,11 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Zvec data (Phase 1+)
+# Logs & temp
+*.log
+npm-debug.log*
+.cache/
+
+# Zvec / local index artifacts (if created outside .sessions)
 *.zvec
 agent_memory.zvec
-
-# Session runtime data
-.sessions/
-
-# Zvec index (Phase 2d)
-.sessions/agent_memory/
