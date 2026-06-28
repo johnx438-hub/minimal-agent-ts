@@ -1,32 +1,176 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn } from 'node:child_process';
 
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import { resolveSafePath } from './path-utils.js';
 
-const execFileAsync = promisify(execFile);
+const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_POLL_INTERVAL_MS = 2_000;
+const DEFAULT_EXTEND_BY_MS = 30_000;
+const DEFAULT_MAX_TIMEOUT_MS = 300_000;
+const MAX_BUFFER_BYTES = 1024 * 1024;
 
-const SHELL_TIMEOUT_MS = 30_000;
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-type ExecFailure = NodeJS.ErrnoException & {
-  stdout?: string | Buffer;
-  stderr?: string | Buffer;
-  killed?: boolean;
-  signal?: string;
-};
+function clampInt(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const n = value === undefined ? fallback : Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(n)));
+}
 
-function formatOutput(stdout?: string | Buffer, stderr?: string | Buffer): string {
-  const out = [stdout, stderr]
-    .map((chunk) => (chunk === undefined ? '' : String(chunk)))
-    .filter(Boolean)
-    .join('\n')
-    .trim();
+function formatOutput(stdout: string, stderr: string): string {
+  const out = [stdout, stderr].filter(Boolean).join('\n').trim();
   return out || '(no output)';
 }
 
-function formatShellError(prefix: string, stdout?: string | Buffer, stderr?: string | Buffer): string {
+function formatShellError(prefix: string, stdout: string, stderr: string): string {
   const body = formatOutput(stdout, stderr);
   return body === '(no output)' ? `error: ${prefix}` : `error: ${prefix}\n${body}`;
+}
+
+export interface ShellRunOptions {
+  cwd: string;
+  command: string;
+  delayMs: number;
+  timeoutMs: number;
+  pollIntervalMs: number;
+  autoExtend: boolean;
+  extendByMs: number;
+  maxTimeoutMs: number;
+}
+
+function parseShellArgs(args: Record<string, unknown>): ShellRunOptions | string {
+  const command = String(args.command ?? '').trim();
+  if (!command) return 'error: command is required';
+
+  const timeoutMs = clampInt(args.timeout_ms, DEFAULT_TIMEOUT_MS, 1_000, 600_000);
+  let maxTimeoutMs = clampInt(args.max_timeout_ms, DEFAULT_MAX_TIMEOUT_MS, timeoutMs, 600_000);
+  if (maxTimeoutMs < timeoutMs) maxTimeoutMs = timeoutMs;
+
+  return {
+    command,
+    cwd: '', // filled by caller
+    delayMs: clampInt(args.delay_ms, 0, 0, 60_000),
+    timeoutMs,
+    pollIntervalMs: clampInt(args.poll_interval_ms, DEFAULT_POLL_INTERVAL_MS, 500, 10_000),
+    autoExtend: args.auto_extend === true,
+    extendByMs: clampInt(args.extend_by_ms, DEFAULT_EXTEND_BY_MS, 5_000, 120_000),
+    maxTimeoutMs,
+  };
+}
+
+export async function runShellCommand(opts: ShellRunOptions): Promise<string> {
+  if (opts.delayMs > 0) {
+    await sleep(opts.delayMs);
+  }
+
+  const startedAt = Date.now();
+
+  return new Promise((resolve) => {
+    const child = spawn('bash', ['-lc', opts.command], {
+      cwd: opts.cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let bytes = 0;
+    let deadline = Date.now() + opts.timeoutMs;
+    let budgetMs = opts.timeoutMs;
+    const extensions: string[] = [];
+    let timedOut = false;
+    let bufferExceeded = false;
+
+    const append = (chunk: Buffer, target: 'stdout' | 'stderr'): void => {
+      const text = chunk.toString();
+      bytes += text.length;
+      if (bytes > MAX_BUFFER_BYTES) {
+        bufferExceeded = true;
+        child.kill('SIGTERM');
+        return;
+      }
+      if (target === 'stdout') stdout += text;
+      else stderr += text;
+    };
+
+    child.stdout?.on('data', (chunk: Buffer) => append(chunk, 'stdout'));
+    child.stderr?.on('data', (chunk: Buffer) => append(chunk, 'stderr'));
+
+    const poll = setInterval(() => {
+      if (child.exitCode !== null) return;
+
+      const now = Date.now();
+      if (now < deadline) return;
+
+      if (opts.autoExtend && budgetMs < opts.maxTimeoutMs) {
+        const room = opts.maxTimeoutMs - budgetMs;
+        const extend = Math.min(opts.extendByMs, room);
+        if (extend > 0) {
+          budgetMs += extend;
+          deadline = now + extend;
+          extensions.push(`+${Math.round(extend / 1000)}s`);
+          return;
+        }
+      }
+
+      timedOut = true;
+      child.kill('SIGTERM');
+      setTimeout(() => {
+        if (child.exitCode === null) child.kill('SIGKILL');
+      }, 1_000);
+    }, opts.pollIntervalMs);
+
+    const finish = (code: number | null, signal: NodeJS.Signals | null): void => {
+      clearInterval(poll);
+      const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
+      let meta = '';
+
+      if (extensions.length > 0) {
+        meta = `[shell: auto-extended ${extensions.join(', ')}, elapsed=${elapsedSec}s, budget=${Math.round(budgetMs / 1000)}s]\n`;
+      } else if (opts.delayMs > 0 || opts.timeoutMs !== DEFAULT_TIMEOUT_MS || opts.autoExtend) {
+        meta = `[shell: elapsed=${elapsedSec}s, timeout_ms=${opts.timeoutMs}${opts.autoExtend ? `, max_timeout_ms=${opts.maxTimeoutMs}` : ''}]\n`;
+      }
+
+      if (bufferExceeded) {
+        resolve(
+          formatShellError(
+            `output exceeded ${MAX_BUFFER_BYTES} bytes`,
+            stdout,
+            stderr,
+          ),
+        );
+        return;
+      }
+
+      if (timedOut || signal === 'SIGTERM' || signal === 'SIGKILL') {
+        const prefix = timedOut
+          ? `command timed out after ${Math.round(budgetMs / 1000)}s`
+          : `command killed (${signal ?? 'signal'})`;
+        resolve(meta + formatShellError(prefix, stdout, stderr));
+        return;
+      }
+
+      if (code !== 0 && code !== null) {
+        resolve(meta + formatShellError(`exit ${code}`, stdout, stderr));
+        return;
+      }
+
+      resolve(meta + formatOutput(stdout, stderr));
+    };
+
+    child.on('error', (err) => {
+      clearInterval(poll);
+      resolve(formatShellError(err.message, stdout, stderr));
+    });
+
+    child.on('close', (code, signal) => finish(code, signal));
+  });
 }
 
 export const SHELL_DEFINITIONS: ToolDefinition[] = [
@@ -35,7 +179,7 @@ export const SHELL_DEFINITIONS: ToolDefinition[] = [
     function: {
       name: 'run_shell',
       description:
-        'Run a bash command. Disabled unless ALLOW_SHELL=1 or --allow-shell. Optional working_dir (relative to project cwd).',
+        'Run a bash command. Disabled unless ALLOW_SHELL=1 or --allow-shell. Supports delay, custom timeout, and poll-based auto-extend for long commands.',
       parameters: {
         type: 'object',
         properties: {
@@ -43,6 +187,31 @@ export const SHELL_DEFINITIONS: ToolDefinition[] = [
           working_dir: {
             type: 'string',
             description: 'Optional subdirectory under project cwd (default: project root)',
+          },
+          delay_ms: {
+            type: 'integer',
+            description: 'Wait this many ms before starting the command (0–60000)',
+          },
+          timeout_ms: {
+            type: 'integer',
+            description: 'Initial timeout in ms (default 30000, max 600000)',
+          },
+          poll_interval_ms: {
+            type: 'integer',
+            description: 'When auto_extend=true, poll every N ms (default 2000)',
+          },
+          auto_extend: {
+            type: 'boolean',
+            description:
+              'If true, extend timeout in extend_by_ms chunks while process still runs, up to max_timeout_ms',
+          },
+          extend_by_ms: {
+            type: 'integer',
+            description: 'Each auto-extension adds this many ms (default 30000)',
+          },
+          max_timeout_ms: {
+            type: 'integer',
+            description: 'Hard cap when auto_extend=true (default 300000)',
           },
         },
         required: ['command'],
@@ -62,10 +231,8 @@ export async function runShellTool(
     return 'error: run_shell is disabled. Use --allow-shell or set ALLOW_SHELL=1.';
   }
 
-  const command = String(args.command ?? '').trim();
-  if (!command) {
-    return 'error: command is required';
-  }
+  const parsed = parseShellArgs(args);
+  if (typeof parsed === 'string') return parsed;
 
   let workDir = config.cwd;
   if (args.working_dir !== undefined) {
@@ -81,27 +248,5 @@ export async function runShellTool(
     }
   }
 
-  try {
-    const { stdout, stderr } = await execFileAsync('bash', ['-lc', command], {
-      cwd: workDir,
-      maxBuffer: 1024 * 1024,
-      timeout: SHELL_TIMEOUT_MS,
-    });
-    return formatOutput(stdout, stderr);
-  } catch (err) {
-    const failure = err as ExecFailure;
-    const stdout = failure.stdout;
-    const stderr = failure.stderr;
-
-    if (failure.killed && failure.signal) {
-      return formatShellError(`command timed out after ${SHELL_TIMEOUT_MS / 1000}s`, stdout, stderr);
-    }
-
-    if (typeof failure.code === 'number') {
-      return formatShellError(`exit ${failure.code}`, stdout, stderr);
-    }
-
-    const msg = failure.message || String(err);
-    return formatShellError(msg, stdout, stderr);
-  }
+  return runShellCommand({ ...parsed, cwd: workDir });
 }
