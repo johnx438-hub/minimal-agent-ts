@@ -13,6 +13,7 @@ import {
   type LoopGuardConfig,
   type ToolTurnRecord,
 } from './loop-guard.js';
+import { attachActionPreview, DEFAULT_PREVIEW_POLICY } from './action-preview.js';
 import { materializePriorTurnTools } from './pointerize.js';
 import { parseAgentSummary, extractCleanAnswer, getSummaryPromptExtension } from './summary.js';
 import { buildContext, createBudgetConfig, shouldCompress, estimateTokens } from './context-budget.js';
@@ -231,6 +232,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
     if (turn > 1) {
       materializePriorTurnTools(messages, turn, {
         keepInlineTurns: config.keepInlineTurns ?? 2,
+        previewPolicy: config.previewPolicy ?? DEFAULT_PREVIEW_POLICY,
       });
 
       if (!compressionEventDone) {
@@ -308,6 +310,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         if (tracker) {
           const block = tracker.recordToolCall(name, args, output, turn);
           if (block) {
+            attachActionPreview(block, config.previewPolicy ?? DEFAULT_PREVIEW_POLICY);
             saveAction(block);
             indexActionAsync(block);
             actionId = block.action_id;

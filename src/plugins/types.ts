@@ -12,9 +12,23 @@ export interface McpPolicy {
   deny?: string[];
 }
 
+export type PreviewMode = 'generic' | 'smart';
+
 export interface PointerizePolicy {
   /** Recent tool turns kept inline (not pointerized). Default 2. */
   keep_inline_turns?: number;
+  /** Min preview budget chars when pointerizing. */
+  preview_min_chars?: number;
+  /** Max preview budget chars on pointer cards. */
+  preview_max_chars?: number;
+  /** Fraction of byte_size used for preview budget. */
+  preview_ratio?: number;
+  /** generic = head/tail; smart = tool-aware summary for shell/grep/read/mcp. */
+  preview_mode?: PreviewMode;
+  /** Max lines on pointer card preview section. */
+  preview_max_lines?: number;
+  /** Max chars for one-line summary field. */
+  summary_max_chars?: number;
 }
 
 export interface RecallPolicy {

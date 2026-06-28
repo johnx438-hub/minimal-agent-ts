@@ -25,7 +25,15 @@ export function defaultAgentPluginConfig(): AgentPluginConfig {
     mcp_servers: [],
     skills_dirs: ['./skills', resolve(homedir(), '.minimal-agent/skills')],
     mcp_policy: { allow: ['*'], deny: [] },
-    pointerize_policy: { keep_inline_turns: 2 },
+    pointerize_policy: {
+      keep_inline_turns: 2,
+      preview_min_chars: 120,
+      preview_max_chars: 480,
+      preview_ratio: 0.04,
+      preview_mode: 'generic',
+      preview_max_lines: 5,
+      summary_max_chars: 120,
+    },
     recall_policy: { auto_full_max_chars: 24_000 },
     loaded_skills: [],
   };

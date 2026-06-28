@@ -4,6 +4,7 @@ import 'dotenv/config';  // Load .env file
 import { loadAgentPluginConfig } from './plugins/config-loader.js';
 import { runAgent } from './agent.js';
 import { createSession, loadSession, saveSession } from './session.js';
+import { previewPolicyFromPointerize } from './action-preview.js';
 import { parseLoopGuardMode } from './loop-guard.js';
 import { ensureToolRegistry, toolRegistry } from './tools/registry.js';
 import type { AgentConfig } from './types.js';
@@ -114,6 +115,7 @@ async function main(): Promise<void> {
 
   const keepInlineTurns = pluginConfig.pointerize_policy?.keep_inline_turns ?? 2;
   const recallAutoFullMaxChars = pluginConfig.recall_policy?.auto_full_max_chars ?? 24_000;
+  const previewPolicy = previewPolicyFromPointerize(pluginConfig.pointerize_policy);
 
   const config: AgentConfig = {
     apiKey,
@@ -129,6 +131,7 @@ async function main(): Promise<void> {
     },
     keepInlineTurns,
     recallAutoFullMaxChars,
+    previewPolicy,
   };
 
   await ensureToolRegistry(cwd, pluginConfig);

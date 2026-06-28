@@ -1,3 +1,4 @@
+import type { PreviewPolicy } from './action-preview.js';
 import type { LoopGuardConfig } from './loop-guard.js';
 
 /** OpenAI-compatible chat message (subset we need for the loop). */
@@ -40,6 +41,9 @@ export interface ActionBlock {
   files_touched: string[];
   timestamp: number;
   token_cost: number;
+  /** Frozen card preview (computed at save time). */
+  preview_summary?: string;
+  preview_lines?: string[];
 }
 
 /** Tool definition sent to the API. */
@@ -67,6 +71,7 @@ export interface AgentConfig {
   keepInlineTurns?: number;
   /** recall_query auto format=full when action_id hit and body is below this size. */
   recallAutoFullMaxChars?: number;
+  previewPolicy?: PreviewPolicy;
 }
 
 /** recall_query response shape (Phase 2b). */
