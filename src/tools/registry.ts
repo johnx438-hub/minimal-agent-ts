@@ -6,6 +6,7 @@ import {
   discoverSkills,
 } from '../plugins/skills.js';
 import type { AgentPluginConfig, McpToolBinding, SkillDefinition } from '../plugins/types.js';
+import { EDIT_FILE_DEFINITIONS, runEditFileTool } from './edit-file.js';
 import { EXPLORE_DEFINITIONS, runExploreTool } from './explore.js';
 import { READ_WRITE_DEFINITIONS, runReadWriteTool } from './read-write.js';
 import { RECALL_DEFINITIONS, runRecallTool } from './recall.js';
@@ -21,6 +22,7 @@ type BuiltinHandler = (
 const ALL_BUILTIN: Record<string, { defs: ToolDefinition[]; handler: BuiltinHandler }> = {
   read_file: { defs: READ_WRITE_DEFINITIONS, handler: runReadWriteTool },
   write_file: { defs: READ_WRITE_DEFINITIONS, handler: runReadWriteTool },
+  edit_file: { defs: EDIT_FILE_DEFINITIONS, handler: runEditFileTool },
   grep_search: { defs: EXPLORE_DEFINITIONS, handler: runExploreTool },
   list_files: { defs: EXPLORE_DEFINITIONS, handler: runExploreTool },
   diff_file: { defs: EXPLORE_DEFINITIONS, handler: runExploreTool },
@@ -201,6 +203,7 @@ export function getToolDefinitions(config: AgentConfig): ToolDefinition[] {
   if (!toolRegistry.isInitialized()) {
     return [
       ...READ_WRITE_DEFINITIONS,
+      ...EDIT_FILE_DEFINITIONS,
       ...EXPLORE_DEFINITIONS,
       ...RECALL_DEFINITIONS,
       ...SKILLS_TOOL_DEFINITIONS,

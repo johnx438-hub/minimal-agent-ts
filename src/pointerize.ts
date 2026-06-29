@@ -9,13 +9,14 @@ export const POINTER_RULES: Record<
   read_file: { minChars: 600, alwaysIfLines: 40 },
   run_shell: { minChars: 800, alwaysIfLines: 30 },
   write_file: { minChars: Number.POSITIVE_INFINITY },
+  edit_file: { minChars: Number.POSITIVE_INFINITY },
   grep_search: { minChars: 500, alwaysIfLines: 20 },
   list_files: { minChars: 500, alwaysIfLines: 30 },
   diff_file: { minChars: 600, alwaysIfLines: 30 },
   recall_query: { minChars: 600, alwaysIfLines: 30 },
 };
 
-const NEVER_POINTERIZE_PREFIXES = ['error:', 'ok: wrote'];
+const NEVER_POINTERIZE_PREFIXES = ['error:', 'ok: wrote', 'ok: edited'];
 
 export function shouldPointerize(toolName: string, raw: string): boolean {
   const trimmed = raw.trim();

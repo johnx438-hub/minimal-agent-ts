@@ -405,8 +405,8 @@ function buildSystemPrompt(): string {
 
   return `You are a minimal coding assistant in a learning demo.
 
-You have builtin tools (read_file, write_file, grep_search, list_files, diff_file, recall_query, invoke_skill) plus any MCP tools exposed as mcp_<server>_<tool>.
-- Prefer read_file before editing.
+You have builtin tools (read_file, write_file, edit_file, grep_search, list_files, diff_file, recall_query, invoke_skill) plus any MCP tools exposed as mcp_<server>_<tool>.
+- Prefer read_file before editing; use edit_file with expected_hash from [file_meta] for partial edits.
 - Explain briefly what you are doing.
 - When the task is done, reply with a short summary and stop calling tools.
 - Large tool outputs become [action:…] cards after a few turns; recent turns stay inline. Use recall_query(action_id=...) — returns full text up to 24KB by default.

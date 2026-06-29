@@ -13,7 +13,8 @@ function isParallelSafeMcp(name: string): boolean {
   return name.startsWith('mcp_');
 }
 
-const SERIAL_ONLY = new Set(['write_file', 'run_shell']);
+const WRITE_TOOLS = new Set(['write_file', 'edit_file']);
+const SERIAL_ONLY = new Set(['write_file', 'edit_file', 'run_shell']);
 
 export interface ToolCallPlan {
   parallel: ToolCall[];
@@ -47,7 +48,7 @@ export function scheduleToolCalls(calls: ToolCall[]): ToolCallPlan {
     const name = call.function.name;
     if (SERIAL_ONLY.has(name)) {
       serial.push(call);
-      if (name === 'write_file') {
+      if (WRITE_TOOLS.has(name)) {
         const p = extractPath(call.function.arguments);
         if (p) writePaths.add(p);
       }

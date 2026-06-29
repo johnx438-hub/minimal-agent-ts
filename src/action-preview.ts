@@ -1,3 +1,4 @@
+import { stripFileMeta } from './tools/file-hash.js';
 import type { ActionBlock } from './types.js';
 
 export type PreviewMode = 'generic' | 'smart';
@@ -140,7 +141,7 @@ export function buildSmartToolPreview(
     case 'read_file': {
       const path = String(args.path ?? block.files_touched[0] ?? '?');
       const offset = args.offset !== undefined ? Number(args.offset) : undefined;
-      const lines = nonEmptyLines(text, policy.preview_max_lines);
+      const lines = nonEmptyLines(stripFileMeta(text), policy.preview_max_lines);
       const offsetNote = offset !== undefined ? `, offset=${offset}` : '';
       return {
         summary: clipSummary(
@@ -148,6 +149,19 @@ export function buildSmartToolPreview(
           policy,
         ),
         preview_lines: lines.map((l) => truncateLine(l, 100)),
+      };
+    }
+
+    case 'edit_file': {
+      const path = String(args.path ?? block.files_touched[0] ?? '?');
+      const mode = args.old_string !== undefined ? 'search_replace' : 'line_range';
+      const hashMatch = text.match(/file_hash=([a-f0-9]+)/);
+      return {
+        summary: clipSummary(
+          `edit_file: ${path} (${mode})${hashMatch ? ` hash=${hashMatch[1]}` : ''}`,
+          policy,
+        ),
+        preview_lines: [truncateLine(text, 100)],
       };
     }
 

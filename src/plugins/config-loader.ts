@@ -7,6 +7,7 @@ import type { AgentPluginConfig } from './types.js';
 const DEFAULT_BUILTIN_TOOLS = [
   'read_file',
   'write_file',
+  'edit_file',
   'grep_search',
   'list_files',
   'diff_file',

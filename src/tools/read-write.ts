@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 
 import type { AgentConfig, ToolDefinition } from '../types.js';
+import { formatFileMeta } from './file-hash.js';
 import { resolveSafePath, sliceLines } from './path-utils.js';
 
 export const READ_WRITE_DEFINITIONS: ToolDefinition[] = [
@@ -52,9 +53,12 @@ export async function runReadWriteTool(
       const offset = args.offset === undefined ? undefined : Number(args.offset);
       const limit = args.limit === undefined ? undefined : Number(args.limit);
       const body = sliceLines(raw, offset, limit);
-      return body.length > MAX_READ_CHARS
-        ? `${body.slice(0, MAX_READ_CHARS)}\n...(truncated)`
-        : body;
+      const meta = formatFileMeta(raw);
+      const truncated =
+        body.length > MAX_READ_CHARS
+          ? `${body.slice(0, MAX_READ_CHARS)}\n...(truncated)`
+          : body;
+      return truncated + meta;
     }
 
     case 'write_file': {
