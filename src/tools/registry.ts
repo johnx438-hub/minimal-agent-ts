@@ -78,18 +78,33 @@ export class ToolRegistry {
     return buildLoadedSkillsSystemBlock(selected);
   }
 
+  private isToolAllowed(apiName: string, allowlist: string[] | undefined): boolean {
+    if (!allowlist || allowlist.length === 0) return true;
+    if (allowlist.includes(apiName)) return true;
+    if (allowlist.includes('mcp_*') && apiName.startsWith('mcp_')) return true;
+    for (const pattern of allowlist) {
+      if (pattern.endsWith('*') && apiName.startsWith(pattern.slice(0, -1))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   getDefinitions(config: AgentConfig): ToolDefinition[] {
     const defs: ToolDefinition[] = [];
     const seen = new Set<string>();
+    const allowlist = config.toolAllowlist;
 
     for (const toolName of this.enabledBuiltin) {
       if (toolName === 'run_shell' && !config.allowShell) continue;
+      if (!this.isToolAllowed(toolName, allowlist)) continue;
       const entry = ALL_BUILTIN[toolName];
       if (!entry) continue;
 
       for (const def of entry.defs) {
         const name = def.function.name;
         if (!this.enabledBuiltin.has(name)) continue;
+        if (!this.isToolAllowed(name, allowlist)) continue;
         if (seen.has(name)) continue;
         seen.add(name);
         defs.push(def);
@@ -97,6 +112,7 @@ export class ToolRegistry {
     }
 
     for (const binding of this.mcpBindings) {
+      if (!this.isToolAllowed(binding.apiName, allowlist)) continue;
       defs.push({
         type: 'function',
         function: {
@@ -123,6 +139,11 @@ export class ToolRegistry {
     }
 
     try {
+      const allowlist = config.toolAllowlist;
+      if (allowlist?.length && !this.isToolAllowed(name, allowlist)) {
+        return `error: tool ${name} is not allowed for this role`;
+      }
+
       if (name === 'invoke_skill') {
         return runSkillsTool(name, args, this.skills) ?? 'error: invoke_skill failed';
       }

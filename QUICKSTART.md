@@ -32,6 +32,7 @@ npm start -- "列出当前目录文件，读 README，用一句话总结"
 | 续接会话 | `npm start -- --resume <session_id> "继续"` |
 | 允许 shell | `npm start -- --allow-shell "npm run typecheck"` |
 | 长命令 shell | Agent 可对 `run_shell` 传 `auto_extend: true`、`timeout_ms`、`max_timeout_ms` |
+| 多角色 workflow | `npm start -- --workflow workflows/review-loop.json "任务"` |
 | 加载 Skill | `npm start -- --load-skills context-design "任务"` |
 | 查看工具列表 | `npm start -- --list-tools` |
 | 关闭流式 | `STREAM=0 npm start -- "任务"` |

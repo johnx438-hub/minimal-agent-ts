@@ -1,0 +1,48 @@
+{
+  "name": "review-loop",
+  "share_session": false,
+  "roles": {
+    "planner": {
+      "prompt_file": "../roles/planner.md",
+      "tools": ["read_file", "grep_search", "list_files", "recall_query"],
+      "max_turns": 8
+    },
+    "worker": {
+      "prompt_file": "../roles/worker.md",
+      "tools": ["read_file", "write_file", "grep_search", "list_files", "diff_file", "recall_query"],
+      "max_turns": 15
+    },
+    "reviewer": {
+      "prompt_file": "../roles/reviewer.md",
+      "tools": ["read_file", "grep_search", "diff_file", "recall_query"],
+      "max_turns": 6
+    }
+  },
+  "flow": [
+    { "role": "planner", "input": "{{user_task}}" },
+    {
+      "role": "worker",
+      "input": "## Plan (from planner)\n{{planner.output}}\n\n## Original task\n{{user_task}}\n\nExecute the plan. Summarize files changed."
+    },
+    {
+      "role": "reviewer",
+      "input": "## Work output\n{{worker.output}}\n\nReview the changes. End with JSON: {\"verdict\":\"approved\"|\"needs_revision\",\"notes\":\"...\"}"
+    },
+    {
+      "loop": {
+        "when": "{{reviewer.verdict}} == 'needs_revision'",
+        "max_rounds": 2,
+        "steps": [
+          {
+            "role": "worker",
+            "input": "## Reviewer feedback\n{{reviewer.output}}\n\n## Original task\n{{user_task}}\n\nApply fixes and summarize."
+          },
+          {
+            "role": "reviewer",
+            "input": "## Revised work\n{{worker.output}}\n\nRe-review. End with JSON: {\"verdict\":\"approved\"|\"needs_revision\",\"notes\":\"...\"}"
+          }
+        ]
+      }
+    }
+  ]
+}

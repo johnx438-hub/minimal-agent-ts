@@ -2,7 +2,8 @@ import { resolve } from 'node:path';
 import 'dotenv/config';  // Load .env file
 
 import { loadAgentPluginConfig } from './plugins/config-loader.js';
-import { runAgent } from './agent.js';
+import { runAgent, type AgentStepEvent } from './agent.js';
+import { runWorkflow } from './workflow/runner.js';
 import { createSession, loadSession, saveSession } from './session.js';
 import { previewPolicyFromPointerize } from './action-preview.js';
 import { parseLoopGuardMode } from './loop-guard.js';
@@ -21,6 +22,7 @@ function parseArgs(argv: string[]): {
   listTools: boolean;
   loadSkills: string[];
   allowShell: boolean;
+  workflowPath?: string;
 } {
   let listTools = false;
   const loadSkills: string[] = [];
@@ -36,6 +38,13 @@ function parseArgs(argv: string[]): {
   if (listIdx >= 0) {
     listTools = true;
     argv = [...argv.slice(0, listIdx), ...argv.slice(listIdx + 1)];
+  }
+
+  let workflowPath: string | undefined;
+  const workflowIdx = argv.indexOf('--workflow');
+  if (workflowIdx >= 0 && argv[workflowIdx + 1]) {
+    workflowPath = argv[workflowIdx + 1];
+    argv = [...argv.slice(0, workflowIdx), ...argv.slice(workflowIdx + 2)];
   }
 
   const skillsIdx = argv.indexOf('--load-skills');
@@ -68,13 +77,14 @@ function parseArgs(argv: string[]): {
     cwd = resolve(argv[cwdIdx + 1]);
   }
 
-  if (!prompt && !listTools) {
+  if (!prompt && !listTools && !workflowPath) {
     console.error('Usage:');
     console.error('  OPENROUTER_API_KEY=... npm start -- "你的任务"');
     console.error('  npm start -- --cwd /path/to/project "你的任务"');
     console.error('  npm start -- --resume <session_id> "继续上次的工作"');
     console.error('  npm start -- --list-tools');
     console.error('  npm start -- --load-skills context-design "任务"');
+    console.error('  npm start -- --workflow workflows/review-loop.json "任务"');
     console.error('');
     console.error('Optional env:');
     console.error('  OPENAI_BASE_URL  (default: Gemini OpenAI-compatible URL)');
@@ -88,13 +98,20 @@ function parseArgs(argv: string[]): {
     process.exit(1);
   }
 
-  return { prompt, cwd, resumeSessionId, listTools, loadSkills, allowShell };
+  return { prompt, cwd, resumeSessionId, listTools, loadSkills, allowShell, workflowPath };
 }
 
 async function main(): Promise<void> {
   const rawArgv = process.argv.slice(2);
-  const { prompt, cwd, resumeSessionId, listTools, loadSkills, allowShell: cliAllowShell } =
-    parseArgs(rawArgv);
+  const {
+    prompt,
+    cwd,
+    resumeSessionId,
+    listTools,
+    loadSkills,
+    allowShell: cliAllowShell,
+    workflowPath,
+  } = parseArgs(rawArgv);
 
   const apiKey = env('OPENAI_API_KEY') ?? env('OPENROUTER_API_KEY');
   if (!apiKey) {
@@ -180,75 +197,100 @@ async function main(): Promise<void> {
   console.log(`shell: ${config.allowShell ? 'on' : 'off (use --allow-shell)'}`);
   console.log(`session: ${session.session_id}`);
   console.log('─'.repeat(60));
+  if (workflowPath) {
+    console.log(`workflow: ${workflowPath}`);
+  }
   console.log(`task: ${prompt}\n`);
 
-  const answer = await runAgent({
-    prompt,
-    config,
-    session,
-    sessionId: session.session_id,
-    stream: useStream,
-    onStep(event) {
-      switch (event.type) {
-        case 'turn_start':
-          console.log(`\n[turn ${event.turn}] ── LLM ──`);
-          break;
-        case 'token':
-          process.stdout.write(event.delta);
-          break;
-        case 'llm_done':
-          console.log(
-            `\n  finish=${event.finishReason ?? 'null'} tokens=${JSON.stringify(event.usage ?? {})}`,
-          );
-          break;
-        case 'compression':
-          console.log(
-            event.pruned
-              ? `  📦 pruned ${event.pruned} messages (compacted_at)`
-              : `  📦 compression event: summaries + notice + replay user task`,
-          );
-          break;
-        case 'loop_guard':
-          console.log(
-            `  🔄 loop_guard: ${event.action}${event.reason ? ` (${event.reason})` : ''}`,
-          );
-          break;
-        case 'tool_batch':
-          if (event.parallel > 1) {
-            console.log(`  ⚡ parallel batch: ${event.parallel}/${event.total} tools`);
-          }
-          break;
-        case 'tool_call':
-          console.log(`  → ${event.name}(${event.args})`);
-          break;
-        case 'tool_result': {
-          const preview =
-            event.output.length > 400
-              ? `${event.output.slice(0, 400)}…`
-              : event.output;
-          console.log(`  ← ${event.name}: ${preview.replace(/\n/g, '\\n')}`);
-          break;
+  const onStep = (event: AgentStepEvent) => {
+    switch (event.type) {
+      case 'turn_start':
+        console.log(`\n[turn ${event.turn}] ── LLM ──`);
+        break;
+      case 'token':
+        process.stdout.write(event.delta);
+        break;
+      case 'llm_done':
+        console.log(
+          `\n  finish=${event.finishReason ?? 'null'} tokens=${JSON.stringify(event.usage ?? {})}`,
+        );
+        break;
+      case 'compression':
+        console.log(
+          event.pruned
+            ? `  📦 pruned ${event.pruned} messages (compacted_at)`
+            : `  📦 compression event: summaries + notice + replay user task`,
+        );
+        break;
+      case 'loop_guard':
+        console.log(
+          `  🔄 loop_guard: ${event.action}${event.reason ? ` (${event.reason})` : ''}`,
+        );
+        break;
+      case 'tool_batch':
+        if (event.parallel > 1) {
+          console.log(`  ⚡ parallel batch: ${event.parallel}/${event.total} tools`);
         }
-        case 'final':
-          console.log(`\n[done @ turn ${event.turn}]`);
-          break;
+        break;
+      case 'tool_call':
+        console.log(`  → ${event.name}(${event.args})`);
+        break;
+      case 'tool_result': {
+        const preview =
+          event.output.length > 400
+            ? `${event.output.slice(0, 400)}…`
+            : event.output;
+        console.log(`  ← ${event.name}: ${preview.replace(/\n/g, '\\n')}`);
+        break;
       }
-    },
-    onTaskComplete(taskSummary) {
-      // Save task summary to session
-      session.tasks.push(taskSummary);
-      saveSession(session);
-      console.log(`\n💾 Task saved: ${taskSummary.task_id}`);
-    },
-  });
+      case 'final':
+        console.log(`\n[done @ turn ${event.turn}]`);
+        break;
+    }
+  };
 
-  // Update session with final messages
-  session.current_messages = answer.messages;
-  saveSession(session);
+  let finalText: string;
+
+  if (workflowPath) {
+    const wfResult = await runWorkflow({
+      workflowPath: resolve(cwd, workflowPath),
+      userTask: prompt,
+      config,
+      session,
+      stream: useStream,
+      onStep,
+      onWorkflowStep(info) {
+        const round = info.round !== undefined ? ` round ${info.round}` : '';
+        console.log(`\n${'═'.repeat(60)}`);
+        console.log(`workflow ▶ ${info.phase} / ${info.role}${round}`);
+        console.log('═'.repeat(60));
+      },
+    });
+    finalText = wfResult.text;
+    console.log(`\nworkflow done: ${wfResult.workflow} (session ${wfResult.sessionId})`);
+  } else {
+    const answer = await runAgent({
+      prompt,
+      config,
+      session,
+      sessionId: session.session_id,
+      stream: useStream,
+      onStep,
+      onTaskComplete(taskSummary) {
+        session.tasks.push(taskSummary);
+        saveSession(session);
+        console.log(`\n💾 Task saved: ${taskSummary.task_id}`);
+      },
+    });
+
+    session.current_messages = answer.messages;
+    saveSession(session);
+    finalText = answer.text;
+  }
 
   console.log('\n' + '─'.repeat(60));
   if (!useStream) {
-    console.log(answer.text);
+    console.log(finalText);
   }
   console.log('─'.repeat(60));
 }

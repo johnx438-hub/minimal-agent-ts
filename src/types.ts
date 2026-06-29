@@ -72,6 +72,8 @@ export interface AgentConfig {
   /** recall_query auto format=full when action_id hit and body is below this size. */
   recallAutoFullMaxChars?: number;
   previewPolicy?: PreviewPolicy;
+  /** When set, only these builtin/MCP tool names are exposed to the API. */
+  toolAllowlist?: string[];
 }
 
 /** recall_query response shape (Phase 2b). */

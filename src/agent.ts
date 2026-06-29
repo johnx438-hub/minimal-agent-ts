@@ -28,6 +28,10 @@ export interface RunAgentOptions {
   session?: SessionFile;
   sessionId?: string;
   stream?: boolean;
+  /** Replaces default coding-assistant system prompt (workflow roles). */
+  systemPrompt?: string;
+  /** Skip session history; only system + this user task (workflow steps). */
+  isolated?: boolean;
   onStep?: (event: AgentStepEvent) => void;
   onTaskComplete?: (summary: TaskSummaryDoc) => void;
 }
@@ -74,11 +78,14 @@ function resolveInitialMessages(opts: RunAgentOptions): {
   messages: ChatMessage[];
   userTask: ChatMessage;
 } {
-  const { prompt, config, session } = opts;
-  const system: ChatMessage = { role: 'system', content: buildSystemPrompt() };
+  const { prompt, config, session, systemPrompt, isolated } = opts;
+  const system: ChatMessage = {
+    role: 'system',
+    content: systemPrompt ?? buildSystemPrompt(),
+  };
   const userTask = buildUserTaskMessage(config.cwd, prompt);
 
-  if (!session) {
+  if (!session || isolated) {
     return { messages: [system, userTask], userTask };
   }
 
