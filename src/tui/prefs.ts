@@ -62,10 +62,18 @@ export function defaultPrefs(): TuiPrefs {
   return { ...DEFAULT_PREFS };
 }
 
+/** always* flags imply matching allow* switches in persisted prefs. */
+export function normalizePrefs(prefs: TuiPrefs): TuiPrefs {
+  const out = { ...prefs };
+  if (out.alwaysShell) out.allowShell = true;
+  if (out.alwaysWeb) out.allowWeb = true;
+  return out;
+}
+
 /** Merge partial prefs with saved (or defaults) and persist. */
 export function mergePrefs(cwd: string, patch: Partial<TuiPrefs>): TuiPrefs {
   const current = loadPrefs(cwd) ?? defaultPrefs();
-  const merged: TuiPrefs = { ...current, ...patch };
+  const merged = normalizePrefs({ ...current, ...patch });
   savePrefs(cwd, merged);
   return merged;
 }

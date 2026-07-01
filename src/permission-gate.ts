@@ -87,3 +87,13 @@ export class PermissionGate {
 export function attachPermissionGate(config: AgentConfig, gate: PermissionGate | undefined): void {
   config.permissionGate = gate;
 }
+
+/** Shell/web exposed to the model when allow* is on or an always grant is active. */
+export function isCapabilityEnabled(
+  config: AgentConfig,
+  kind: CapabilityKind,
+): boolean {
+  const allowed = kind === 'shell' ? config.allowShell : config.allowWeb;
+  if (allowed) return true;
+  return config.permissionGate?.hasAlwaysGrant(kind) ?? false;
+}

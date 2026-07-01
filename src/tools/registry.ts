@@ -1,3 +1,4 @@
+import { isCapabilityEnabled } from '../permission-gate.js';
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import { loadAgentPluginConfig } from '../plugins/config-loader.js';
 import { filterMcpBindings, McpManager } from '../plugins/mcp-manager.js';
@@ -120,8 +121,8 @@ export class ToolRegistry {
     const allowlist = config.toolAllowlist;
 
     for (const toolName of this.enabledBuiltin) {
-      if (toolName === 'run_shell' && !config.allowShell) continue;
-      if (toolName === 'web_fetch' && !config.allowWeb) continue;
+      if (toolName === 'run_shell' && !isCapabilityEnabled(config, 'shell')) continue;
+      if (toolName === 'web_fetch' && !isCapabilityEnabled(config, 'web')) continue;
       if (!this.isToolAllowed(toolName, allowlist)) continue;
       const entry = ALL_BUILTIN[toolName];
       if (!entry) continue;
@@ -196,13 +197,13 @@ export class ToolRegistry {
 
       const builtin = ALL_BUILTIN[name];
       if (builtin && this.enabledBuiltin.has(name)) {
-        if (name === 'run_shell' && !config.allowShell) {
+        if (name === 'run_shell' && !isCapabilityEnabled(config, 'shell')) {
           const gate = config.permissionGate;
           if (!gate || !(await gate.ensureShell(config, 'run_shell'))) {
             return 'error: run_shell is disabled. Use /shell on or approve when prompted.';
           }
         }
-        if (name === 'web_fetch' && !config.allowWeb) {
+        if (name === 'web_fetch' && !isCapabilityEnabled(config, 'web')) {
           const gate = config.permissionGate;
           if (!gate || !(await gate.ensureWeb(config, 'web_fetch'))) {
             return 'error: web_fetch is disabled. Use /web on or approve when prompted.';
@@ -260,7 +261,7 @@ export function getToolDefinitions(config: AgentConfig): ToolDefinition[] {
       ...EXPLORE_DEFINITIONS,
       ...RECALL_DEFINITIONS,
       ...SKILLS_TOOL_DEFINITIONS,
-      ...(config.allowShell ? SHELL_DEFINITIONS : []),
+      ...(isCapabilityEnabled(config, 'shell') ? SHELL_DEFINITIONS : []),
     ];
   }
   return toolRegistry.getDefinitions(config);
