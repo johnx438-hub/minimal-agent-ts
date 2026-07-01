@@ -108,12 +108,14 @@ export interface AgentRuntimeOptions {
   jsonEvents?: boolean;
   /** Inject handoff from session id (or `last`) on first task in a new session. */
   loadHandoffFrom?: string;
+  /** TUI: do not create a session until first task, /new, or /resume. */
+  deferSession?: boolean;
 }
 
 export class AgentRuntime {
   config: AgentConfig;
   pluginConfig: AgentPluginConfig;
-  session: SessionFile;
+  session: SessionFile | null = null;
 
   private listeners = new Set<RuntimeListener>();
   private abortController = new AbortController();
@@ -142,6 +144,8 @@ export class AgentRuntime {
     this.jsonEvents = opts.jsonEvents ?? false;
     this.useStream = env('STREAM', '1') !== '0';
 
+    const deferSession = opts.deferSession === true;
+
     if (opts.resumeSessionId) {
       const loaded = loadSession(opts.resumeSessionId);
       if (!loaded) {
@@ -151,8 +155,10 @@ export class AgentRuntime {
     } else if (opts.resumeLatest) {
       const latest = getLatestSession(env('USER_ID'));
       if (!latest) {
-        this.session = createSession(env('USER_ID') ?? 'user_default');
-        this.sessionDirty = true;
+        if (!deferSession) {
+          this.session = createSession(env('USER_ID') ?? 'user_default');
+          this.sessionDirty = true;
+        }
       } else {
         const loaded = loadSession(latest.session_id);
         if (!loaded) {
@@ -160,7 +166,7 @@ export class AgentRuntime {
         }
         this.session = loaded;
       }
-    } else {
+    } else if (!deferSession) {
       this.session = createSession(env('USER_ID') ?? 'user_default');
       this.sessionDirty = true;
     }
@@ -174,7 +180,10 @@ export class AgentRuntime {
     let sessionId = sessionIdOrLast;
     if (sessionId === 'last') {
       const prior = listSessions(env('USER_ID'));
-      const other = prior.find((s) => s.session_id !== this.session.session_id);
+      const currentId = this.session?.session_id;
+      const other = currentId
+        ? prior.find((s) => s.session_id !== currentId)
+        : prior[0];
       if (!other) return;
       sessionId = other.session_id;
     }
@@ -186,6 +195,24 @@ export class AgentRuntime {
 
   setWorkflowConfirmFn(fn: WorkflowConfirmFn | undefined): void {
     this.workflowConfirmFn = fn;
+  }
+
+  hasActiveSession(): boolean {
+    return this.session !== null;
+  }
+
+  /** Display label for TUI banner (no session until first task / /new / /resume). */
+  sessionLabel(): string {
+    return this.session?.session_id ?? '(none)';
+  }
+
+  /** Create a session on first task when TUI started with deferSession. */
+  ensureSession(): SessionFile {
+    if (!this.session) {
+      this.session = createSession(env('USER_ID') ?? 'user_default');
+      this.sessionDirty = true;
+    }
+    return this.session;
   }
 
   resumeLatestSession(): boolean {
@@ -230,9 +257,10 @@ export class AgentRuntime {
   };
 
   private buildRunConfig(signal: AbortSignal): AgentConfig {
+    const session = this.ensureSession();
     return {
       ...this.config,
-      sessionId: this.session.session_id,
+      sessionId: session.session_id,
       abortSignal: signal,
       permissionGate: this.permissionGate,
       spawnLifecycle: this.onSpawnLifecycle,
@@ -257,9 +285,11 @@ export class AgentRuntime {
   }
 
   /** Drop in-flight messages; completed task summaries remain. */
-  clearCurrentContext(): void {
+  clearCurrentContext(): boolean {
+    if (!this.session) return false;
     this.session.current_messages = [];
     this.sessionDirty = true;
+    return true;
   }
 
   hasPendingHandoff(): boolean {
@@ -267,14 +297,16 @@ export class AgentRuntime {
   }
 
   /** Write `.sessions/handoff_<session_id>.md` for the current session. */
-  writeHandoff(): string {
+  writeHandoff(): string | null {
+    if (!this.session) return null;
     this.saveIfDirty(true);
     return writeHandoffFile(this.session);
   }
 
   /** Queue handoff content for injection into the next task prompt. */
   loadHandoffForNextTask(sessionId?: string): string | null {
-    const sid = sessionId ?? this.session.session_id;
+    const sid = sessionId ?? this.session?.session_id;
+    if (!sid) return null;
     const content = readHandoffFile(sid);
     if (!content) return null;
     this.pendingHandoffPrefix = formatHandoffInjection(content);
@@ -284,7 +316,8 @@ export class AgentRuntime {
   /**
    * Write handoff from current session, open a new session, queue handoff for next task.
    */
-  newSessionWithHandoff(): { path: string; fromSessionId: string } {
+  newSessionWithHandoff(): { path: string; fromSessionId: string } | null {
+    if (!this.session) return null;
     this.saveIfDirty(true);
     const fromSession = this.session;
     const path = writeHandoffFile(fromSession);
@@ -384,7 +417,7 @@ export class AgentRuntime {
   }
 
   saveIfDirty(force = true): void {
-    if (!this.sessionDirty) return;
+    if (!this.session || !this.sessionDirty) return;
     if (!saveSessionThrottled(this.session, { force })) return;
     this.emit({
       type: 'session_saved',
@@ -398,6 +431,8 @@ export class AgentRuntime {
     if (this.running) {
       throw new Error('Agent is already running');
     }
+
+    this.ensureSession();
 
     const workflowPath = this.armedWorkflowPath;
     this.armedWorkflowPath = null;
@@ -413,6 +448,8 @@ export class AgentRuntime {
       throw new Error('Agent is already running');
     }
 
+    const session = this.ensureSession();
+
     const resolved = this.resolveWorkflowPath(workflowPath) ?? workflowPath;
     if (!existsSync(resolved)) {
       throw new Error(`Workflow not found: ${workflowPath}`);
@@ -421,19 +458,19 @@ export class AgentRuntime {
     const checkpoint = buildWorkflowCheckpoint(resolved, this.config.cwd);
     const approved = await this.confirmWorkflowEntry(checkpoint);
     if (!approved) {
-      return { text: '[workflow cancelled]', messages: this.session.current_messages };
+      return { text: '[workflow cancelled]', messages: session.current_messages };
     }
 
     if (checkpoint.needsShell && !(await this.permissionGate.ensureShell(this.config, 'workflow'))) {
       return {
         text: '[workflow cancelled: shell not approved]',
-        messages: this.session.current_messages,
+        messages: session.current_messages,
       };
     }
     if (checkpoint.needsWeb && !(await this.permissionGate.ensureWeb(this.config, 'workflow'))) {
       return {
         text: '[workflow cancelled: web not approved]',
-        messages: this.session.current_messages,
+        messages: session.current_messages,
       };
     }
 
@@ -443,7 +480,7 @@ export class AgentRuntime {
 
     this.emit({
       type: 'run_start',
-      session_id: this.session.session_id,
+      session_id: session.session_id,
       cwd: this.config.cwd,
     });
 
@@ -454,7 +491,7 @@ export class AgentRuntime {
         workflowPath: resolved,
         userTask: prompt,
         config: runConfig,
-        session: this.session,
+        session,
         stream: this.useStream,
         onStep: this.onStep,
         onWorkflowStep: (info) => {
@@ -467,7 +504,7 @@ export class AgentRuntime {
         },
       });
 
-      this.session.current_messages = [];
+      session.current_messages = [];
       this.sessionDirty = true;
       this.saveIfDirty();
 
@@ -489,7 +526,7 @@ export class AgentRuntime {
         this.sessionDirty = true;
         this.saveIfDirty();
         this.emit({ type: 'run_end', reason: 'aborted' });
-        return { text: '[aborted]', messages: this.session.current_messages };
+        return { text: '[aborted]', messages: session.current_messages };
       }
       const message = err instanceof Error ? err.message : String(err);
       this.emit({ type: 'run_end', reason: 'error', message });
@@ -500,13 +537,14 @@ export class AgentRuntime {
   }
 
   private async runSingleTask(prompt: string): Promise<AgentResult> {
+    const session = this.ensureSession();
     this.running = true;
     this.abortController = new AbortController();
     const signal = this.abortController.signal;
 
     this.emit({
       type: 'run_start',
-      session_id: this.session.session_id,
+      session_id: session.session_id,
       cwd: this.config.cwd,
     });
 
@@ -516,18 +554,18 @@ export class AgentRuntime {
       const answer = await runAgent({
         prompt: this.consumeHandoffPrompt(prompt),
         config: runConfig,
-        session: this.session,
-        sessionId: this.session.session_id,
+        session,
+        sessionId: session.session_id,
         stream: this.useStream,
         signal,
         onStep: this.onStep,
         onTaskComplete: (taskSummary) => {
-          this.session.tasks.push(taskSummary);
+          session.tasks.push(taskSummary);
           this.sessionDirty = true;
         },
       });
 
-      this.session.current_messages = answer.messages;
+      session.current_messages = answer.messages;
       this.sessionDirty = true;
       this.saveIfDirty();
 
@@ -538,7 +576,7 @@ export class AgentRuntime {
         this.sessionDirty = true;
         this.saveIfDirty();
         this.emit({ type: 'run_end', reason: 'aborted' });
-        return { text: '[aborted]', messages: this.session.current_messages };
+        return { text: '[aborted]', messages: session.current_messages };
       }
       const message = err instanceof Error ? err.message : String(err);
       this.emit({ type: 'run_end', reason: 'error', message });

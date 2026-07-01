@@ -270,10 +270,10 @@ async function main(): Promise<void> {
     }
     if (resumeSessionId) {
       console.log(
-        `Resumed session: ${runtime.session.session_id} (${runtime.session.tasks.length} previous tasks)`,
+        `Resumed session: ${runtime.session!.session_id} (${runtime.session!.tasks.length} previous tasks)`,
       );
     } else {
-      console.log(`New session: ${runtime.session.session_id}`);
+      console.log(`New session: ${runtime.session!.session_id}`);
     }
     console.log('─'.repeat(60));
     console.log('minimal-agent-ts');
@@ -283,7 +283,7 @@ async function main(): Promise<void> {
       `shell: ${runtime.config.allowShell ? 'on' : 'off (use --allow-shell)'}`,
     );
     console.log(`web:   ${runtime.config.allowWeb ? 'on' : 'off (use --allow-web)'}`);
-    console.log(`session: ${runtime.session.session_id}`);
+    console.log(`session: ${runtime.session!.session_id}`);
     console.log('─'.repeat(60));
     if (workflowPath) {
       console.log(`workflow: ${workflowPath}`);
@@ -300,7 +300,7 @@ async function main(): Promise<void> {
     finalText = wfResult.text;
     if (!jsonEvents) {
       console.log(
-        `\nworkflow done (session ${runtime.session.session_id})`,
+        `\nworkflow done (session ${runtime.session!.session_id})`,
       );
     }
   } else {

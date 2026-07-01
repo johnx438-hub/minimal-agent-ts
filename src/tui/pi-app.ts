@@ -100,10 +100,14 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     'minimal-agent-ts TUI  (pi presenter)',
     `model:   ${runtime.config.model}`,
     `cwd:     ${runtime.config.cwd}`,
-    `session: ${runtime.session.session_id}`,
+    `session: ${runtime.sessionLabel()}`,
     `shell:   ${shellOn ? 'on' : 'off'}   web: ${webOn ? 'on' : 'off'}`,
     'slash: /help   Esc aborts while running',
   ];
+  if (!runtime.hasActiveSession()) {
+    bannerLines.push('(no session yet — /resume, /new, or first task)');
+    bannerLines.push('CLI: npm run tui -- --resume <session_id>');
+  }
   if (runtime.hasPendingHandoff()) {
     bannerLines.push('(handoff loaded — will inject on next task)');
   }
@@ -162,7 +166,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
   const printStatus = (): void => {
     const wf = armedWorkflow ? `  workflow armed: ${armedWorkflow}` : '';
     say(
-      `[${runtime.session.session_id}] shell:${runtime.config.allowShell ? 'on' : 'off'} web:${runtime.config.allowWeb ? 'on' : 'off'}${wf}`,
+      `[${runtime.sessionLabel()}] shell:${runtime.config.allowShell ? 'on' : 'off'} web:${runtime.config.allowWeb ? 'on' : 'off'}${wf}`,
       true,
     );
   };
@@ -173,16 +177,24 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
       const choice = await fatiguePrompter(fatigueTracker.stats());
       fatigueTracker.snooze();
       if (choice === 'handoff') {
-        const { path, fromSessionId } = runtime.newSessionWithHandoff();
-        armedWorkflow = null;
-        runtime.armWorkflow(null);
-        fatigueTracker.reset();
-        say(`Handoff from ${fromSessionId} → ${path}`);
-        say(`New session: ${runtime.session.session_id} (handoff queued)`);
-        printStatus();
+        const handoff = runtime.newSessionWithHandoff();
+        if (!handoff) {
+          say('(no active session — nothing to hand off)');
+        } else {
+          const { path, fromSessionId } = handoff;
+          armedWorkflow = null;
+          runtime.armWorkflow(null);
+          fatigueTracker.reset();
+          say(`Handoff from ${fromSessionId} → ${path}`);
+          say(`New session: ${runtime.sessionLabel()} (handoff queued)`);
+          printStatus();
+        }
       } else if (choice === 'clear') {
-        runtime.clearCurrentContext();
-        say('Context cleared (completed task summaries kept)');
+        if (!runtime.clearCurrentContext()) {
+          say('(no active session)');
+        } else {
+          say('Context cleared (completed task summaries kept)');
+        }
       }
     }
     resumeEditor();
@@ -282,35 +294,44 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
       armedWorkflow = null;
       runtime.armWorkflow(null);
       fatigueTracker.reset();
-      say(`New session: ${runtime.session.session_id}`);
+      say(`New session: ${runtime.sessionLabel()}`);
       printStatus();
       resumeEditor();
       return;
     }
 
     if (result.newSessionHandoff) {
-      const { path, fromSessionId } = runtime.newSessionWithHandoff();
-      armedWorkflow = null;
-      runtime.armWorkflow(null);
-      fatigueTracker.reset();
-      say(`Handoff from ${fromSessionId} → ${path}`);
-      say(`New session: ${runtime.session.session_id} (handoff queued)`);
-      printStatus();
+      const handoff = runtime.newSessionWithHandoff();
+      if (!handoff) {
+        say('(no active session — nothing to hand off)');
+      } else {
+        const { path, fromSessionId } = handoff;
+        armedWorkflow = null;
+        runtime.armWorkflow(null);
+        fatigueTracker.reset();
+        say(`Handoff from ${fromSessionId} → ${path}`);
+        say(`New session: ${runtime.sessionLabel()} (handoff queued)`);
+        printStatus();
+      }
       resumeEditor();
       return;
     }
 
     if (result.clearContext) {
-      runtime.clearCurrentContext();
-      fatigueTracker.reset();
-      say('Context cleared (task summaries kept)');
+      if (!runtime.clearCurrentContext()) {
+        say('(no active session)');
+      } else {
+        fatigueTracker.reset();
+        say('Context cleared (task summaries kept)');
+      }
       resumeEditor();
       return;
     }
 
     if (result.handoffWrite) {
       const path = runtime.writeHandoff();
-      say(`Handoff written: ${path}`);
+      if (!path) say('(no active session)');
+      else say(`Handoff written: ${path}`);
       resumeEditor();
       return;
     }
@@ -332,7 +353,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     if (result.message === '__resume_last__') {
       if (!runtime.resumeLatestSession()) say('(no saved sessions)');
       else {
-        say(`Resumed latest ${runtime.session.session_id} (${runtime.session.tasks.length} tasks)`);
+        say(`Resumed latest ${runtime.sessionLabel()} (${runtime.session!.tasks.length} tasks)`);
         printStatus();
       }
       resumeEditor();
@@ -343,7 +364,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
       const id = result.message.slice('__resume__:'.length);
       if (!runtime.resumeSession(id)) say(`Session not found: ${id}`);
       else {
-        say(`Resumed ${id} (${runtime.session.tasks.length} tasks)`);
+        say(`Resumed ${id} (${runtime.session!.tasks.length} tasks)`);
         printStatus();
       }
       resumeEditor();

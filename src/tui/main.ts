@@ -5,6 +5,8 @@ import { AgentRuntime } from '../runner.js';
 import { runTuiApp } from './app.js';
 import { runPiTuiApp } from './pi-app.js';
 
+const SESSION_ID_RE = /^session_\d{14}$/;
+
 function parseTuiArgs(argv: string[]): {
   cwd: string;
   resumeSessionId?: string;
@@ -29,9 +31,15 @@ function parseTuiArgs(argv: string[]): {
   }
 
   const resumeIdx = argv.indexOf('--resume');
-  if (resumeIdx >= 0 && argv[resumeIdx + 1]) {
-    resumeSessionId = argv[resumeIdx + 1];
-    argv = [...argv.slice(0, resumeIdx), ...argv.slice(resumeIdx + 2)];
+  if (resumeIdx >= 0) {
+    const next = argv[resumeIdx + 1];
+    if (next && !next.startsWith('-')) {
+      resumeSessionId = next;
+      argv = [...argv.slice(0, resumeIdx), ...argv.slice(resumeIdx + 2)];
+    } else {
+      resumeLatest = true;
+      argv = [...argv.slice(0, resumeIdx), ...argv.slice(resumeIdx + 1)];
+    }
   }
 
   if (argv.includes('--resume-last')) {
@@ -61,6 +69,11 @@ function parseTuiArgs(argv: string[]): {
     }
   }
 
+  const positional = argv.filter((a) => !a.startsWith('-'));
+  if (!resumeSessionId && positional.length === 1 && SESSION_ID_RE.test(positional[0])) {
+    resumeSessionId = positional[0];
+  }
+
   return { cwd, resumeSessionId, resumeLatest, noShell, noWeb, allowWeb, loadHandoffFrom };
 }
 
@@ -71,6 +84,7 @@ async function main(): Promise<void> {
     cwd: opts.cwd,
     resumeSessionId: opts.resumeSessionId,
     resumeLatest: opts.resumeLatest,
+    deferSession: !opts.resumeSessionId && !opts.resumeLatest,
     tuiMode: true,
     allowShell: opts.noShell ? false : undefined,
     allowWeb: opts.allowWeb,

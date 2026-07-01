@@ -38,7 +38,10 @@ function printBanner(runtime: AgentRuntime, shellOn: boolean, webOn: boolean): v
   console.log('minimal-agent-ts TUI  (scroll log + slash REPL)');
   console.log(`model:   ${runtime.config.model}`);
   console.log(`cwd:     ${runtime.config.cwd}`);
-  console.log(`session: ${runtime.session.session_id}`);
+  console.log(`session: ${runtime.sessionLabel()}`);
+  if (!runtime.hasActiveSession()) {
+    console.log('  (lazy — /resume, /new, or first task creates a session)');
+  }
   console.log(`shell:   ${shellOn ? 'on' : 'off'}   web: ${webOn ? 'on' : 'off'}`);
   console.log('slash:   /help   while running: Ctrl+C to abort');
   console.log('─'.repeat(60));
@@ -47,7 +50,7 @@ function printBanner(runtime: AgentRuntime, shellOn: boolean, webOn: boolean): v
 function printStatus(runtime: AgentRuntime, armedWorkflow: string | null): void {
   const wf = armedWorkflow ? `  workflow armed: ${armedWorkflow}` : '';
   console.log(
-    `[${runtime.session.session_id}] shell:${runtime.config.allowShell ? 'on' : 'off'} web:${runtime.config.allowWeb ? 'on' : 'off'}${wf}`,
+    `[${runtime.sessionLabel()}] shell:${runtime.config.allowShell ? 'on' : 'off'} web:${runtime.config.allowWeb ? 'on' : 'off'}${wf}`,
   );
 }
 
@@ -164,18 +167,26 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
       const choice = await createFatiguePrompter(fatigueTracker.stats())();
       fatigueTracker.snooze();
       if (choice === 'handoff') {
-        const { path, fromSessionId } = runtime.newSessionWithHandoff();
-        armedWorkflow = null;
-        runtime.armWorkflow(null);
-        fatigueTracker.reset();
-        console.log(`Handoff from ${fromSessionId} → ${path}`);
-        console.log(
-          `New session: ${runtime.session.session_id} (handoff queued for next task)`,
-        );
+        const handoff = runtime.newSessionWithHandoff();
+        if (!handoff) {
+          console.log('(no active session — nothing to hand off)');
+        } else {
+          const { path, fromSessionId } = handoff;
+          armedWorkflow = null;
+          runtime.armWorkflow(null);
+          fatigueTracker.reset();
+          console.log(`Handoff from ${fromSessionId} → ${path}`);
+          console.log(
+            `New session: ${runtime.sessionLabel()} (handoff queued for next task)`,
+          );
+        }
         printStatus(runtime, armedWorkflow);
       } else if (choice === 'clear') {
-        runtime.clearCurrentContext();
-        console.log('Context cleared (completed task summaries kept)');
+        if (!runtime.clearCurrentContext()) {
+          console.log('(no active session)');
+        } else {
+          console.log('Context cleared (completed task summaries kept)');
+        }
       }
       rl.resume();
     }
@@ -258,35 +269,44 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
       armedWorkflow = null;
       runtime.armWorkflow(null);
       fatigueTracker.reset();
-      console.log(`New session: ${runtime.session.session_id}`);
+      console.log(`New session: ${runtime.sessionLabel()}`);
       printStatus(runtime, armedWorkflow);
       showPrompt();
       return;
     }
 
     if (result.newSessionHandoff) {
-      const { path, fromSessionId } = runtime.newSessionWithHandoff();
-      armedWorkflow = null;
-      runtime.armWorkflow(null);
-      fatigueTracker.reset();
-      console.log(`Handoff from ${fromSessionId} → ${path}`);
-      console.log(`New session: ${runtime.session.session_id} (handoff queued)`);
-      printStatus(runtime, armedWorkflow);
+      const handoff = runtime.newSessionWithHandoff();
+      if (!handoff) {
+        console.log('(no active session — nothing to hand off)');
+      } else {
+        const { path, fromSessionId } = handoff;
+        armedWorkflow = null;
+        runtime.armWorkflow(null);
+        fatigueTracker.reset();
+        console.log(`Handoff from ${fromSessionId} → ${path}`);
+        console.log(`New session: ${runtime.sessionLabel()} (handoff queued)`);
+        printStatus(runtime, armedWorkflow);
+      }
       showPrompt();
       return;
     }
 
     if (result.clearContext) {
-      runtime.clearCurrentContext();
-      fatigueTracker.reset();
-      console.log('Context cleared (task summaries kept)');
+      if (!runtime.clearCurrentContext()) {
+        console.log('(no active session)');
+      } else {
+        fatigueTracker.reset();
+        console.log('Context cleared (task summaries kept)');
+      }
       showPrompt();
       return;
     }
 
     if (result.handoffWrite) {
       const path = runtime.writeHandoff();
-      console.log(`Handoff written: ${path}`);
+      if (!path) console.log('(no active session)');
+      else console.log(`Handoff written: ${path}`);
       showPrompt();
       return;
     }
@@ -310,7 +330,7 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
         console.log('(no saved sessions)');
       } else {
         console.log(
-          `Resumed latest ${runtime.session.session_id} (${runtime.session.tasks.length} tasks)`,
+          `Resumed latest ${runtime.sessionLabel()} (${runtime.session!.tasks.length} tasks)`,
         );
         printStatus(runtime, armedWorkflow);
       }
@@ -323,7 +343,7 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
       if (!runtime.resumeSession(id)) {
         console.log(`Session not found: ${id}`);
       } else {
-        console.log(`Resumed ${id} (${runtime.session.tasks.length} tasks)`);
+        console.log(`Resumed ${id} (${runtime.session!.tasks.length} tasks)`);
         printStatus(runtime, armedWorkflow);
       }
       showPrompt();
