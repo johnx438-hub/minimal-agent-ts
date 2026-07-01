@@ -84,5 +84,15 @@ export function printRuntimeEvent(event: RuntimeEvent): void {
       console.log('═'.repeat(60));
       break;
     }
+
+    case 'spawn_start':
+      console.log(`\n${'═'.repeat(60)}`);
+      console.log(`spawn ▶ ${event.preset}`);
+      console.log('═'.repeat(60));
+      break;
+
+    case 'spawn_end':
+      console.log(event.ok ? `\nspawn ✓ ${event.preset}` : `\nspawn ✗ ${event.preset}: ${event.detail ?? 'failed'}`);
+      break;
   }
 }

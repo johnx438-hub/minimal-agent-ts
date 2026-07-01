@@ -1,8 +1,9 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { resolve } from 'node:path';
 
 import { releaseAllCompactedContent } from './context-policy.js';
 import type { SessionFile, SessionMeta } from './types.js';
+import { ensureSessionsDir, sessionPath, sessionsDir } from './workspace.js';
 
 const DEFAULT_SAVE_MIN_INTERVAL_MS = 30_000;
 const lastSaveAtBySession = new Map<string, number>();
@@ -42,24 +43,19 @@ export function saveSessionThrottled(
   return true;
 }
 
-const SESSION_DIR = resolve(process.cwd(), '.sessions');
-const SESSION_FILE_PREFIX = 'session_';
-
 /**
  * Generate a session ID based on current timestamp.
  * Format: session_YYYYMMDD_HHMMSS
  */
 export function generateSessionId(): string {
   const now = new Date();
-  const dateStr = now.toISOString().replace(/[-T:.Z]/g, '').slice(0, 14); // YYYYMMDDHHmmss
+  const dateStr = now.toISOString().replace(/[-T:.Z]/g, '').slice(0, 14);
   return `session_${dateStr}`;
 }
 
-/**
- * Get the file path for a session.
- */
+/** @deprecated Use sessionPath from workspace; kept for callers that import by name. */
 export function getSessionPath(sessionId: string): string {
-  return resolve(SESSION_DIR, `${sessionId}.json`);
+  return sessionPath(sessionId);
 }
 
 /**
@@ -75,13 +71,8 @@ export function createSession(userId: string = 'user_default'): SessionFile {
     current_messages: [],
   };
 
-  // Ensure session directory exists
-  if (!existsSync(SESSION_DIR)) {
-    mkdirSync(SESSION_DIR, { recursive: true });
-  }
-
-  // Write to disk
-  const path = getSessionPath(sessionId);
+  ensureSessionsDir();
+  const path = sessionPath(sessionId);
   writeFileSync(path, JSON.stringify(session, null, 2), 'utf8');
 
   return session;
@@ -92,7 +83,7 @@ export function createSession(userId: string = 'user_default'): SessionFile {
  * Returns null if session not found.
  */
 export function loadSession(sessionId: string): SessionFile | null {
-  const path = getSessionPath(sessionId);
+  const path = sessionPath(sessionId);
   if (!existsSync(path)) {
     return null;
   }
@@ -112,7 +103,8 @@ export function loadSession(sessionId: string): SessionFile | null {
  */
 export function saveSession(session: SessionFile): void {
   releaseAllCompactedContent(session.current_messages);
-  const path = getSessionPath(session.session_id);
+  ensureSessionsDir();
+  const path = sessionPath(session.session_id);
   writeFileSync(path, JSON.stringify(session, null, 2), 'utf8');
   lastSaveAtBySession.set(session.session_id, Date.now());
 }
@@ -122,11 +114,12 @@ export function saveSession(session: SessionFile): void {
  * Returns sessions sorted by created_at (newest first).
  */
 export function listSessions(userId?: string): SessionMeta[] {
-  if (!existsSync(SESSION_DIR)) {
+  const dir = sessionsDir();
+  if (!existsSync(dir)) {
     return [];
   }
 
-  const entries = readdirSync(SESSION_DIR, { withFileTypes: true });
+  const entries = readdirSync(dir, { withFileTypes: true });
   const sessions: SessionMeta[] = [];
 
   for (const entry of entries) {
@@ -134,7 +127,7 @@ export function listSessions(userId?: string): SessionMeta[] {
       continue;
     }
 
-    const path = resolve(SESSION_DIR, entry.name);
+    const path = resolve(dir, entry.name);
     try {
       const content = readFileSync(path, 'utf8');
       const session = JSON.parse(content) as SessionFile;
@@ -151,12 +144,10 @@ export function listSessions(userId?: string): SessionMeta[] {
         path,
       });
     } catch {
-      // Skip invalid files
       continue;
     }
   }
 
-  // Sort by created_at descending (newest first)
   sessions.sort((a, b) => b.created_at - a.created_at);
   return sessions;
 }

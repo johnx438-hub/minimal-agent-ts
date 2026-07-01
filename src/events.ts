@@ -36,7 +36,9 @@ export type RuntimeEvent =
       detail: string;
       role?: string;
       round?: number;
-    };
+    }
+  | { type: 'spawn_start'; preset: string }
+  | { type: 'spawn_end'; preset: string; ok: boolean; detail?: string };
 
 export function isAbortError(err: unknown): boolean {
   return (

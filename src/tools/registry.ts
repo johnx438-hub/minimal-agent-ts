@@ -1,3 +1,5 @@
+import { resolve } from 'node:path';
+
 import { isCapabilityEnabled } from '../permission-gate.js';
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import { loadAgentPluginConfig } from '../plugins/config-loader.js';
@@ -46,6 +48,13 @@ export class ToolRegistry {
   private initialized = false;
   private enabledBuiltin = new Set<string>();
   private spawnPresets: ResolvedSpawnPreset[] = [];
+
+  async reinitialize(cwd: string, pluginConfig?: AgentPluginConfig): Promise<void> {
+    if (this.initialized) {
+      await this.shutdown();
+    }
+    await this.initialize(cwd, pluginConfig);
+  }
 
   async initialize(cwd: string, pluginConfig?: AgentPluginConfig): Promise<void> {
     this.pluginConfig = pluginConfig ?? loadAgentPluginConfig(cwd);
@@ -233,13 +242,17 @@ export class ToolRegistry {
 
 export const toolRegistry = new ToolRegistry();
 
+let lastRegistryCwd: string | null = null;
+
 /** Backward-compatible helpers used before initialize(). */
 export async function ensureToolRegistry(
   cwd: string,
   pluginConfig?: AgentPluginConfig,
 ): Promise<ToolRegistry> {
-  if (!toolRegistry.isInitialized()) {
-    await toolRegistry.initialize(cwd, pluginConfig);
+  const resolved = resolve(cwd);
+  if (!toolRegistry.isInitialized() || lastRegistryCwd !== resolved) {
+    await toolRegistry.reinitialize(resolved, pluginConfig);
+    lastRegistryCwd = resolved;
   }
   return toolRegistry;
 }

@@ -1,14 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 import { listActions } from './action-store.js';
 import type { SessionFile, TaskSummaryDoc } from './types.js';
+import { ensureSessionsDir, getWorkspaceRoot, handoffPath } from './workspace.js';
 
-const HANDOFF_DIR = '.sessions';
-const HANDOFF_PREFIX = 'handoff_';
-
-export function getHandoffPath(cwd: string, sessionId: string): string {
-  return resolve(cwd, HANDOFF_DIR, `${HANDOFF_PREFIX}${sessionId}.md`);
+export function getHandoffPath(sessionId: string): string {
+  return handoffPath(sessionId);
 }
 
 function latestUserIntent(session: SessionFile): string {
@@ -102,20 +99,17 @@ export function buildHandoffMarkdown(session: SessionFile, cwd: string): string 
 }
 
 /** Write handoff markdown; returns absolute path. */
-export function writeHandoffFile(cwd: string, session: SessionFile): string {
-  const path = getHandoffPath(cwd, session.session_id);
-  const dir = resolve(cwd, HANDOFF_DIR);
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-  const content = buildHandoffMarkdown(session, cwd);
+export function writeHandoffFile(session: SessionFile): string {
+  ensureSessionsDir();
+  const path = getHandoffPath(session.session_id);
+  const content = buildHandoffMarkdown(session, getWorkspaceRoot());
   writeFileSync(path, content, 'utf8');
   return path;
 }
 
 /** Read handoff markdown for a session; null if missing. */
-export function readHandoffFile(cwd: string, sessionId: string): string | null {
-  const path = getHandoffPath(cwd, sessionId);
+export function readHandoffFile(sessionId: string): string | null {
+  const path = getHandoffPath(sessionId);
   if (!existsSync(path)) return null;
   try {
     return readFileSync(path, 'utf8');

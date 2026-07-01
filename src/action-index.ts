@@ -1,5 +1,4 @@
 import { existsSync, mkdirSync } from 'node:fs';
-import { resolve } from 'node:path';
 
 import {
   ZVecCollectionSchema,
@@ -14,12 +13,19 @@ import {
 import { listActions } from './action-store.js';
 import { embedText, ensureEmbeddings } from './embedding.js';
 import type { ActionBlock } from './types.js';
-
-const INDEX_DIR = resolve(process.cwd(), '.sessions/agent_memory');
+import { agentMemoryDir, ensureSessionsDir } from './workspace.js';
 const COLLECTION_NAME = 'agent_memory';
 
 let collection: ZVecCollection | null = null;
 let initFailed = false;
+let boundMemoryDir: string | null = null;
+
+/** Close cached zvec collection (e.g. after workspace root changes). */
+export function resetZvecCollection(): void {
+  collection = null;
+  initFailed = false;
+  boundMemoryDir = null;
+}
 
 export function isZvecEnabled(): boolean {
   return process.env.ENABLE_ZVEC !== '0';
@@ -85,20 +91,28 @@ function createSchema(): ZVecCollectionSchema {
 function getCollection(): ZVecCollection | null {
   if (!isZvecEnabled() || initFailed) return null;
 
-  if (collection) return collection;
+  const indexDir = agentMemoryDir();
+  if (collection && boundMemoryDir === indexDir) return collection;
+
+  if (collection && boundMemoryDir !== indexDir) {
+    resetZvecCollection();
+  }
 
   try {
-    if (!existsSync(resolve(process.cwd(), '.sessions'))) {
-      mkdirSync(resolve(process.cwd(), '.sessions'), { recursive: true });
+    ensureSessionsDir();
+    if (!existsSync(indexDir)) {
+      mkdirSync(indexDir, { recursive: true });
     }
 
-    collection = existsSync(INDEX_DIR)
-      ? ZVecOpen(INDEX_DIR)
-      : ZVecCreateAndOpen(INDEX_DIR, createSchema());
+    collection = existsSync(indexDir)
+      ? ZVecOpen(indexDir)
+      : ZVecCreateAndOpen(indexDir, createSchema());
+    boundMemoryDir = indexDir;
     return collection;
   } catch {
     initFailed = true;
     collection = null;
+    boundMemoryDir = null;
     return null;
   }
 }

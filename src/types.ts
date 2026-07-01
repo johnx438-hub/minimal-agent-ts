@@ -89,7 +89,13 @@ export interface AgentConfig {
   permissionGate?: PermissionGate;
   /** Spawn concurrency and turn limits from agent.json spawn_policy. */
   spawnPolicy?: SpawnPolicy;
+  /** Spawn lifecycle hooks for TUI / --json-events (main agent only). */
+  spawnLifecycle?: (event: SpawnLifecycleEvent) => void;
 }
+
+export type SpawnLifecycleEvent =
+  | { phase: 'start'; preset: string }
+  | { phase: 'end'; preset: string; ok: boolean; detail?: string };
 
 /** recall_query response shape (Phase 2b). */
 export interface RecallResult {

@@ -471,7 +471,7 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
 
     if (result.message?.startsWith('__cwd__:')) {
       const path = result.message.slice('__cwd__:'.length);
-      runtime.setCwd(resolve(path));
+      await runtime.setCwd(resolve(path));
       console.log(`cwd → ${runtime.config.cwd}`);
       showPrompt();
       return;

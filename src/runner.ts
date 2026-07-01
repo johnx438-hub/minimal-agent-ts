@@ -31,6 +31,9 @@ import {
   writeHandoffFile,
 } from './handoff.js';
 import { runWorkflow } from './workflow/runner.js';
+import { resetZvecCollection } from './action-index.js';
+import { setWorkspaceRoot } from './workspace.js';
+import type { SpawnLifecycleEvent } from './types.js';
 
 function env(name: string, fallback?: string): string | undefined {
   const v = process.env[name]?.trim();
@@ -124,6 +127,8 @@ export class AgentRuntime {
   private pendingHandoffPrefix: string | null = null;
 
   constructor(opts: AgentRuntimeOptions) {
+    setWorkspaceRoot(opts.cwd);
+
     const built = buildAgentConfig({
       cwd: opts.cwd,
       loadSkills: opts.loadSkills,
@@ -173,7 +178,7 @@ export class AgentRuntime {
       if (!other) return;
       sessionId = other.session_id;
     }
-    const content = readHandoffFile(this.config.cwd, sessionId);
+    const content = readHandoffFile(sessionId);
     if (content) {
       this.pendingHandoffPrefix = formatHandoffInjection(content);
     }
@@ -211,6 +216,29 @@ export class AgentRuntime {
     this.emit(event);
   };
 
+  private onSpawnLifecycle = (event: SpawnLifecycleEvent): void => {
+    if (event.phase === 'start') {
+      this.emit({ type: 'spawn_start', preset: event.preset });
+      return;
+    }
+    this.emit({
+      type: 'spawn_end',
+      preset: event.preset,
+      ok: event.ok,
+      detail: event.detail,
+    });
+  };
+
+  private buildRunConfig(signal: AbortSignal): AgentConfig {
+    return {
+      ...this.config,
+      sessionId: this.session.session_id,
+      abortSignal: signal,
+      permissionGate: this.permissionGate,
+      spawnLifecycle: this.onSpawnLifecycle,
+    };
+  };
+
   listSessions(): SessionMeta[] {
     return listSessions();
   }
@@ -241,16 +269,16 @@ export class AgentRuntime {
   /** Write `.sessions/handoff_<session_id>.md` for the current session. */
   writeHandoff(): string {
     this.saveIfDirty(true);
-    return writeHandoffFile(this.config.cwd, this.session);
+    return writeHandoffFile(this.session);
   }
 
   /** Queue handoff content for injection into the next task prompt. */
   loadHandoffForNextTask(sessionId?: string): string | null {
     const sid = sessionId ?? this.session.session_id;
-    const content = readHandoffFile(this.config.cwd, sid);
+    const content = readHandoffFile(sid);
     if (!content) return null;
     this.pendingHandoffPrefix = formatHandoffInjection(content);
-    return getHandoffPath(this.config.cwd, sid);
+    return getHandoffPath(sid);
   }
 
   /**
@@ -259,8 +287,8 @@ export class AgentRuntime {
   newSessionWithHandoff(): { path: string; fromSessionId: string } {
     this.saveIfDirty(true);
     const fromSession = this.session;
-    const path = writeHandoffFile(this.config.cwd, fromSession);
-    const content = readHandoffFile(this.config.cwd, fromSession.session_id)!;
+    const path = writeHandoffFile(fromSession);
+    const content = readHandoffFile(fromSession.session_id)!;
     this.newSession();
     this.pendingHandoffPrefix = formatHandoffInjection(content);
     return { path, fromSessionId: fromSession.session_id };
@@ -290,9 +318,13 @@ export class AgentRuntime {
     }
   }
 
-  setCwd(path: string): void {
-    this.config.cwd = resolve(path);
-    this.pluginConfig = loadAgentPluginConfig(this.config.cwd);
+  async setCwd(path: string): Promise<void> {
+    const resolved = resolve(path);
+    setWorkspaceRoot(resolved);
+    this.config.cwd = resolved;
+    this.pluginConfig = loadAgentPluginConfig(resolved);
+    resetZvecCollection();
+    await toolRegistry.reinitialize(resolved, this.pluginConfig);
   }
 
   armWorkflow(path: string | null): void {
@@ -415,12 +447,7 @@ export class AgentRuntime {
       cwd: this.config.cwd,
     });
 
-    const runConfig: AgentConfig = {
-      ...this.config,
-      sessionId: this.session.session_id,
-      abortSignal: signal,
-      permissionGate: this.permissionGate,
-    };
+    const runConfig = this.buildRunConfig(signal);
 
     try {
       const wfResult = await runWorkflow({
@@ -483,12 +510,7 @@ export class AgentRuntime {
       cwd: this.config.cwd,
     });
 
-    const runConfig: AgentConfig = {
-      ...this.config,
-      sessionId: this.session.session_id,
-      abortSignal: signal,
-      permissionGate: this.permissionGate,
-    };
+    const runConfig = this.buildRunConfig(signal);
 
     try {
       const answer = await runAgent({

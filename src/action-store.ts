@@ -3,15 +3,14 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync, existsSync } from 
 import { resolve } from 'node:path';
 
 import type { ActionBlock } from './types.js';
-
-const ACTIONS_DIR = resolve(process.cwd(), '.sessions/actions');
+import { actionsDir, ensureSessionsDir } from './workspace.js';
 
 export function getActionsDir(): string {
-  return ACTIONS_DIR;
+  return actionsDir();
 }
 
 export function getActionPath(actionId: string): string {
-  return resolve(ACTIONS_DIR, `${actionId}.json`);
+  return resolve(actionsDir(), `${actionId}.json`);
 }
 
 export function hashResult(text: string): string {
@@ -59,8 +58,10 @@ export function buildActionBlock(input: {
 }
 
 export function saveAction(block: ActionBlock): void {
-  if (!existsSync(ACTIONS_DIR)) {
-    mkdirSync(ACTIONS_DIR, { recursive: true });
+  ensureSessionsDir();
+  const dir = actionsDir();
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
   }
   writeFileSync(getActionPath(block.action_id), JSON.stringify(block, null, 2), 'utf8');
 }
@@ -79,12 +80,13 @@ export function loadAction(actionId: string): ActionBlock | null {
 
 /** List actions from cold storage, newest first. */
 export function listActions(sessionId?: string, taskId?: string): ActionBlock[] {
-  if (!existsSync(ACTIONS_DIR)) {
+  const dir = actionsDir();
+  if (!existsSync(dir)) {
     return [];
   }
 
   const blocks: ActionBlock[] = [];
-  for (const entry of readdirSync(ACTIONS_DIR)) {
+  for (const entry of readdirSync(dir)) {
     if (!entry.endsWith('.json')) continue;
     const block = loadAction(entry.replace(/\.json$/, ''));
     if (!block) continue;

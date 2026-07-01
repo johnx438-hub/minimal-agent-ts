@@ -493,7 +493,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
 
     if (result.message?.startsWith('__cwd__:')) {
       const path = result.message.slice('__cwd__:'.length);
-      runtime.setCwd(resolve(path));
+      await runtime.setCwd(resolve(path));
       say(`cwd → ${runtime.config.cwd}`);
       resumeEditor();
       return;

@@ -1,6 +1,7 @@
 import type { AgentStepEvent } from '../events.js';
 import { isCapabilityEnabled } from '../permission-gate.js';
 import type { AgentConfig } from '../types.js';
+import type { SpawnLifecycleEvent } from '../types.js';
 import { getSpawnSemaphore } from './semaphore.js';
 import type { ResolvedSpawnPreset } from './types.js';
 
@@ -18,6 +19,10 @@ function presetNeedsShell(preset: ResolvedSpawnPreset): boolean {
 
 function presetNeedsWeb(preset: ResolvedSpawnPreset): boolean {
   return preset.tools.includes('web_fetch');
+}
+
+function emitSpawnLifecycle(config: AgentConfig, event: SpawnLifecycleEvent): void {
+  config.spawnLifecycle?.(event);
 }
 
 export async function runSpawnAgent(opts: RunSpawnOptions): Promise<string> {
@@ -74,6 +79,7 @@ async function runSpawnAgentInner(opts: {
     maxTurns: preset.maxTurns,
     toolAllowlist: preset.tools.length > 0 ? preset.tools : undefined,
     spawnDepth: depth + 1,
+    spawnLifecycle: undefined,
   };
 
   const sink = parentConfig.nestedStepSink;
@@ -83,9 +89,7 @@ async function runSpawnAgentInner(opts: {
       }
     : undefined;
 
-  console.log(`\n${'═'.repeat(60)}`);
-  console.log(`spawn ▶ ${preset.name}`);
-  console.log('═'.repeat(60));
+  emitSpawnLifecycle(parentConfig, { phase: 'start', preset: preset.name });
 
   const { runAgent } = await import('../agent.js');
 
@@ -100,11 +104,16 @@ async function runSpawnAgentInner(opts: {
       onStep,
     });
 
-    console.log(`\nspawn ✓ ${preset.name}`);
+    emitSpawnLifecycle(parentConfig, { phase: 'end', preset: preset.name, ok: true });
     return result.text || '(empty reply from sub-agent)';
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.log(`\nspawn ✗ ${preset.name}: ${msg}`);
+    emitSpawnLifecycle(parentConfig, {
+      phase: 'end',
+      preset: preset.name,
+      ok: false,
+      detail: msg,
+    });
     return `error: spawn failed: ${msg}`;
   }
 }

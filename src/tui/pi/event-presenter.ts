@@ -79,6 +79,18 @@ export class PiEventPresenter {
         );
         break;
       }
+      case 'spawn_start':
+        this.appendRunMeta(`spawn ▶ ${event.preset}`);
+        break;
+      case 'spawn_end':
+        if (event.ok) {
+          this.appendRunMeta(`spawn ✓ ${event.preset}`);
+        } else {
+          this.appendRunMeta(
+            `spawn ✗ ${event.preset}${event.detail ? `: ${event.detail}` : ''}`,
+          );
+        }
+        break;
     }
   }
 

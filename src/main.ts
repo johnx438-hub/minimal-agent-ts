@@ -177,6 +177,20 @@ function onRuntimeEvent(event: RuntimeEvent, jsonEvents: boolean): void {
     console.log('═'.repeat(60));
     return;
   }
+  if (event.type === 'spawn_start') {
+    console.log(`\n${'═'.repeat(60)}`);
+    console.log(`spawn ▶ ${event.preset}`);
+    console.log('═'.repeat(60));
+    return;
+  }
+  if (event.type === 'spawn_end') {
+    console.log(
+      event.ok
+        ? `\nspawn ✓ ${event.preset}`
+        : `\nspawn ✗ ${event.preset}: ${event.detail ?? 'failed'}`,
+    );
+    return;
+  }
   if (
     event.type === 'run_start' ||
     event.type === 'run_end' ||
