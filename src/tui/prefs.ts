@@ -18,22 +18,51 @@ const DEFAULT_PREFS: TuiPrefs = {
   alwaysWeb: false,
 };
 
-function localPrefsPath(cwd: string): string {
-  return resolve(cwd, '.tui-prefs.json');
+function localPrefsPath(root: string): string {
+  return resolve(root, '.tui-prefs.json');
 }
 
 function globalPrefsPath(): string {
   return resolve(homedir(), '.config', 'minimal-agent-ts', 'tui-prefs.json');
 }
 
+const PREFS_WALK_MAX = 12;
+
+/**
+ * Project root for .tui-prefs.json: nearest ancestor with an existing prefs file,
+ * else nearest ancestor with agent.json, else startCwd.
+ */
+export function resolvePrefsRoot(startCwd: string): string {
+  let dir = resolve(startCwd);
+
+  for (let i = 0; i < PREFS_WALK_MAX; i++) {
+    if (existsSync(localPrefsPath(dir))) return dir;
+    const parent = resolve(dir, '..');
+    if (parent === dir) break;
+    dir = parent;
+  }
+
+  dir = resolve(startCwd);
+  for (let i = 0; i < PREFS_WALK_MAX; i++) {
+    if (existsSync(resolve(dir, 'agent.json'))) return dir;
+    const parent = resolve(dir, '..');
+    if (parent === dir) break;
+    dir = parent;
+  }
+
+  return resolve(startCwd);
+}
+
 export function prefsPath(cwd: string): string {
-  const local = localPrefsPath(cwd);
+  const root = resolvePrefsRoot(cwd);
+  const local = localPrefsPath(root);
   if (existsSync(local)) return local;
   return globalPrefsPath();
 }
 
 export function loadPrefs(cwd: string): TuiPrefs | null {
-  const local = localPrefsPath(cwd);
+  const root = resolvePrefsRoot(cwd);
+  const local = localPrefsPath(root);
   const path = existsSync(local) ? local : globalPrefsPath();
   if (!existsSync(path)) return null;
   try {
@@ -50,7 +79,8 @@ export function loadPrefs(cwd: string): TuiPrefs | null {
 }
 
 export function savePrefs(cwd: string, prefs: TuiPrefs): void {
-  const path = localPrefsPath(cwd);
+  const root = resolvePrefsRoot(cwd);
+  const path = localPrefsPath(root);
   const dir = dirname(path);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });

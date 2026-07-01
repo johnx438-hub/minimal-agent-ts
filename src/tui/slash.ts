@@ -1,3 +1,11 @@
+export type ApproveKind = 'shell' | 'web';
+
+export type ApproveAction =
+  | { type: 'status' }
+  | { type: 'session'; kind: ApproveKind }
+  | { type: 'always'; kind: ApproveKind }
+  | { type: 'revoke'; kind: ApproveKind };
+
 export interface SlashResult {
   handled: boolean;
   message?: string;
@@ -11,6 +19,7 @@ export interface SlashResult {
   handoffWrite?: boolean;
   /** Session id to load; omit = current session. */
   handoffLoad?: string;
+  approveAction?: ApproveAction;
 }
 
 /** ASCII `/` plus common IME / keyboard variants (e.g. fullwidth ／). */
@@ -54,8 +63,13 @@ export const SLASH_HELP_LINES = [
   '/help              this list',
 ];
 
+/** Strip REPL prompt glyphs users sometimes paste with the command (e.g. `› /help`). */
+export function normalizeReplInput(line: string): string {
+  return line.trim().replace(/^[\u203A\u00BB\uFF1E>]+\s*/u, '').trim();
+}
+
 export function isSlashCommand(line: string): boolean {
-  return SLASH_LEADER.test(line.trim());
+  return SLASH_LEADER.test(normalizeReplInput(line));
 }
 
 /** Normalize leading slash to ASCII `/` for parsing. */
@@ -66,9 +80,10 @@ export function normalizeSlashLine(line: string): string {
 }
 
 export function parseSlashLine(line: string): SlashResult | null {
-  if (!isSlashCommand(line)) return null;
+  const input = normalizeReplInput(line);
+  if (!isSlashCommand(input)) return null;
 
-  const trimmed = normalizeSlashLine(line);
+  const trimmed = normalizeSlashLine(input);
   const parts = trimmed.split(/\s+/).filter(Boolean);
   let cmd = (parts[0] ?? '').toLowerCase();
   cmd = COMMAND_ALIASES[cmd] ?? cmd;
@@ -134,7 +149,7 @@ export function parseSlashLine(line: string): SlashResult | null {
     case '/approve': {
       const sub = parts[1]?.toLowerCase();
       if (!sub || sub === 'status') {
-        return { handled: true, message: '__approve_status__' };
+        return { handled: true, approveAction: { type: 'status' } };
       }
       if (sub === 'session' || sub === 'always') {
         const kind = parts[2]?.toLowerCase();
@@ -144,7 +159,10 @@ export function parseSlashLine(line: string): SlashResult | null {
             message: `Usage: /approve ${sub} shell|web`,
           };
         }
-        return { handled: true, message: `__approve_${sub}__:${kind}` };
+        return {
+          handled: true,
+          approveAction: { type: sub, kind: kind as ApproveKind },
+        };
       }
       if (sub === 'revoke' && parts[2]?.toLowerCase() === 'always') {
         const kind = parts[3]?.toLowerCase();
@@ -154,7 +172,10 @@ export function parseSlashLine(line: string): SlashResult | null {
             message: 'Usage: /approve revoke always shell|web',
           };
         }
-        return { handled: true, message: `__approve_revoke__:${kind}` };
+        return {
+          handled: true,
+          approveAction: { type: 'revoke', kind: kind as ApproveKind },
+        };
       }
       return {
         handled: true,
