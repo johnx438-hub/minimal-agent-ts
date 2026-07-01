@@ -11,10 +11,12 @@ function parseTuiArgs(argv: string[]): {
   noShell: boolean;
   noWeb: boolean;
   allowWeb: boolean;
+  loadHandoffFrom?: string;
 } {
   let cwd = process.cwd();
   let resumeSessionId: string | undefined;
   let resumeLatest = false;
+  let loadHandoffFrom: string | undefined;
   let noShell = false;
   let noWeb = false;
   let allowWeb = false;
@@ -46,7 +48,19 @@ function parseTuiArgs(argv: string[]): {
     allowWeb = true;
   }
 
-  return { cwd, resumeSessionId, resumeLatest, noShell, noWeb, allowWeb };
+  const handoffIdx = argv.indexOf('--handoff');
+  if (handoffIdx >= 0) {
+    const next = argv[handoffIdx + 1];
+    if (next && !next.startsWith('-')) {
+      loadHandoffFrom = next;
+      argv = [...argv.slice(0, handoffIdx), ...argv.slice(handoffIdx + 2)];
+    } else {
+      loadHandoffFrom = 'last';
+      argv = [...argv.slice(0, handoffIdx), ...argv.slice(handoffIdx + 1)];
+    }
+  }
+
+  return { cwd, resumeSessionId, resumeLatest, noShell, noWeb, allowWeb, loadHandoffFrom };
 }
 
 async function main(): Promise<void> {
@@ -59,6 +73,7 @@ async function main(): Promise<void> {
     tuiMode: true,
     allowShell: opts.noShell ? false : undefined,
     allowWeb: opts.allowWeb,
+    loadHandoffFrom: opts.loadHandoffFrom,
   });
 
   await runtime.initialize();

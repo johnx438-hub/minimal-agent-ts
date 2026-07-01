@@ -24,6 +24,12 @@ import {
 } from './workflow-checkpoint.js';
 import type { AgentPluginConfig } from './plugins/types.js';
 import type { AgentConfig, SessionFile, SessionMeta } from './types.js';
+import {
+  formatHandoffInjection,
+  getHandoffPath,
+  readHandoffFile,
+  writeHandoffFile,
+} from './handoff.js';
 import { runWorkflow } from './workflow/runner.js';
 
 function env(name: string, fallback?: string): string | undefined {
@@ -97,6 +103,8 @@ export interface AgentRuntimeOptions {
   /** TUI entry: shell defaults on unless overridden. */
   tuiMode?: boolean;
   jsonEvents?: boolean;
+  /** Inject handoff from session id (or `last`) on first task in a new session. */
+  loadHandoffFrom?: string;
 }
 
 export class AgentRuntime {
@@ -113,6 +121,7 @@ export class AgentRuntime {
   private readonly useStream: boolean;
   readonly permissionGate = new PermissionGate();
   private workflowConfirmFn?: WorkflowConfirmFn;
+  private pendingHandoffPrefix: string | null = null;
 
   constructor(opts: AgentRuntimeOptions) {
     const built = buildAgentConfig({
@@ -149,6 +158,24 @@ export class AgentRuntime {
     } else {
       this.session = createSession(env('USER_ID') ?? 'user_default');
       this.sessionDirty = true;
+    }
+
+    if (opts.loadHandoffFrom) {
+      this.bootstrapHandoff(opts.loadHandoffFrom);
+    }
+  }
+
+  private bootstrapHandoff(sessionIdOrLast: string): void {
+    let sessionId = sessionIdOrLast;
+    if (sessionId === 'last') {
+      const prior = listSessions(env('USER_ID'));
+      const other = prior.find((s) => s.session_id !== this.session.session_id);
+      if (!other) return;
+      sessionId = other.session_id;
+    }
+    const content = readHandoffFile(this.config.cwd, sessionId);
+    if (content) {
+      this.pendingHandoffPrefix = formatHandoffInjection(content);
     }
   }
 
@@ -199,6 +226,51 @@ export class AgentRuntime {
   newSession(): void {
     this.session = createSession(env('USER_ID') ?? 'user_default');
     this.sessionDirty = true;
+  }
+
+  /** Drop in-flight messages; completed task summaries remain. */
+  clearCurrentContext(): void {
+    this.session.current_messages = [];
+    this.sessionDirty = true;
+  }
+
+  hasPendingHandoff(): boolean {
+    return this.pendingHandoffPrefix !== null;
+  }
+
+  /** Write `.sessions/handoff_<session_id>.md` for the current session. */
+  writeHandoff(): string {
+    this.saveIfDirty(true);
+    return writeHandoffFile(this.config.cwd, this.session);
+  }
+
+  /** Queue handoff content for injection into the next task prompt. */
+  loadHandoffForNextTask(sessionId?: string): string | null {
+    const sid = sessionId ?? this.session.session_id;
+    const content = readHandoffFile(this.config.cwd, sid);
+    if (!content) return null;
+    this.pendingHandoffPrefix = formatHandoffInjection(content);
+    return getHandoffPath(this.config.cwd, sid);
+  }
+
+  /**
+   * Write handoff from current session, open a new session, queue handoff for next task.
+   */
+  newSessionWithHandoff(): { path: string; fromSessionId: string } {
+    this.saveIfDirty(true);
+    const fromSession = this.session;
+    const path = writeHandoffFile(this.config.cwd, fromSession);
+    const content = readHandoffFile(this.config.cwd, fromSession.session_id)!;
+    this.newSession();
+    this.pendingHandoffPrefix = formatHandoffInjection(content);
+    return { path, fromSessionId: fromSession.session_id };
+  }
+
+  private consumeHandoffPrompt(prompt: string): string {
+    if (!this.pendingHandoffPrefix) return prompt;
+    const injection = this.pendingHandoffPrefix;
+    this.pendingHandoffPrefix = null;
+    return `${injection}\n\n${prompt}`;
   }
 
   setAllowShell(on: boolean): void {
@@ -409,7 +481,7 @@ export class AgentRuntime {
 
     try {
       const answer = await runAgent({
-        prompt,
+        prompt: this.consumeHandoffPrompt(prompt),
         config: runConfig,
         session: this.session,
         sessionId: this.session.session_id,

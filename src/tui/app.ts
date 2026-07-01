@@ -12,6 +12,8 @@ import {
 import { isSlashCommand, parseSlashLine, SLASH_HELP_LINES } from './slash.js';
 import { printRuntimeEvent } from './log.js';
 import { resetMarkdownTerminal } from './markdown.js';
+import { CompressionFatigueTracker } from '../compression-fatigue.js';
+import { createFatiguePrompter } from './fatigue-prompt.js';
 import { createPermissionPrompter, createWorkflowConfirm } from './permission-prompt.js';
 
 export interface TuiAppOptions {
@@ -71,6 +73,10 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
 
   printBanner(runtime, shellOn, webOn);
 
+  if (runtime.hasPendingHandoff()) {
+    console.log('(handoff loaded — will inject on next task)');
+  }
+
   if (prefs.alwaysShell || prefs.alwaysWeb) {
     const always: string[] = [];
     if (prefs.alwaysShell) always.push('shell');
@@ -123,17 +129,46 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
     rl.prompt();
   };
 
+  const fatigueTracker = new CompressionFatigueTracker();
+
+  const finishRun = async (): Promise<void> => {
+    mode = 'idle';
+    rl.resume();
+    if (fatigueTracker.shouldPrompt()) {
+      rl.pause();
+      const choice = await createFatiguePrompter(fatigueTracker.stats())();
+      fatigueTracker.snooze();
+      if (choice === 'handoff') {
+        const { path, fromSessionId } = runtime.newSessionWithHandoff();
+        armedWorkflow = null;
+        runtime.armWorkflow(null);
+        fatigueTracker.reset();
+        console.log(`Handoff from ${fromSessionId} → ${path}`);
+        console.log(
+          `New session: ${runtime.session.session_id} (handoff queued for next task)`,
+        );
+        printStatus(runtime, armedWorkflow);
+      } else if (choice === 'clear') {
+        runtime.clearCurrentContext();
+        console.log('Context cleared (completed task summaries kept)');
+      }
+      rl.resume();
+    }
+    showPrompt();
+  };
+
   runtime.onEvent((event) => {
     if (event.type === 'run_start') {
       mode = 'running';
       rl.pause();
       console.log('(input paused — Ctrl+C to abort)');
     }
+    if (event.type === 'compression') {
+      fatigueTracker.onCompression(event.turn, event.pruned ?? 0);
+    }
     printRuntimeEvent(event);
     if (event.type === 'run_end') {
-      mode = 'idle';
-      rl.resume();
-      showPrompt();
+      void finishRun();
     }
   });
 
@@ -197,8 +232,50 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
       runtime.newSession();
       armedWorkflow = null;
       runtime.armWorkflow(null);
+      fatigueTracker.reset();
       console.log(`New session: ${runtime.session.session_id}`);
       printStatus(runtime, armedWorkflow);
+      showPrompt();
+      return;
+    }
+
+    if (result.newSessionHandoff) {
+      const { path, fromSessionId } = runtime.newSessionWithHandoff();
+      armedWorkflow = null;
+      runtime.armWorkflow(null);
+      fatigueTracker.reset();
+      console.log(`Handoff from ${fromSessionId} → ${path}`);
+      console.log(`New session: ${runtime.session.session_id} (handoff queued)`);
+      printStatus(runtime, armedWorkflow);
+      showPrompt();
+      return;
+    }
+
+    if (result.clearContext) {
+      runtime.clearCurrentContext();
+      fatigueTracker.reset();
+      console.log('Context cleared (task summaries kept)');
+      showPrompt();
+      return;
+    }
+
+    if (result.handoffWrite) {
+      const path = runtime.writeHandoff();
+      console.log(`Handoff written: ${path}`);
+      showPrompt();
+      return;
+    }
+
+    if (result.handoffLoad !== undefined) {
+      const sid = result.handoffLoad || undefined;
+      const path = runtime.loadHandoffForNextTask(sid);
+      if (!path) {
+        console.log(
+          sid ? `No handoff for session ${sid}` : '(no handoff file for current session)',
+        );
+      } else {
+        console.log(`Handoff loaded from ${path} — queued for next task`);
+      }
       showPrompt();
       return;
     }
@@ -427,6 +504,9 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
   };
 
   const runTask = async (task: string, workflowPath?: string): Promise<void> => {
+    if (runtime.hasPendingHandoff()) {
+      console.log('(injecting handoff context)');
+    }
     console.log(`\n▶ ${task.slice(0, 120)}${task.length > 120 ? '…' : ''}`);
     armedWorkflow = null;
     try {

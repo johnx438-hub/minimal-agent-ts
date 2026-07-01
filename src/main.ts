@@ -18,6 +18,7 @@ function parseArgs(argv: string[]): {
   jsonEvents: boolean;
   resumeLatest: boolean;
   confirmWorkflow: boolean;
+  loadHandoffFrom?: string;
 } {
   let listTools = false;
   const loadSkills: string[] = [];
@@ -70,6 +71,7 @@ function parseArgs(argv: string[]): {
   let resumeSessionId: string | undefined;
   let resumeLatest = false;
   let confirmWorkflow = false;
+  let loadHandoffFrom: string | undefined;
 
   const resumeIdx = argv.indexOf('--resume');
   if (resumeIdx >= 0 && argv[resumeIdx + 1]) {
@@ -85,6 +87,18 @@ function parseArgs(argv: string[]): {
   if (argv.includes('--confirm-workflow')) {
     confirmWorkflow = true;
     argv = argv.filter((a) => a !== '--confirm-workflow');
+  }
+
+  const handoffIdx = argv.indexOf('--handoff');
+  if (handoffIdx >= 0) {
+    const next = argv[handoffIdx + 1];
+    if (next && !next.startsWith('-')) {
+      loadHandoffFrom = next;
+      argv = [...argv.slice(0, handoffIdx), ...argv.slice(handoffIdx + 2)];
+    } else {
+      loadHandoffFrom = 'last';
+      argv = [...argv.slice(0, handoffIdx), ...argv.slice(handoffIdx + 1)];
+    }
   }
 
   const dash = argv.indexOf('--');
@@ -106,6 +120,7 @@ function parseArgs(argv: string[]): {
     console.error('  npm start -- --list-tools');
     console.error('  npm start -- --load-skills context-design "任务"');
     console.error('  npm start -- --workflow workflows/review-loop.json --confirm-workflow "任务"');
+    console.error('  npm start -- --handoff [session_id] "新 session 注入 handoff"');
     console.error('  npm start -- --json-events -- "任务"');
     console.error('');
     console.error('Optional env:');
@@ -133,6 +148,7 @@ function parseArgs(argv: string[]): {
     jsonEvents,
     resumeLatest,
     confirmWorkflow,
+    loadHandoffFrom,
   };
 }
 
@@ -174,6 +190,7 @@ async function main(): Promise<void> {
     jsonEvents,
     resumeLatest,
     confirmWorkflow,
+    loadHandoffFrom,
   } = parseArgs([...rawArgv]);
 
   const runtime = new AgentRuntime({
@@ -184,6 +201,7 @@ async function main(): Promise<void> {
     allowShell,
     allowWeb,
     jsonEvents,
+    loadHandoffFrom,
   });
 
   if (workflowPath && confirmWorkflow) {

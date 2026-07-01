@@ -6,6 +6,11 @@ export interface SlashResult {
   runWorkflow?: { path: string; task: string };
   armWorkflow?: string | null;
   stop?: boolean;
+  newSessionHandoff?: boolean;
+  clearContext?: boolean;
+  handoffWrite?: boolean;
+  /** Session id to load; omit = current session. */
+  handoffLoad?: string;
 }
 
 /** ASCII `/` plus common IME / keyboard variants (e.g. fullwidth ／). */
@@ -25,6 +30,10 @@ export const SLASH_HELP_LINES = [
   '/sessions          list saved sessions',
   '/resume [id|last]  resume session (omit id = most recent)',
   '/new               new session',
+  '/new handoff       write handoff, new session, queue load',
+  '/handoff           write handoff file for current session',
+  '/handoff load [id] queue handoff for next task',
+  '/clear             clear in-flight context (keep task summaries)',
   '/quit              exit TUI',
   '/shell on|off      toggle run_shell (no arg = status)',
   '/web on|off        toggle web_fetch (no arg = status)',
@@ -77,8 +86,24 @@ export function parseSlashLine(line: string): SlashResult | null {
     case '/sessions':
       return { handled: true, message: '__sessions__' };
 
-    case '/new':
+    case '/new': {
+      if (parts[1]?.toLowerCase() === 'handoff') {
+        return { handled: true, newSessionHandoff: true };
+      }
       return { handled: true, message: '__new__' };
+    }
+
+    case '/clear':
+      return { handled: true, clearContext: true };
+
+    case '/handoff': {
+      const sub = parts[1]?.toLowerCase();
+      if (sub === 'load') {
+        const id = parts[2];
+        return { handled: true, handoffLoad: id ?? '' };
+      }
+      return { handled: true, handoffWrite: true };
+    }
 
     case '/resume': {
       const id = parts[1];
