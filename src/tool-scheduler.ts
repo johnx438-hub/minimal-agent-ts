@@ -8,6 +8,7 @@ const PARALLEL_SAFE = new Set([
   'recall_query',
   'invoke_skill',
   'web_fetch',
+  'spawn_agent',
 ]);
 
 function isParallelSafeMcp(name: string): boolean {

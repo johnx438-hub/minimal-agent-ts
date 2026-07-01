@@ -1,10 +1,21 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 
-import type { SpawnPresetConfig } from '../plugins/types.js';
+import type { SpawnPolicy, SpawnPresetConfig } from '../plugins/types.js';
 import type { ResolvedSpawnPreset } from './types.js';
 
 const DEFAULT_SPAWN_MAX_TURNS = 15;
+const DEFAULT_SPAWN_MAX_TURNS_CAP = 30;
+
+function clampMaxTurns(
+  value: number | undefined,
+  policy?: SpawnPolicy,
+): number {
+  const fallback = policy?.max_turns_default ?? DEFAULT_SPAWN_MAX_TURNS;
+  const cap = policy?.max_turns_cap ?? DEFAULT_SPAWN_MAX_TURNS_CAP;
+  const raw = value ?? fallback;
+  return Math.min(Math.max(1, Math.floor(raw)), Math.max(1, Math.floor(cap)));
+}
 const FORBIDDEN_CHILD_TOOLS = new Set(['spawn_agent']);
 
 function parseFrontmatter(raw: string): {
@@ -44,6 +55,7 @@ export function resolvePresetFilePath(cwd: string, promptFile: string): string {
 export function resolveSpawnPreset(
   cwd: string,
   config: SpawnPresetConfig,
+  policy?: SpawnPolicy,
 ): ResolvedSpawnPreset {
   const path = resolvePresetFilePath(cwd, config.prompt_file);
   if (!existsSync(path)) {
@@ -84,13 +96,14 @@ export function resolveSpawnPreset(
     description,
     systemPrompt: `${body}${toolLine}`,
     tools,
-    maxTurns: maxTurns ?? DEFAULT_SPAWN_MAX_TURNS,
+    maxTurns: clampMaxTurns(maxTurns, policy),
   };
 }
 
 export function loadSpawnPresets(
   cwd: string,
   configs: SpawnPresetConfig[] | undefined,
+  policy?: SpawnPolicy,
 ): ResolvedSpawnPreset[] {
   if (!configs?.length) return [];
 
@@ -104,7 +117,7 @@ export function loadSpawnPresets(
       throw new Error(`Duplicate spawn preset name: ${name}`);
     }
     seen.add(name);
-    out.push(resolveSpawnPreset(cwd, cfg));
+    out.push(resolveSpawnPreset(cwd, cfg, policy));
   }
 
   return out;

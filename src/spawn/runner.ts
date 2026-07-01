@@ -1,5 +1,6 @@
 import type { AgentStepEvent } from '../events.js';
 import type { AgentConfig } from '../types.js';
+import { getSpawnSemaphore } from './semaphore.js';
 import type { ResolvedSpawnPreset } from './types.js';
 
 export const MAX_SPAWN_DEPTH = 2;
@@ -50,6 +51,22 @@ export async function runSpawnAgent(opts: RunSpawnOptions): Promise<string> {
     return 'error: task is required';
   }
 
+  const release = await getSpawnSemaphore().acquire();
+  try {
+    return await runSpawnAgentInner({ preset, task: trimmed, parentConfig, depth });
+  } finally {
+    release();
+  }
+}
+
+async function runSpawnAgentInner(opts: {
+  preset: ResolvedSpawnPreset;
+  task: string;
+  parentConfig: AgentConfig;
+  depth: number;
+}): Promise<string> {
+  const { preset, task, parentConfig, depth } = opts;
+
   const childConfig: AgentConfig = {
     ...parentConfig,
     sessionId: undefined,
@@ -73,7 +90,7 @@ export async function runSpawnAgent(opts: RunSpawnOptions): Promise<string> {
 
   try {
     const result = await runAgent({
-      prompt: trimmed,
+      prompt: task,
       config: childConfig,
       isolated: true,
       stream: process.env.STREAM !== '0',

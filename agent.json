@@ -12,6 +12,11 @@
     "web_fetch",
     "spawn_agent"
   ],
+  "spawn_policy": {
+    "max_parallel": 2,
+    "max_turns_default": 15,
+    "max_turns_cap": 30
+  },
   "spawn_presets": [
     {
       "name": "web-researcher",

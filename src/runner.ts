@@ -76,6 +76,7 @@ export function buildAgentConfig(opts: BuildConfigOptions): {
     keepInlineTurns,
     recallAutoFullMaxChars,
     previewPolicy,
+    spawnPolicy: pluginConfig.spawn_policy,
   };
 
   return { config, pluginConfig };

@@ -16,10 +16,21 @@ export type PermissionPromptFn = (req: PermissionRequest) => Promise<PermissionC
  */
 export class PermissionGate {
   private sessionGrants = new Set<CapabilityKind>();
+  private alwaysGrants = new Set<CapabilityKind>();
   private prompter?: PermissionPromptFn;
 
   setPrompter(fn: PermissionPromptFn | undefined): void {
     this.prompter = fn;
+  }
+
+  setAlwaysGrants(grants: { shell?: boolean; web?: boolean }): void {
+    this.alwaysGrants.clear();
+    if (grants.shell) this.alwaysGrants.add('shell');
+    if (grants.web) this.alwaysGrants.add('web');
+  }
+
+  hasAlwaysGrant(kind: CapabilityKind): boolean {
+    return this.alwaysGrants.has(kind);
   }
 
   grantSession(kind: CapabilityKind): void {
@@ -45,6 +56,12 @@ export class PermissionGate {
   ): Promise<boolean> {
     const enabled = kind === 'shell' ? config.allowShell : config.allowWeb;
     if (enabled) return true;
+
+    if (this.alwaysGrants.has(kind)) {
+      if (kind === 'shell') config.allowShell = true;
+      else config.allowWeb = true;
+      return true;
+    }
 
     if (this.sessionGrants.has(kind)) {
       if (kind === 'shell') config.allowShell = true;

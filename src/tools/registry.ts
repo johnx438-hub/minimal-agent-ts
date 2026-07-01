@@ -14,6 +14,7 @@ import { SHELL_DEFINITIONS, runShellTool } from './shell.js';
 import { SKILLS_TOOL_DEFINITIONS, runSkillsTool } from './skills-tool.js';
 import { WEB_FETCH_DEFINITIONS, runWebFetchTool } from './web-fetch.js';
 import { loadSpawnPresets } from '../spawn/load-preset.js';
+import { configureSpawnSemaphore } from '../spawn/semaphore.js';
 import type { ResolvedSpawnPreset } from '../spawn/types.js';
 import { buildSpawnDefinitions, runSpawnTool } from './spawn.js';
 
@@ -63,7 +64,9 @@ export class ToolRegistry {
     }
 
     this.enabledBuiltin = new Set(this.pluginConfig.builtin_tools ?? Object.keys(ALL_BUILTIN));
-    this.spawnPresets = loadSpawnPresets(cwd, this.pluginConfig.spawn_presets);
+    const spawnPolicy = this.pluginConfig.spawn_policy;
+    this.spawnPresets = loadSpawnPresets(cwd, this.pluginConfig.spawn_presets, spawnPolicy);
+    configureSpawnSemaphore(spawnPolicy?.max_parallel ?? 1);
     this.initialized = true;
   }
 

@@ -54,6 +54,7 @@ function mergeConfig(base: AgentPluginConfig, patch: Partial<AgentPluginConfig>)
     web_fetch_policy: { ...base.web_fetch_policy, ...patch.web_fetch_policy },
     loaded_skills: patch.loaded_skills ?? base.loaded_skills,
     spawn_presets: patch.spawn_presets ?? base.spawn_presets,
+    spawn_policy: { ...base.spawn_policy, ...patch.spawn_policy },
   };
 }
 

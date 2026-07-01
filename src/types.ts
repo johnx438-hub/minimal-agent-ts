@@ -2,7 +2,7 @@ import type { PreviewPolicy } from './action-preview.js';
 import type { AgentStepEvent } from './events.js';
 import type { PermissionGate } from './permission-gate.js';
 import type { LoopGuardConfig } from './loop-guard.js';
-import type { WebFetchPolicy } from './plugins/types.js';
+import type { SpawnPolicy, WebFetchPolicy } from './plugins/types.js';
 
 /** OpenAI-compatible chat message (subset we need for the loop). */
 export type Role = 'system' | 'user' | 'assistant' | 'tool';
@@ -87,6 +87,8 @@ export interface AgentConfig {
   nestedStepSink?: (event: AgentStepEvent) => void;
   /** JIT shell/web approval (TUI); unset in headless unless wired. */
   permissionGate?: PermissionGate;
+  /** Spawn concurrency and turn limits from agent.json spawn_policy. */
+  spawnPolicy?: SpawnPolicy;
 }
 
 /** recall_query response shape (Phase 2b). */

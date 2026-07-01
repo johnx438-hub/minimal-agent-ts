@@ -26,12 +26,18 @@ export const SLASH_HELP_LINES = [
   '/resume [id|last]  resume session (omit id = most recent)',
   '/new               new session',
   '/quit              exit TUI',
-  '/shell on|off      toggle run_shell',
-  '/web on|off        toggle web_fetch',
+  '/shell on|off      toggle run_shell (no arg = status)',
+  '/web on|off        toggle web_fetch (no arg = status)',
+  '/approve status    show shell/web + always grants',
+  '/approve session shell|web',
+  '/approve always shell|web   persist to .tui-prefs.json',
+  '/approve revoke always shell|web',
   '/skills            list skills',
   '/skills load <n>   load skill',
   '/tools             list tools',
   '/workflow          list workflows',
+  '/workflow !<n>     arm workflow for next line',
+  '/workflow run <n> <task>  run with checkpoint',
   '/workflow <n> [task]  arm or run workflow',
   '/cwd <path>        change cwd',
   '/stop              abort current run',
@@ -100,6 +106,37 @@ export function parseSlashLine(line: string): SlashResult | null {
       return { handled: true, message: `__web__:${mode}` };
     }
 
+    case '/approve': {
+      const sub = parts[1]?.toLowerCase();
+      if (!sub || sub === 'status') {
+        return { handled: true, message: '__approve_status__' };
+      }
+      if (sub === 'session' || sub === 'always') {
+        const kind = parts[2]?.toLowerCase();
+        if (kind !== 'shell' && kind !== 'web') {
+          return {
+            handled: true,
+            message: `Usage: /approve ${sub} shell|web`,
+          };
+        }
+        return { handled: true, message: `__approve_${sub}__:${kind}` };
+      }
+      if (sub === 'revoke' && parts[2]?.toLowerCase() === 'always') {
+        const kind = parts[3]?.toLowerCase();
+        if (kind !== 'shell' && kind !== 'web') {
+          return {
+            handled: true,
+            message: 'Usage: /approve revoke always shell|web',
+          };
+        }
+        return { handled: true, message: `__approve_revoke__:${kind}` };
+      }
+      return {
+        handled: true,
+        message: 'Usage: /approve status|session|always|revoke always',
+      };
+    }
+
     case '/skills': {
       if (parts[1]?.toLowerCase() === 'load') {
         const name = parts[2];
@@ -125,7 +162,21 @@ export function parseSlashLine(line: string): SlashResult | null {
       if (parts.length === 1) {
         return { handled: true, message: '__workflow_list__' };
       }
-      const nameOrPath = parts[1];
+      const sub = parts[1];
+      if (sub.toLowerCase() === 'run') {
+        const name = parts[2];
+        const task = parts.slice(3).join(' ');
+        if (!name || !task) {
+          return { handled: true, message: 'Usage: /workflow run <name> <task>' };
+        }
+        return { handled: true, runWorkflow: { path: name, task } };
+      }
+      if (sub.startsWith('!')) {
+        const name = sub.slice(1);
+        if (!name) return { handled: true, message: 'Usage: /workflow !<name>' };
+        return { handled: true, armWorkflow: name };
+      }
+      const nameOrPath = sub;
       const task = parts.slice(2).join(' ');
       if (!task) {
         return { handled: true, armWorkflow: nameOrPath };

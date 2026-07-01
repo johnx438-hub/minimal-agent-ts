@@ -60,10 +60,20 @@ export interface SpawnPresetConfig {
   max_turns?: number;
 }
 
+export interface SpawnPolicy {
+  /** Max concurrent spawn_agent runs (default 1). */
+  max_parallel?: number;
+  /** Default max_turns when preset omits it (default 15). */
+  max_turns_default?: number;
+  /** Upper bound on preset max_turns (default 30). */
+  max_turns_cap?: number;
+}
+
 export interface AgentPluginConfig {
   builtin_tools?: string[];
   /** User-defined spawn presets (MD prompts under e.g. agents/). */
   spawn_presets?: SpawnPresetConfig[];
+  spawn_policy?: SpawnPolicy;
   mcp_servers?: McpServerConfig[];
   skills_dirs?: string[];
   mcp_policy?: McpPolicy;
