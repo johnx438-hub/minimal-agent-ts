@@ -1,9 +1,9 @@
-import { CancellableLoader, type TUI } from '@earendil-works/pi-tui';
+import { CancellableLoader, Markdown, Text, type TUI } from '@earendil-works/pi-tui';
 
 import type { AgentStepEvent, RuntimeEvent } from '../../events.js';
 import { shouldFormatFinal } from '../markdown.js';
 import type { PiChatLog } from './chat-log.js';
-import { piChalk } from './themes.js';
+import { piChalk, piMarkdownTheme } from './themes.js';
 
 function isAgentStep(event: RuntimeEvent): event is AgentStepEvent {
   return (
@@ -32,7 +32,7 @@ export class PiEventPresenter {
   private readonly onAbort?: () => void;
 
   private streamBuffer = '';
-  private streamMd: ReturnType<PiChatLog['appendMarkdown']> | null = null;
+  private streamMd: Markdown | null = null;
   private loader: CancellableLoader | null = null;
 
   constructor(opts: PiEventPresenterOptions) {
@@ -82,9 +82,44 @@ export class PiEventPresenter {
     }
   }
 
+  /** Tool / turn meta — always above the streaming LLM block. */
+  private appendRunMeta(text: string, dim = true): void {
+    const comp = new Text(text, 1, 0, dim ? (s) => piChalk.dim(s) : undefined);
+    const anchor = this.streamMd ?? this.loader;
+    if (anchor) {
+      this.chat.insertBefore(comp, anchor);
+    } else {
+      this.chat.insertBeforeEditor(comp);
+    }
+  }
+
+  /** Status after the reply block (e.g. [done], finish reason). */
+  private appendRunFooter(text: string, dim = true): void {
+    const comp = new Text(text, 1, 0, dim ? (s) => piChalk.dim(s) : undefined);
+    if (this.loader) {
+      this.chat.insertBefore(comp, this.loader);
+    } else {
+      this.chat.insertBeforeEditor(comp);
+    }
+  }
+
+  private ensureStreamMd(): Markdown {
+    if (this.streamMd) return this.streamMd;
+    const comp = new Markdown('', 1, 1, piMarkdownTheme);
+    const anchor = this.loader;
+    if (anchor) {
+      this.chat.insertBefore(comp, anchor);
+    } else {
+      this.chat.insertBeforeEditor(comp);
+    }
+    this.streamMd = comp;
+    return comp;
+  }
+
   private beginRun(sessionId: string, cwd: string): void {
     this.streamBuffer = '';
-    this.streamMd = this.chat.appendMarkdown('');
+    this.streamMd = null;
+
     this.loader = new CancellableLoader(
       this.tui,
       (s) => piChalk.cyan(s),
@@ -94,7 +129,8 @@ export class PiEventPresenter {
     this.loader.onAbort = () => this.onAbort?.();
     this.chat.insertBeforeEditor(this.loader);
     this.loader.start();
-    this.chat.appendText(`▶ task start  session=${sessionId}\n  cwd: ${cwd}`, true);
+
+    this.appendRunMeta(`▶ task start  session=${sessionId}\n  cwd: ${cwd}`);
     this.tui.requestRender();
   }
 
@@ -120,66 +156,54 @@ export class PiEventPresenter {
   private handleAgentStep(event: AgentStepEvent): void {
     switch (event.type) {
       case 'turn_start':
-        this.chat.appendText(`[turn ${event.turn}] LLM`, true);
+        this.appendRunMeta(`[turn ${event.turn}] LLM`);
         break;
-      case 'token':
+      case 'token': {
         this.streamBuffer += event.delta;
-        this.streamMd?.setText(this.streamBuffer);
+        this.ensureStreamMd().setText(this.streamBuffer);
         this.tui.requestRender();
         break;
+      }
       case 'llm_done':
-        this.chat.appendText(
-          `finish=${event.finishReason ?? 'null'}`,
-          true,
-        );
+        this.appendRunFooter(`finish=${event.finishReason ?? 'null'}`);
         break;
       case 'compression':
-        this.chat.appendText(
+        this.appendRunMeta(
           event.pruned
             ? `📦 pruned ${event.pruned} messages`
             : '📦 compression: summaries + replay',
-          true,
         );
         break;
       case 'draft_discarded':
-        this.chat.appendText(`⊗ draft discarded (${event.chars} chars)`, true);
+        this.appendRunMeta(`⊗ draft discarded (${event.chars} chars)`);
         break;
       case 'loop_guard':
-        this.chat.appendText(
+        this.appendRunMeta(
           `🔄 loop_guard: ${event.action}${event.reason ? ` (${event.reason})` : ''}`,
-          true,
         );
         break;
       case 'tool_batch':
         if (event.parallel > 1) {
-          this.chat.appendText(`⚡ parallel batch: ${event.parallel}/${event.total}`, true);
+          this.appendRunMeta(`⚡ parallel batch: ${event.parallel}/${event.total}`);
         }
         break;
       case 'tool_call':
-        this.chat.appendText(`→ ${event.name}(${event.args})`, true);
+        this.appendRunMeta(`→ ${event.name}(${event.args})`);
         break;
       case 'tool_result': {
         const preview = event.preview ?? event.output;
         const shown = preview.length > 400 ? `${preview.slice(0, 400)}…` : preview;
-        this.chat.appendText(`← ${event.name}: ${shown.replace(/\n/g, '\\n')}`, true);
+        this.appendRunMeta(`← ${event.name}: ${shown.replace(/\n/g, '\\n')}`);
         break;
       }
       case 'final': {
         const text = event.text;
         if (shouldFormatFinal(text)) {
-          if (this.streamMd) {
-            this.streamMd.setText(text);
-          } else {
-            this.chat.appendMarkdown(text);
-          }
+          this.ensureStreamMd().setText(text);
         } else if (text.trim()) {
-          if (this.streamMd) {
-            this.streamMd.setText(text);
-          } else {
-            this.chat.appendText(text);
-          }
+          this.ensureStreamMd().setText(text);
         }
-        this.chat.appendText(`[done @ turn ${event.turn}]`, true);
+        this.appendRunFooter(`[done @ turn ${event.turn}]`);
         this.streamMd = null;
         this.streamBuffer = '';
         this.tui.requestRender();

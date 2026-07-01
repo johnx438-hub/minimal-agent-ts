@@ -23,6 +23,17 @@ export class PiChatLog {
     this.tui.requestRender();
   }
 
+  /** Insert immediately before `anchor` (falls back to before editor). */
+  insertBefore(component: Component, anchor: Component): void {
+    const anchorIdx = this.tui.children.indexOf(anchor);
+    if (anchorIdx < 0) {
+      this.insertBeforeEditor(component);
+      return;
+    }
+    this.tui.children.splice(anchorIdx, 0, component);
+    this.tui.requestRender();
+  }
+
   appendText(text: string, dim = false): Text {
     const comp = new Text(text, 1, 0, dim ? (s) => piChalk.dim(s) : undefined);
     this.insertBeforeEditor(comp);
