@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 import { AgentRuntime } from '../runner.js';
 import { runTuiApp } from './app.js';
+import { runPiTuiApp } from './pi-app.js';
 
 function parseTuiArgs(argv: string[]): {
   cwd: string;
@@ -78,12 +79,23 @@ async function main(): Promise<void> {
 
   await runtime.initialize();
 
-  await runTuiApp({
-    runtime,
-    noShell: opts.noShell,
-    noWeb: opts.noWeb,
-    allowWeb: opts.allowWeb,
-  });
+  const useReadline = process.env.TUI_BACKEND === 'readline';
+
+  if (useReadline) {
+    await runTuiApp({
+      runtime,
+      noShell: opts.noShell,
+      noWeb: opts.noWeb,
+      allowWeb: opts.allowWeb,
+    });
+  } else {
+    await runPiTuiApp({
+      runtime,
+      noShell: opts.noShell,
+      noWeb: opts.noWeb,
+      allowWeb: opts.allowWeb,
+    });
+  }
 }
 
 main().catch((err) => {

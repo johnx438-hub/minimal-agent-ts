@@ -319,6 +319,7 @@ readline 期：`y/n/a` 文本确认；pi 期：`showOverlay` + `SelectList`。
 | 2026-07-01 | **M2 完成**：`/approve` L3、`spawn_policy`、workflow `!`/`run` 别名 |
 | 2026-07-01 | **M3 完成**：`/handoff`、`/clear`、压缩疲劳软提示、`--handoff` |
 | 2026-07-01 | **M4 完成**：workflow handback（loop_guard / max_rounds / agent stopped） |
+| 2026-07-01 | **M7 开工**：pi presenter P0′（Editor + 流式 Markdown + overlay 门） |
 
 ---
 
