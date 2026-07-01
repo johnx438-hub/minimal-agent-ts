@@ -50,34 +50,46 @@ export class ToolRegistry {
   private spawnPresets: ResolvedSpawnPreset[] = [];
 
   async reinitialize(cwd: string, pluginConfig?: AgentPluginConfig): Promise<void> {
-    if (this.initialized) {
-      await this.shutdown();
-    }
+    await this.mcpManager.shutdown();
+    this.initialized = false;
+    this.mcpBindings = [];
     await this.initialize(cwd, pluginConfig);
   }
 
   async initialize(cwd: string, pluginConfig?: AgentPluginConfig): Promise<void> {
+    await this.mcpManager.shutdown();
+
     this.pluginConfig = pluginConfig ?? loadAgentPluginConfig(cwd);
     this.skills = discoverSkills(this.pluginConfig.skills_dirs ?? []);
     this.mcpBindings = [];
+    this.enabledBuiltin = new Set(this.pluginConfig.builtin_tools ?? Object.keys(ALL_BUILTIN));
 
     const servers = this.pluginConfig.mcp_servers ?? [];
-    for (const server of servers) {
-      try {
-        const bindings = await this.mcpManager.connect(server, cwd);
-        const allowed = filterMcpBindings(bindings, this.pluginConfig.mcp_policy ?? {});
-        this.mcpBindings.push(...allowed);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[mcp] failed to connect ${server.name}: ${msg}`);
-      }
-    }
+    const connectedBindings: McpToolBinding[] = [];
 
-    this.enabledBuiltin = new Set(this.pluginConfig.builtin_tools ?? Object.keys(ALL_BUILTIN));
-    const spawnPolicy = this.pluginConfig.spawn_policy;
-    this.spawnPresets = loadSpawnPresets(cwd, this.pluginConfig.spawn_presets, spawnPolicy);
-    configureSpawnSemaphore(spawnPolicy?.max_parallel ?? 1);
-    this.initialized = true;
+    try {
+      for (const server of servers) {
+        try {
+          const bindings = await this.mcpManager.connect(server, cwd);
+          const allowed = filterMcpBindings(bindings, this.pluginConfig.mcp_policy ?? {});
+          connectedBindings.push(...allowed);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn(`[mcp] failed to connect ${server.name}: ${msg}`);
+        }
+      }
+
+      const spawnPolicy = this.pluginConfig.spawn_policy;
+      this.spawnPresets = loadSpawnPresets(cwd, this.pluginConfig.spawn_presets, spawnPolicy);
+      configureSpawnSemaphore(spawnPolicy?.max_parallel ?? 1);
+      this.mcpBindings = connectedBindings;
+      this.initialized = true;
+    } catch (err) {
+      await this.mcpManager.shutdown();
+      this.mcpBindings = [];
+      this.initialized = false;
+      throw err;
+    }
   }
 
   hasSpawnPresets(): boolean {
@@ -243,6 +255,26 @@ export class ToolRegistry {
 export const toolRegistry = new ToolRegistry();
 
 let lastRegistryCwd: string | null = null;
+let registryInitChain: Promise<void> = Promise.resolve();
+
+async function runSerializedRegistryInit(run: () => Promise<void>): Promise<void> {
+  const next = registryInitChain.then(run, run);
+  registryInitChain = next.catch(() => undefined);
+  await next;
+}
+
+/** Force registry + MCP reconnect for a cwd (e.g. `/cwd`). */
+export async function reinitializeToolRegistry(
+  cwd: string,
+  pluginConfig?: AgentPluginConfig,
+): Promise<ToolRegistry> {
+  const resolved = resolve(cwd);
+  await runSerializedRegistryInit(async () => {
+    await toolRegistry.reinitialize(resolved, pluginConfig);
+    lastRegistryCwd = resolved;
+  });
+  return toolRegistry;
+}
 
 /** Backward-compatible helpers used before initialize(). */
 export async function ensureToolRegistry(
@@ -250,11 +282,10 @@ export async function ensureToolRegistry(
   pluginConfig?: AgentPluginConfig,
 ): Promise<ToolRegistry> {
   const resolved = resolve(cwd);
-  if (!toolRegistry.isInitialized() || lastRegistryCwd !== resolved) {
-    await toolRegistry.reinitialize(resolved, pluginConfig);
-    lastRegistryCwd = resolved;
+  if (toolRegistry.isInitialized() && lastRegistryCwd === resolved) {
+    return toolRegistry;
   }
-  return toolRegistry;
+  return reinitializeToolRegistry(cwd, pluginConfig);
 }
 
 export async function executeTool(

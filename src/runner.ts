@@ -14,7 +14,11 @@ import {
   type RuntimeEvent,
 } from './events.js';
 import { parseLoopGuardMode } from './loop-guard.js';
-import { ensureToolRegistry, toolRegistry } from './tools/registry.js';
+import {
+  ensureToolRegistry,
+  reinitializeToolRegistry,
+  toolRegistry,
+} from './tools/registry.js';
 import { PermissionGate } from './permission-gate.js';
 import {
   createSession,
@@ -363,7 +367,7 @@ export class AgentRuntime {
     this.config.cwd = resolved;
     this.pluginConfig = loadAgentPluginConfig(resolved);
     resetZvecCollection();
-    await toolRegistry.reinitialize(resolved, this.pluginConfig);
+    await reinitializeToolRegistry(resolved, this.pluginConfig);
   }
 
   armWorkflow(path: string | null): void {

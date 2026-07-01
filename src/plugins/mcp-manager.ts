@@ -54,11 +54,33 @@ function formatToolResult(result: Record<string, unknown>): string {
   return isError ? `error: ${text}` : text;
 }
 
+async function closeClient(client: Client): Promise<void> {
+  try {
+    await client.close();
+  } catch {
+    /* ignore */
+  }
+}
+
 export class McpManager {
   private clients = new Map<string, Client>();
 
+  /** Close one server connection and drop it from the active map. */
+  async closeServer(serverName: string): Promise<void> {
+    const client = this.clients.get(serverName);
+    if (!client) return;
+    this.clients.delete(serverName);
+    await closeClient(client);
+  }
+
+  connectedServers(): string[] {
+    return [...this.clients.keys()];
+  }
+
   async connect(server: McpServerConfig, cwd: string): Promise<McpToolBinding[]> {
     if (server.enabled === false) return [];
+
+    await this.closeServer(server.name);
 
     const transport = new StdioClientTransport({
       command: server.command,
@@ -69,46 +91,49 @@ export class McpManager {
     });
 
     const client = new Client({ name: 'minimal-agent-ts', version: '0.1.0' });
-    await client.connect(transport);
-    this.clients.set(server.name, client);
 
-    const listed = await client.listTools();
-    const bindings: McpToolBinding[] = [];
+    try {
+      await client.connect(transport);
+      const listed = await client.listTools();
+      this.clients.set(server.name, client);
 
-    for (const tool of listed.tools) {
-      const apiName = `mcp_${sanitizeName(server.name)}_${sanitizeName(tool.name)}`;
-      const inputSchema = (tool.inputSchema ?? {
-        type: 'object',
-        properties: {},
-      }) as Record<string, unknown>;
+      const bindings: McpToolBinding[] = [];
 
-      bindings.push({
-        apiName,
-        serverName: server.name,
-        toolName: tool.name,
-        description: tool.description ?? `MCP tool ${tool.name} from ${server.name}`,
-        parameters: inputSchema,
-        call: async (args) => {
-          const active = this.clients.get(server.name);
-          if (!active) return `error: MCP server disconnected: ${server.name}`;
-          const result = await active.callTool({ name: tool.name, arguments: args });
-          return formatToolResult(result);
-        },
-      });
+      for (const tool of listed.tools) {
+        const apiName = `mcp_${sanitizeName(server.name)}_${sanitizeName(tool.name)}`;
+        const inputSchema = (tool.inputSchema ?? {
+          type: 'object',
+          properties: {},
+        }) as Record<string, unknown>;
+
+        bindings.push({
+          apiName,
+          serverName: server.name,
+          toolName: tool.name,
+          description: tool.description ?? `MCP tool ${tool.name} from ${server.name}`,
+          parameters: inputSchema,
+          call: async (args) => {
+            const active = this.clients.get(server.name);
+            if (!active) return `error: MCP server disconnected: ${server.name}`;
+            const result = await active.callTool({ name: tool.name, arguments: args });
+            return formatToolResult(result);
+          },
+        });
+      }
+
+      return bindings;
+    } catch (err) {
+      await closeClient(client);
+      throw err;
     }
-
-    return bindings;
   }
 
   async shutdown(): Promise<void> {
-    for (const client of this.clients.values()) {
-      try {
-        await client.close();
-      } catch {
-        /* ignore */
-      }
-    }
+    const clients = [...this.clients.values()];
     this.clients.clear();
+    for (const client of clients) {
+      await closeClient(client);
+    }
   }
 }
 
