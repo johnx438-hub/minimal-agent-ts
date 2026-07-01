@@ -308,10 +308,21 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
       commitAssistantToolCalls(messages, message, turn);
 
       const plan = scheduleToolCalls(message.tool_calls);
+      const total = message.tool_calls.length;
+      if (total >= 2) {
+        onStep?.({
+          type: 'tool_plan',
+          turn,
+          total,
+          parallel_count: plan.parallel.length,
+          serial_count: plan.serial.length,
+          entries: plan.entries,
+        });
+      }
       onStep?.({
         type: 'tool_batch',
         turn,
-        total: message.tool_calls.length,
+        total,
         parallel: plan.parallel.length,
       });
 

@@ -1,6 +1,6 @@
 import { CancellableLoader, Markdown, Text, type TUI } from '@earendil-works/pi-tui';
 
-import type { AgentStepEvent, RuntimeEvent } from '../../events.js';
+import { formatToolPlanSummary, type AgentStepEvent, type RuntimeEvent } from '../../events.js';
 import { shouldFormatFinal } from '../markdown.js';
 import type { PiChatLog } from './chat-log.js';
 import { piChalk, piMarkdownTheme } from './themes.js';
@@ -10,6 +10,7 @@ function isAgentStep(event: RuntimeEvent): event is AgentStepEvent {
     event.type === 'turn_start' ||
     event.type === 'token' ||
     event.type === 'llm_done' ||
+    event.type === 'tool_plan' ||
     event.type === 'tool_batch' ||
     event.type === 'tool_call' ||
     event.type === 'tool_result' ||
@@ -193,6 +194,11 @@ export class PiEventPresenter {
         this.appendRunMeta(
           `🔄 loop_guard: ${event.action}${event.reason ? ` (${event.reason})` : ''}`,
         );
+        break;
+      case 'tool_plan':
+        if (event.total >= 2) {
+          this.appendRunMeta(formatToolPlanSummary(event));
+        }
         break;
       case 'tool_batch':
         if (event.parallel > 1) {

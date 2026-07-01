@@ -6,7 +6,7 @@ import { discoverSkills } from './plugins/skills.js';
 import { runAgent, type AgentResult } from './agent.js';
 import type { AgentStepEvent } from './events.js';
 import { previewPolicyFromPointerize } from './action-preview.js';
-import { emitJsonEvent, isAbortError, type RuntimeEvent } from './events.js';
+import { emitJsonEvent, formatToolPlanSummary, isAbortError, type RuntimeEvent } from './events.js';
 import { parseLoopGuardMode } from './loop-guard.js';
 import { ensureToolRegistry, toolRegistry } from './tools/registry.js';
 import { PermissionGate } from './permission-gate.js';
@@ -630,6 +630,11 @@ export function printStepEvent(event: AgentStepEvent): void {
       console.log(
         `  🔄 loop_guard: ${event.action}${event.reason ? ` (${event.reason})` : ''}`,
       );
+      break;
+    case 'tool_plan':
+      if (event.total >= 2) {
+        console.log(`  ${formatToolPlanSummary(event)}`);
+      }
       break;
     case 'tool_batch':
       if (event.parallel > 1) {
