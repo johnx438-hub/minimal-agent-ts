@@ -1,5 +1,6 @@
 import type { PreviewPolicy } from './action-preview.js';
 import type { AgentStepEvent } from './events.js';
+import type { PermissionGate } from './permission-gate.js';
 import type { LoopGuardConfig } from './loop-guard.js';
 import type { WebFetchPolicy } from './plugins/types.js';
 
@@ -84,6 +85,8 @@ export interface AgentConfig {
   spawnDepth?: number;
   /** Forward sub-agent step events to parent (spawn tool). */
   nestedStepSink?: (event: AgentStepEvent) => void;
+  /** JIT shell/web approval (TUI); unset in headless unless wired. */
+  permissionGate?: PermissionGate;
 }
 
 /** recall_query response shape (Phase 2b). */

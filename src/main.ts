@@ -3,6 +3,7 @@ import 'dotenv/config';
 
 import type { RuntimeEvent } from './events.js';
 import { AgentRuntime, printStepEvent } from './runner.js';
+import { formatWorkflowCheckpoint } from './workflow-checkpoint.js';
 import { toolRegistry } from './tools/registry.js';
 
 function parseArgs(argv: string[]): {
@@ -15,6 +16,8 @@ function parseArgs(argv: string[]): {
   allowWeb: boolean;
   workflowPath?: string;
   jsonEvents: boolean;
+  resumeLatest: boolean;
+  confirmWorkflow: boolean;
 } {
   let listTools = false;
   const loadSkills: string[] = [];
@@ -65,11 +68,23 @@ function parseArgs(argv: string[]): {
   }
 
   let resumeSessionId: string | undefined;
+  let resumeLatest = false;
+  let confirmWorkflow = false;
 
   const resumeIdx = argv.indexOf('--resume');
   if (resumeIdx >= 0 && argv[resumeIdx + 1]) {
     resumeSessionId = argv[resumeIdx + 1];
     argv = [...argv.slice(0, resumeIdx), ...argv.slice(resumeIdx + 2)];
+  }
+
+  if (argv.includes('--resume-last')) {
+    resumeLatest = true;
+    argv = argv.filter((a) => a !== '--resume-last');
+  }
+
+  if (argv.includes('--confirm-workflow')) {
+    confirmWorkflow = true;
+    argv = argv.filter((a) => a !== '--confirm-workflow');
   }
 
   const dash = argv.indexOf('--');
@@ -87,9 +102,10 @@ function parseArgs(argv: string[]): {
     console.error('  OPENROUTER_API_KEY=... npm start -- "你的任务"');
     console.error('  npm start -- --cwd /path/to/project "你的任务"');
     console.error('  npm start -- --resume <session_id> "继续上次的工作"');
+    console.error('  npm start -- --resume-last "继续最近一次 session"');
     console.error('  npm start -- --list-tools');
     console.error('  npm start -- --load-skills context-design "任务"');
-    console.error('  npm start -- --workflow workflows/review-loop.json "任务"');
+    console.error('  npm start -- --workflow workflows/review-loop.json --confirm-workflow "任务"');
     console.error('  npm start -- --json-events -- "任务"');
     console.error('');
     console.error('Optional env:');
@@ -115,6 +131,8 @@ function parseArgs(argv: string[]): {
     allowWeb,
     workflowPath,
     jsonEvents,
+    resumeLatest,
+    confirmWorkflow,
   };
 }
 
@@ -154,16 +172,29 @@ async function main(): Promise<void> {
     allowWeb,
     workflowPath,
     jsonEvents,
+    resumeLatest,
+    confirmWorkflow,
   } = parseArgs([...rawArgv]);
 
   const runtime = new AgentRuntime({
     cwd,
     resumeSessionId,
+    resumeLatest,
     loadSkills,
     allowShell,
     allowWeb,
     jsonEvents,
   });
+
+  if (workflowPath && confirmWorkflow) {
+    runtime.setWorkflowConfirmFn(async (info) => {
+      if (!jsonEvents) {
+        console.error(formatWorkflowCheckpoint(info));
+        console.error('(--confirm-workflow: proceeding)');
+      }
+      return true;
+    });
+  }
 
   await runtime.initialize();
 

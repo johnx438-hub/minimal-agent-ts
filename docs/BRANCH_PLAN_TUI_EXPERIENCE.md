@@ -315,6 +315,8 @@ readline 期：`y/n/a` 文本确认；pi 期：`showOverlay` + `SelectList`。
 |------|------|
 | 2026-07-01 | 采纳顺序：权限 → handoff → workflow 逃生 → 多 API / 全分支 → pi |
 | 2026-07-01 | 文档仅备案，**不**并入 `ROADMAP.md` |
+| 2026-07-01 | **M1 开工**：PermissionGate、workflow checkpoint、`/resume last`、`--resume-last` |
+
 ---
 
 *本文档随实现进展可追加「已完成 / 搁置」小节；不表示已对外的产品承诺。*

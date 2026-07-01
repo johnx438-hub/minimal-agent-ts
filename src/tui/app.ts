@@ -6,6 +6,8 @@ import { defaultPrefs, loadPrefs, savePrefs } from './prefs.js';
 import { isSlashCommand, parseSlashLine, SLASH_HELP_LINES } from './slash.js';
 import { printRuntimeEvent } from './log.js';
 import { resetMarkdownTerminal } from './markdown.js';
+import { createPermissionPrompter, createWorkflowConfirm } from './permission-prompt.js';
+
 export interface TuiAppOptions {
   runtime: AgentRuntime;
   noShell?: boolean;
@@ -68,6 +70,24 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
     prompt: '› ',
   });
 
+  const basePermissionPrompter = createPermissionPrompter();
+  runtime.permissionGate.setPrompter(async (req) => {
+    const choice = await basePermissionPrompter(req);
+    if (choice === 'session') {
+      if (req.kind === 'shell') {
+        runtime.setAllowShell(true);
+        shellOn = true;
+        savePrefs(runtime.config.cwd, { allowShell: true, allowWeb: webOn });
+      } else {
+        runtime.setAllowWeb(true);
+        webOn = true;
+        savePrefs(runtime.config.cwd, { allowShell: shellOn, allowWeb: true });
+      }
+    }
+    return choice;
+  });
+  runtime.setWorkflowConfirmFn(createWorkflowConfirm());
+
   const setPrompt = (): void => {
     if (mode === 'confirm') {
       rl.setPrompt('› confirm ');
@@ -122,7 +142,8 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
 
     if (
       runtime.isRunning() &&
-      (result.message?.startsWith('__resume__') ||
+      (result.message === '__resume_last__' ||
+        result.message?.startsWith('__resume__') ||
         result.armWorkflow !== undefined ||
         result.runWorkflow)
     ) {
@@ -162,6 +183,19 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
       return;
     }
 
+    if (result.message === '__resume_last__') {
+      if (!runtime.resumeLatestSession()) {
+        console.log('(no saved sessions)');
+      } else {
+        console.log(
+          `Resumed latest ${runtime.session.session_id} (${runtime.session.tasks.length} tasks)`,
+        );
+        printStatus(runtime, armedWorkflow);
+      }
+      showPrompt();
+      return;
+    }
+
     if (result.message?.startsWith('__resume__')) {
       const id = result.message.slice('__resume__:'.length);
       if (!runtime.resumeSession(id)) {
@@ -170,6 +204,18 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
         console.log(`Resumed ${id} (${runtime.session.tasks.length} tasks)`);
         printStatus(runtime, armedWorkflow);
       }
+      showPrompt();
+      return;
+    }
+
+    if (result.message === '__shell_status__') {
+      console.log(`shell: ${runtime.config.allowShell ? 'on' : 'off'}  (/shell on|off)`);
+      showPrompt();
+      return;
+    }
+
+    if (result.message === '__web_status__') {
+      console.log(`web: ${runtime.config.allowWeb ? 'on' : 'off'}  (/web on|off)`);
       showPrompt();
       return;
     }

@@ -9,12 +9,19 @@ import { previewPolicyFromPointerize } from './action-preview.js';
 import { emitJsonEvent, isAbortError, type RuntimeEvent } from './events.js';
 import { parseLoopGuardMode } from './loop-guard.js';
 import { ensureToolRegistry, toolRegistry } from './tools/registry.js';
+import { PermissionGate } from './permission-gate.js';
 import {
   createSession,
+  getLatestSession,
   listSessions,
   loadSession,
   saveSessionThrottled,
 } from './session.js';
+import {
+  buildWorkflowCheckpoint,
+  formatWorkflowCheckpoint,
+  type WorkflowCheckpointInfo,
+} from './workflow-checkpoint.js';
 import type { AgentPluginConfig } from './plugins/types.js';
 import type { AgentConfig, SessionFile, SessionMeta } from './types.js';
 import { runWorkflow } from './workflow/runner.js';
@@ -76,9 +83,13 @@ export function buildAgentConfig(opts: BuildConfigOptions): {
 
 export type RuntimeListener = (event: RuntimeEvent) => void;
 
+export type WorkflowConfirmFn = (info: WorkflowCheckpointInfo) => Promise<boolean>;
+
 export interface AgentRuntimeOptions {
   cwd: string;
   resumeSessionId?: string;
+  /** Resume most recent session when resumeSessionId omitted. */
+  resumeLatest?: boolean;
   loadSkills?: string[];
   allowShell?: boolean;
   allowWeb?: boolean;
@@ -99,6 +110,9 @@ export class AgentRuntime {
   private running = false;
   private readonly jsonEvents: boolean;
   private readonly useStream: boolean;
+  readonly permissionGate = new PermissionGate();
+  private workflowConfirmFn?: WorkflowConfirmFn;
+
   constructor(opts: AgentRuntimeOptions) {
     const built = buildAgentConfig({
       cwd: opts.cwd,
@@ -119,10 +133,32 @@ export class AgentRuntime {
         throw new Error(`Session not found: ${opts.resumeSessionId}`);
       }
       this.session = loaded;
+    } else if (opts.resumeLatest) {
+      const latest = getLatestSession(env('USER_ID'));
+      if (!latest) {
+        this.session = createSession(env('USER_ID') ?? 'user_default');
+        this.sessionDirty = true;
+      } else {
+        const loaded = loadSession(latest.session_id);
+        if (!loaded) {
+          throw new Error(`Session not found: ${latest.session_id}`);
+        }
+        this.session = loaded;
+      }
     } else {
       this.session = createSession(env('USER_ID') ?? 'user_default');
       this.sessionDirty = true;
     }
+  }
+
+  setWorkflowConfirmFn(fn: WorkflowConfirmFn | undefined): void {
+    this.workflowConfirmFn = fn;
+  }
+
+  resumeLatestSession(): boolean {
+    const latest = getLatestSession(env('USER_ID'));
+    if (!latest) return false;
+    return this.resumeSession(latest.session_id);
   }
 
   async initialize(): Promise<void> {
@@ -277,6 +313,25 @@ export class AgentRuntime {
       throw new Error(`Workflow not found: ${workflowPath}`);
     }
 
+    const checkpoint = buildWorkflowCheckpoint(resolved, this.config.cwd);
+    const approved = await this.confirmWorkflowEntry(checkpoint);
+    if (!approved) {
+      return { text: '[workflow cancelled]', messages: this.session.current_messages };
+    }
+
+    if (checkpoint.needsShell && !(await this.permissionGate.ensureShell(this.config, 'workflow'))) {
+      return {
+        text: '[workflow cancelled: shell not approved]',
+        messages: this.session.current_messages,
+      };
+    }
+    if (checkpoint.needsWeb && !(await this.permissionGate.ensureWeb(this.config, 'workflow'))) {
+      return {
+        text: '[workflow cancelled: web not approved]',
+        messages: this.session.current_messages,
+      };
+    }
+
     this.running = true;
     this.abortController = new AbortController();
     const signal = this.abortController.signal;
@@ -291,6 +346,7 @@ export class AgentRuntime {
       ...this.config,
       sessionId: this.session.session_id,
       abortSignal: signal,
+      permissionGate: this.permissionGate,
     };
 
     try {
@@ -347,6 +403,7 @@ export class AgentRuntime {
       ...this.config,
       sessionId: this.session.session_id,
       abortSignal: signal,
+      permissionGate: this.permissionGate,
     };
 
     try {
@@ -387,6 +444,17 @@ export class AgentRuntime {
 
   async shutdown(): Promise<void> {
     await toolRegistry.shutdown();
+  }
+
+  private async confirmWorkflowEntry(info: WorkflowCheckpointInfo): Promise<boolean> {
+    if (this.workflowConfirmFn) {
+      return this.workflowConfirmFn(info);
+    }
+    console.error(formatWorkflowCheckpoint(info));
+    console.error(
+      'Workflow requires interactive confirmation (use TUI or set workflowConfirmFn).',
+    );
+    return false;
   }
 }
 

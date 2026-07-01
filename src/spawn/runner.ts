@@ -27,10 +27,22 @@ export async function runSpawnAgent(opts: RunSpawnOptions): Promise<string> {
   }
 
   if (presetNeedsShell(preset) && !parentConfig.allowShell) {
-    return `error: preset "${preset.name}" requires run_shell; enable shell first`;
+    const gate = parentConfig.permissionGate;
+    if (
+      !gate ||
+      !(await gate.ensureShell(parentConfig, `spawn preset "${preset.name}" needs run_shell`))
+    ) {
+      return `error: preset "${preset.name}" requires run_shell; enable shell or approve when prompted`;
+    }
   }
   if (presetNeedsWeb(preset) && !parentConfig.allowWeb) {
-    return `error: preset "${preset.name}" requires web_fetch; enable web first`;
+    const gate = parentConfig.permissionGate;
+    if (
+      !gate ||
+      !(await gate.ensureWeb(parentConfig, `spawn preset "${preset.name}" needs web_fetch`))
+    ) {
+      return `error: preset "${preset.name}" requires web_fetch; enable web or approve when prompted`;
+    }
   }
 
   const trimmed = task.trim();

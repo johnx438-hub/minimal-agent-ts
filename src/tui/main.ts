@@ -7,12 +7,14 @@ import { runTuiApp } from './app.js';
 function parseTuiArgs(argv: string[]): {
   cwd: string;
   resumeSessionId?: string;
+  resumeLatest: boolean;
   noShell: boolean;
   noWeb: boolean;
   allowWeb: boolean;
 } {
   let cwd = process.cwd();
   let resumeSessionId: string | undefined;
+  let resumeLatest = false;
   let noShell = false;
   let noWeb = false;
   let allowWeb = false;
@@ -29,6 +31,11 @@ function parseTuiArgs(argv: string[]): {
     argv = [...argv.slice(0, resumeIdx), ...argv.slice(resumeIdx + 2)];
   }
 
+  if (argv.includes('--resume-last')) {
+    resumeLatest = true;
+    argv = argv.filter((a) => a !== '--resume-last');
+  }
+
   if (argv.includes('--no-shell')) {
     noShell = true;
   }
@@ -39,7 +46,7 @@ function parseTuiArgs(argv: string[]): {
     allowWeb = true;
   }
 
-  return { cwd, resumeSessionId, noShell, noWeb, allowWeb };
+  return { cwd, resumeSessionId, resumeLatest, noShell, noWeb, allowWeb };
 }
 
 async function main(): Promise<void> {
@@ -48,6 +55,7 @@ async function main(): Promise<void> {
   const runtime = new AgentRuntime({
     cwd: opts.cwd,
     resumeSessionId: opts.resumeSessionId,
+    resumeLatest: opts.resumeLatest,
     tuiMode: true,
     allowShell: opts.noShell ? false : undefined,
     allowWeb: opts.allowWeb,

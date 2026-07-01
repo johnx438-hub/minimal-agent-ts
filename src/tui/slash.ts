@@ -18,11 +18,12 @@ const COMMAND_ALIASES: Record<string, string> = {
   '/wf': '/workflow',
   '/h': '/help',
   '?': '/help',
+  '/r': '/resume',
 };
 
 export const SLASH_HELP_LINES = [
   '/sessions          list saved sessions',
-  '/resume <id>       resume session by id',
+  '/resume [id|last]  resume session (omit id = most recent)',
   '/new               new session',
   '/quit              exit TUI',
   '/shell on|off      toggle run_shell',
@@ -75,13 +76,15 @@ export function parseSlashLine(line: string): SlashResult | null {
 
     case '/resume': {
       const id = parts[1];
-      if (!id) return { handled: true, message: 'Usage: /resume <session_id>' };
+      if (!id || id.toLowerCase() === 'last') {
+        return { handled: true, message: '__resume_last__' };
+      }
       return { handled: true, message: `__resume__:${id}` };
     }
 
     case '/shell': {
       const mode = parts[1]?.toLowerCase();
-      if (!mode) return { handled: true, message: 'Usage: /shell on|off' };
+      if (!mode) return { handled: true, message: '__shell_status__' };
       if (mode !== 'on' && mode !== 'off') {
         return { handled: true, message: 'Usage: /shell on|off' };
       }
@@ -90,7 +93,7 @@ export function parseSlashLine(line: string): SlashResult | null {
 
     case '/web': {
       const mode = parts[1]?.toLowerCase();
-      if (!mode) return { handled: true, message: 'Usage: /web on|off' };
+      if (!mode) return { handled: true, message: '__web_status__' };
       if (mode !== 'on' && mode !== 'off') {
         return { handled: true, message: 'Usage: /web on|off' };
       }

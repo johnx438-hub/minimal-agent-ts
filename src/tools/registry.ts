@@ -194,10 +194,16 @@ export class ToolRegistry {
       const builtin = ALL_BUILTIN[name];
       if (builtin && this.enabledBuiltin.has(name)) {
         if (name === 'run_shell' && !config.allowShell) {
-          return 'error: run_shell is disabled. Use /shell on or --allow-shell.';
+          const gate = config.permissionGate;
+          if (!gate || !(await gate.ensureShell(config, 'run_shell'))) {
+            return 'error: run_shell is disabled. Use /shell on or approve when prompted.';
+          }
         }
         if (name === 'web_fetch' && !config.allowWeb) {
-          return 'error: web_fetch is disabled. Use /web on or --allow-web.';
+          const gate = config.permissionGate;
+          if (!gate || !(await gate.ensureWeb(config, 'web_fetch'))) {
+            return 'error: web_fetch is disabled. Use /web on or approve when prompted.';
+          }
         }
         const result = await builtin.handler(name, args, config);
         if (result !== null) return result;
