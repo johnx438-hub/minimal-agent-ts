@@ -1,6 +1,11 @@
 import { CancellableLoader, Markdown, Text, type TUI } from '@earendil-works/pi-tui';
 
-import { formatToolPlanSummary, type AgentStepEvent, type RuntimeEvent } from '../../events.js';
+import {
+  formatLlmRetrySummary,
+  formatToolPlanSummary,
+  type AgentStepEvent,
+  type RuntimeEvent,
+} from '../../events.js';
 import { shouldFormatFinal } from '../markdown.js';
 import type { PiChatLog } from './chat-log.js';
 import { piChalk, piMarkdownTheme } from './themes.js';
@@ -10,6 +15,7 @@ function isAgentStep(event: RuntimeEvent): event is AgentStepEvent {
     event.type === 'turn_start' ||
     event.type === 'token' ||
     event.type === 'llm_done' ||
+    event.type === 'llm_retry' ||
     event.type === 'tool_plan' ||
     event.type === 'tool_batch' ||
     event.type === 'tool_call' ||
@@ -179,6 +185,9 @@ export class PiEventPresenter {
       }
       case 'llm_done':
         this.appendRunFooter(`finish=${event.finishReason ?? 'null'}`);
+        break;
+      case 'llm_retry':
+        this.appendRunMeta(formatLlmRetrySummary(event));
         break;
       case 'compression':
         this.appendRunMeta(

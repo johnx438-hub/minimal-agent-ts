@@ -6,7 +6,13 @@ import { discoverSkills } from './plugins/skills.js';
 import { runAgent, type AgentResult } from './agent.js';
 import type { AgentStepEvent } from './events.js';
 import { previewPolicyFromPointerize } from './action-preview.js';
-import { emitJsonEvent, formatToolPlanSummary, isAbortError, type RuntimeEvent } from './events.js';
+import {
+  emitJsonEvent,
+  formatLlmRetrySummary,
+  formatToolPlanSummary,
+  isAbortError,
+  type RuntimeEvent,
+} from './events.js';
 import { parseLoopGuardMode } from './loop-guard.js';
 import { ensureToolRegistry, toolRegistry } from './tools/registry.js';
 import { PermissionGate } from './permission-gate.js';
@@ -615,6 +621,9 @@ export function printStepEvent(event: AgentStepEvent): void {
       console.log(
         `\n  finish=${event.finishReason ?? 'null'} tokens=${JSON.stringify(event.usage ?? {})}`,
       );
+      break;
+    case 'llm_retry':
+      console.log(`  ${formatLlmRetrySummary(event)}`);
       break;
     case 'compression':
       console.log(

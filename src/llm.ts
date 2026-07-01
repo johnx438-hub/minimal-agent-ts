@@ -1,4 +1,7 @@
+import { LlmHttpError, parseRetryAfterMs } from './llm-retry.js';
 import type { ChatMessage, ToolCall, ToolDefinition } from './types.js';
+
+export { LlmHttpError } from './llm-retry.js';
 
 interface ChatCompletionResponse {
   choices: Array<{
@@ -73,7 +76,11 @@ async function chatStream(
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`LLM HTTP ${res.status}: ${errText.slice(0, 500)}`);
+    throw new LlmHttpError(
+      res.status,
+      errText,
+      parseRetryAfterMs(res.headers.get('retry-after')),
+    );
   }
 
   if (!res.body) {
@@ -215,7 +222,11 @@ async function postChat(
 
   const bodyText = await res.text();
   if (!res.ok) {
-    throw new Error(`LLM HTTP ${res.status}: ${bodyText.slice(0, 500)}`);
+    throw new LlmHttpError(
+      res.status,
+      bodyText,
+      parseRetryAfterMs(res.headers.get('retry-after')),
+    );
   }
   return bodyText;
 }

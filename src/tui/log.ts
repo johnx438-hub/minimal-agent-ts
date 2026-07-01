@@ -8,6 +8,7 @@ function isAgentStep(event: RuntimeEvent): event is AgentStepEvent {
     event.type === 'turn_start' ||
     event.type === 'token' ||
     event.type === 'llm_done' ||
+    event.type === 'llm_retry' ||
     event.type === 'tool_plan' ||
     event.type === 'tool_batch' ||
     event.type === 'tool_call' ||

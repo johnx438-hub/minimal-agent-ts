@@ -20,6 +20,14 @@ export type AgentStepEvent =
   | { type: 'token'; turn: number; delta: string }
   | { type: 'llm_done'; turn: number; finishReason: string | null; usage?: object }
   | {
+      type: 'llm_retry';
+      turn: number;
+      attempt: number;
+      max_attempts: number;
+      reason: string;
+      delay_ms: number;
+    }
+  | {
       type: 'tool_plan';
       turn: number;
       total: number;
@@ -30,7 +38,7 @@ export type AgentStepEvent =
   | { type: 'tool_batch'; turn: number; total: number; parallel: number }
   | { type: 'tool_call'; turn: number; name: string; args: string }
   | { type: 'tool_result'; turn: number; name: string; output: string; preview?: string }
-  | { type: 'compression'; turn: number; pruned?: number }
+  | { type: 'compression'; turn: number; pruned?: number; pointer_compacted?: number }
   | { type: 'draft_discarded'; turn: number; chars: number }
   | {
       type: 'loop_guard';
@@ -63,6 +71,16 @@ export type RuntimeEvent =
     }
   | { type: 'spawn_start'; preset: string }
   | { type: 'spawn_end'; preset: string; ok: boolean; detail?: string };
+
+export function formatLlmRetrySummary(event: {
+  attempt: number;
+  max_attempts: number;
+  reason: string;
+  delay_ms: number;
+}): string {
+  const delaySec = (event.delay_ms / 1000).toFixed(1).replace(/\.0$/, '');
+  return `↻ LLM retry ${event.attempt}/${event.max_attempts} (${event.reason}, ${delaySec}s)`;
+}
 
 export function formatToolPlanSummary(event: {
   total: number;
