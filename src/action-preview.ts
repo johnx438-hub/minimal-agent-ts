@@ -187,6 +187,21 @@ export function buildSmartToolPreview(
 
     case 'web_fetch': {
       const url = String(args.url ?? '?');
+      const spillMeta = text.match(/^\[web_spill[^\]]+\]/m)?.[0] ?? '';
+      if (spillMeta) {
+        const spillUrl = spillMeta.match(/\burl=(\S+)/)?.[1] ?? url;
+        const saved = text.match(/^saved=(.+)$/m)?.[1]?.trim();
+        const lines = nonEmptyLines(text, policy.preview_max_lines);
+        return {
+          summary: clipSummary(
+            `web_fetch spill: ${spillUrl}${saved ? ` → ${saved}` : ''}`,
+            policy,
+          ),
+          preview_lines: lines
+            .slice(0, policy.preview_max_lines)
+            .map((l) => truncateLine(l, 100)),
+        };
+      }
       const meta = text.match(/^\[web_meta[^\]]+\]/m)?.[0] ?? '';
       const via = meta.includes('via=cloak') ? 'cloak' : 'http';
       const title = text.match(/^#\s+(.+)/m)?.[1]?.trim();

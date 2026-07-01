@@ -27,7 +27,10 @@ function pointerizeRecallGuidance(recallMaxKb: number): string {
 function toolGuidanceLine(name: string, description: string): string | null {
   switch (name) {
     case 'web_fetch':
-      return `${firstSentence(description)} Respect domain allowlist in agent.json.`;
+      return (
+        `${firstSentence(description)} Respect domain allowlist in agent.json. ` +
+        'If the result is [web_spill], the page is on disk as Markdown only — read with read_file(offset/limit); open source_url in a browser if conversion looks wrong.'
+      );
     case 'edit_file':
       return `Prefer read_file before editing; ${firstSentence(description)}`;
     case 'invoke_skill':

@@ -10,10 +10,22 @@ import TurndownService from 'turndown';
 import { isCapabilityEnabled } from '../permission-gate.js';
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import type { WebFetchPolicy } from '../plugins/types.js';
+import {
+  formatSpillResult,
+  markdownByteSize,
+  writeWebFetchSpill,
+} from './web-fetch-spill.js';
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_CLOAK_TIMEOUT_MS = 90_000;
 const DEFAULT_MAX_CHARS = 80_000;
+export const DEFAULT_MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
+export const DEFAULT_MAX_INLINE_BYTES = 512 * 1024;
+const MIN_MAX_RESPONSE_BYTES = 64 * 1024;
+const MAX_MAX_RESPONSE_BYTES = 50 * 1024 * 1024;
+const MIN_MAX_INLINE_BYTES = 16 * 1024;
+const MAX_MAX_INLINE_BYTES = 4 * 1024 * 1024;
+const DEFAULT_SPILL_DIR = '.cache/web-fetch';
 const DEFAULT_USER_AGENT =
   'Mozilla/5.0 (compatible; minimal-agent-ts/0.1; +https://github.com/archer/zerostack-analysis)';
 
@@ -28,7 +40,7 @@ export const WEB_FETCH_DEFINITIONS: ToolDefinition[] = [
     function: {
       name: 'web_fetch',
       description:
-        'Fetch a public HTTP(S) URL and return LLM-friendly Markdown (title + main content). Uses fast HTTP first; on 403/anti-bot pages may retry via cloakFetch if configured in agent.json.',
+        'Fetch a public HTTP(S) URL and return LLM-friendly Markdown (title + main content). Large pages spill to .cache/web-fetch/ as Markdown (source URL preserved); use read_file with offset/limit. L2 cloakFetch optional.',
       parameters: {
         type: 'object',
         properties: {
@@ -58,6 +70,10 @@ function resolvedPolicy(config: AgentConfig): Required<
     | 'default_timeout_ms'
     | 'cloak_timeout_ms'
     | 'max_chars'
+    | 'max_response_bytes'
+    | 'max_inline_bytes'
+    | 'spill_enabled'
+    | 'spill_dir'
     | 'user_agent'
     | 'cloak_fetch_enabled'
   >
@@ -72,6 +88,20 @@ function resolvedPolicy(config: AgentConfig): Required<
     default_timeout_ms: p.default_timeout_ms ?? DEFAULT_TIMEOUT_MS,
     cloak_timeout_ms: p.cloak_timeout_ms ?? DEFAULT_CLOAK_TIMEOUT_MS,
     max_chars: p.max_chars ?? DEFAULT_MAX_CHARS,
+    max_response_bytes: clampInt(
+      p.max_response_bytes,
+      DEFAULT_MAX_RESPONSE_BYTES,
+      MIN_MAX_RESPONSE_BYTES,
+      MAX_MAX_RESPONSE_BYTES,
+    ),
+    max_inline_bytes: clampInt(
+      p.max_inline_bytes,
+      DEFAULT_MAX_INLINE_BYTES,
+      MIN_MAX_INLINE_BYTES,
+      MAX_MAX_INLINE_BYTES,
+    ),
+    spill_enabled: p.spill_enabled ?? true,
+    spill_dir: (p.spill_dir?.trim() || DEFAULT_SPILL_DIR).replace(/^\/+/, ''),
     user_agent: p.user_agent ?? DEFAULT_USER_AGENT,
     cloak_fetch_enabled: p.cloak_fetch_enabled ?? false,
     cloak_fetch_script: p.cloak_fetch_script,
@@ -196,16 +226,133 @@ function formatResult(
   return `${header}${body}`;
 }
 
+async function deliverMarkdownResult(
+  url: string,
+  title: string,
+  markdown: string,
+  via: 'http' | 'cloak',
+  policy: ReturnType<typeof resolvedPolicy>,
+  config: AgentConfig,
+): Promise<string> {
+  const shouldSpill =
+    policy.spill_enabled && markdownByteSize(markdown) > policy.max_inline_bytes;
+
+  if (!shouldSpill) {
+    return formatResult(url, title, markdown, via, policy);
+  }
+
+  const spill = await writeWebFetchSpill({
+    url,
+    title,
+    markdown,
+    via,
+    sessionId: config.sessionId,
+    spillDir: policy.spill_dir,
+  });
+  return formatSpillResult(url, title, via, spill);
+}
+
 function looksBlocked(status: number, body: string): boolean {
   if (BLOCKED_STATUS.has(status)) return true;
   if (status >= 500 && BLOCKED_BODY_RE.test(body)) return true;
   return BLOCKED_BODY_RE.test(body.slice(0, 4000));
 }
 
+export class WebFetchResponseTooLargeError extends Error {
+  readonly actualBytes: number;
+  readonly limitBytes: number;
+
+  constructor(actualBytes: number, limitBytes: number) {
+    super(`response size ${actualBytes} exceeds max_response_bytes ${limitBytes}`);
+    this.name = 'WebFetchResponseTooLargeError';
+    this.actualBytes = actualBytes;
+    this.limitBytes = limitBytes;
+  }
+}
+
+/** Reject when Content-Length is known and over policy limit. */
+export function checkContentLengthHeader(
+  header: string | null,
+  maxBytes: number,
+): WebFetchResponseTooLargeError | null {
+  if (!header) return null;
+  const trimmed = header.trim();
+  if (!trimmed) return null;
+
+  const len = Number(trimmed);
+  if (!Number.isFinite(len) || len < 0) return null;
+  if (len > maxBytes) {
+    return new WebFetchResponseTooLargeError(len, maxBytes);
+  }
+  return null;
+}
+
+function concatChunks(chunks: Uint8Array[]): Uint8Array {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return merged;
+}
+
+/** Read a fetch body stream with a hard byte ceiling. */
+export async function readBodyWithByteLimit(
+  stream: ReadableStream<Uint8Array>,
+  maxBytes: number,
+): Promise<string> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value || value.byteLength === 0) continue;
+
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new WebFetchResponseTooLargeError(total, maxBytes);
+      }
+      chunks.push(value);
+    }
+  } catch (err) {
+    if (!(err instanceof WebFetchResponseTooLargeError)) {
+      await reader.cancel().catch(() => undefined);
+    }
+    throw err;
+  }
+
+  return new TextDecoder().decode(concatChunks(chunks));
+}
+
+function appendStdoutBounded(
+  current: string,
+  chunk: Buffer,
+  maxBytes: number,
+): { text: string; tooLarge: boolean } {
+  const currentBytes = Buffer.byteLength(current, 'utf8');
+  const chunkBytes = chunk.byteLength;
+  if (currentBytes + chunkBytes <= maxBytes) {
+    return { text: current + chunk.toString('utf8'), tooLarge: false };
+  }
+  const remaining = maxBytes - currentBytes;
+  if (remaining <= 0) {
+    return { text: current, tooLarge: true };
+  }
+  const partial = chunk.subarray(0, remaining).toString('utf8');
+  return { text: current + partial, tooLarge: true };
+}
+
 async function fetchHttp(
   url: string,
   timeoutMs: number,
   userAgent: string,
+  maxBytes: number,
 ): Promise<{ status: number; body: string; contentType: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -220,8 +367,16 @@ async function fetchHttp(
       redirect: 'follow',
     });
 
+    const tooLarge = checkContentLengthHeader(res.headers.get('content-length'), maxBytes);
+    if (tooLarge) throw tooLarge;
+
     const contentType = res.headers.get('content-type') ?? '';
-    const body = await res.text();
+    const body = res.body
+      ? await readBodyWithByteLimit(res.body, maxBytes)
+      : await res.text();
+    if (!res.body && Buffer.byteLength(body, 'utf8') > maxBytes) {
+      throw new WebFetchResponseTooLargeError(Buffer.byteLength(body, 'utf8'), maxBytes);
+    }
     return { status: res.status, body, contentType };
   } finally {
     clearTimeout(timer);
@@ -265,6 +420,8 @@ async function runCloakFetch(url: string, policy: ReturnType<typeof resolvedPoli
   const timeoutMs = policy.cloak_timeout_ms;
   const isPython = script.endsWith('.py');
 
+  const maxBytes = policy.max_response_bytes;
+
   return new Promise((resolvePromise) => {
     const cmd = isPython ? cloakPython(policy.cloak_browser_python) : script;
     const args = isPython ? [script, url] : [url];
@@ -280,8 +437,24 @@ async function runCloakFetch(url: string, policy: ReturnType<typeof resolvedPoli
 
     let stdout = '';
     let stderr = '';
+    let settled = false;
+
+    const finish = (value: string) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolvePromise(value);
+    };
+
     child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString('utf8');
+      const next = appendStdoutBounded(stdout, chunk, maxBytes);
+      stdout = next.text;
+      if (next.tooLarge) {
+        child.kill('SIGTERM');
+        finish(
+          `error: cloak_fetch output exceeds max_response_bytes ${maxBytes}`,
+        );
+      }
     });
     child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk.toString('utf8');
@@ -289,27 +462,21 @@ async function runCloakFetch(url: string, policy: ReturnType<typeof resolvedPoli
 
     const timer = setTimeout(() => {
       child.kill('SIGTERM');
-      resolvePromise(
-        `error: cloak_fetch timed out after ${timeoutMs}ms\n${stderr.trim()}`.trim(),
-      );
+      finish(`error: cloak_fetch timed out after ${timeoutMs}ms\n${stderr.trim()}`.trim());
     }, timeoutMs);
 
     child.on('error', (err) => {
-      clearTimeout(timer);
-      resolvePromise(`error: cloak_fetch failed to start: ${err.message}`);
+      finish(`error: cloak_fetch failed to start: ${err.message}`);
     });
 
     child.on('close', (code) => {
-      clearTimeout(timer);
       const out = stdout.trim();
       if (code !== 0 || !out) {
         const detail = [stderr.trim(), out].filter(Boolean).join('\n');
-        resolvePromise(
-          `error: cloak_fetch exited ${code ?? 'null'}${detail ? `\n${detail}` : ''}`,
-        );
+        finish(`error: cloak_fetch exited ${code ?? 'null'}${detail ? `\n${detail}` : ''}`);
         return;
       }
-      resolvePromise(out);
+      finish(out);
     });
   });
 }
@@ -337,7 +504,12 @@ export async function runWebFetchTool(
   const url = parsed.toString();
 
   try {
-    const { status, body, contentType } = await fetchHttp(url, timeoutMs, policy.user_agent);
+    const { status, body, contentType } = await fetchHttp(
+      url,
+      timeoutMs,
+      policy.user_agent,
+      policy.max_response_bytes,
+    );
 
     if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
       if (status >= 400) {
@@ -355,7 +527,7 @@ export async function runWebFetchTool(
 
     if (!looksBlocked(status, body)) {
       const { title, markdown } = htmlToMarkdown(body, url);
-      return formatResult(url, title, markdown, 'http', policy);
+      return deliverMarkdownResult(url, title, markdown, 'http', policy, config);
     }
 
     if (!policy.cloak_fetch_enabled) {
@@ -370,8 +542,11 @@ export async function runWebFetchTool(
 
     const titleMatch = cloakOut.match(/^#\s+(.+)/m);
     const title = titleMatch?.[1]?.trim() ?? url;
-    return formatResult(url, title, cloakOut, 'cloak', policy);
+    return deliverMarkdownResult(url, title, cloakOut, 'cloak', policy, config);
   } catch (err) {
+    if (err instanceof WebFetchResponseTooLargeError) {
+      return `error: ${err.message}`;
+    }
     const msg = err instanceof Error ? err.message : String(err);
     if (/aborted|timeout/i.test(msg)) {
       return `error: fetch timed out after ${timeoutMs}ms`;

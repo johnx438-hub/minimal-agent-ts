@@ -43,6 +43,14 @@ export interface WebFetchPolicy {
   default_timeout_ms?: number;
   cloak_timeout_ms?: number;
   max_chars?: number;
+  /** Max raw HTTP/cloak response bytes before abort (default 5 MiB). */
+  max_response_bytes?: number;
+  /** Markdown larger than this spills to `.cache/web-fetch/` (default 512 KiB). */
+  max_inline_bytes?: number;
+  /** Write oversized Markdown to workspace instead of inline tool output. */
+  spill_enabled?: boolean;
+  /** Relative to workspace root. Default `.cache/web-fetch`. */
+  spill_dir?: string;
   user_agent?: string;
   /** Enable L2 fallback via cloakFetch / CloakBrowser script. */
   cloak_fetch_enabled?: boolean;
