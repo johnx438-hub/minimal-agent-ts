@@ -444,6 +444,17 @@ export class AgentRuntime {
       this.sessionDirty = true;
       this.saveIfDirty();
 
+      if (wfResult.handback) {
+        this.emit({
+          type: 'workflow_handback',
+          workflow: wfResult.workflow,
+          reason: wfResult.handback.reason,
+          detail: wfResult.handback.detail,
+          role: wfResult.handback.role,
+          round: wfResult.handback.round,
+        });
+      }
+
       this.emit({ type: 'run_end', reason: 'completed' });
       return { text: wfResult.text, messages: [] };
     } catch (err) {

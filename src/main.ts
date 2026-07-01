@@ -165,6 +165,18 @@ function onRuntimeEvent(event: RuntimeEvent, jsonEvents: boolean): void {
     console.log('═'.repeat(60));
     return;
   }
+  if (event.type === 'workflow_handback') {
+    console.log(`\n${'═'.repeat(60)}`);
+    console.log(`workflow handback ▶ ${event.workflow} (${event.reason})`);
+    if (event.role) {
+      console.log(
+        `  role: ${event.role}${event.round !== undefined ? ` round ${event.round}` : ''}`,
+      );
+    }
+    console.log(`  ${event.detail}`);
+    console.log('═'.repeat(60));
+    return;
+  }
   if (
     event.type === 'run_start' ||
     event.type === 'run_end' ||

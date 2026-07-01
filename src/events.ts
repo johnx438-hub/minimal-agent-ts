@@ -28,6 +28,14 @@ export type RuntimeEvent =
       phase: 'role' | 'loop';
       role: string;
       round?: number;
+    }
+  | {
+      type: 'workflow_handback';
+      workflow: string;
+      reason: 'loop_guard' | 'max_rounds_exhausted' | 'turn_ceiling' | 'agent_stopped';
+      detail: string;
+      role?: string;
+      round?: number;
     };
 
 export function isAbortError(err: unknown): boolean {

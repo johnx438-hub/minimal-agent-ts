@@ -46,9 +46,25 @@ export interface WorkflowContext {
   roles: Record<string, WorkflowRoleResult>;
 }
 
+export type WorkflowHandbackReason =
+  | 'loop_guard'
+  | 'max_rounds_exhausted'
+  | 'turn_ceiling'
+  | 'agent_stopped';
+
+export interface WorkflowHandback {
+  reason: WorkflowHandbackReason;
+  detail: string;
+  role?: string;
+  round?: number;
+  partial_output?: string;
+}
+
 export interface WorkflowResult {
   text: string;
   workflow: string;
   context: WorkflowContext;
   sessionId: string;
+  /** Set when workflow exits early and returns control to the main agent. */
+  handback?: WorkflowHandback;
 }

@@ -8,10 +8,16 @@ import { loadWorkflowDefinition } from './load-workflow.js';
 import { resolveWorkflowRole } from './load-role.js';
 import { evaluateWorkflowWhen, renderWorkflowTemplate } from './template.js';
 import { extractWorkflowVerdict } from './verdict.js';
+import {
+  buildHandbackWorkflowResult,
+  classifyAgentStopReason,
+  parseAgentStopReason,
+} from './handback.js';
 import type {
   ResolvedWorkflowRole,
   WorkflowContext,
   WorkflowFlowItem,
+  WorkflowHandback,
   WorkflowLoop,
   WorkflowResult,
   WorkflowStep,
@@ -55,7 +61,20 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
     resolvedRoles.set(name, resolveWorkflowRole(name, roleConfig, workflowPath));
   }
 
-  async function runRoleStep(step: WorkflowStep, phase: 'role' | 'loop', round?: number): Promise<void> {
+  function returnHandback(handback: WorkflowHandback): WorkflowResult {
+    return buildHandbackWorkflowResult({
+      workflowName: definition.name,
+      sessionId: session.session_id,
+      context: ctx,
+      handback,
+    });
+  }
+
+  async function runRoleStep(
+    step: WorkflowStep,
+    phase: 'role' | 'loop',
+    round?: number,
+  ): Promise<WorkflowResult | null> {
     const role = resolvedRoles.get(step.role);
     if (!role) {
       throw new Error(`Unknown workflow role: ${step.role}`);
@@ -104,6 +123,21 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
       throw new DOMException('Aborted', 'AbortError');
     }
 
+    const stopDetail = parseAgentStopReason(result.text);
+    if (stopDetail) {
+      if (isolated) {
+        session.current_messages = priorMessages;
+      }
+      saveSessionThrottled(session, { force: true });
+      return returnHandback({
+        reason: classifyAgentStopReason(stopDetail),
+        detail: stopDetail,
+        role: step.role,
+        round,
+        partial_output: result.text,
+      });
+    }
+
     if (isolated) {
       session.current_messages = priorMessages;
     } else {
@@ -113,6 +147,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
 
     const verdict = extractWorkflowVerdict(result.text);
     ctx.roles[step.role] = { output: result.text, verdict };
+    return null;
   }
 
   for (const item of definition.flow) {
@@ -123,16 +158,30 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
           break;
         }
         for (const step of steps) {
-          await runRoleStep(step, 'loop', round);
+          const handback = await runRoleStep(step, 'loop', round);
+          if (handback) return handback;
         }
         if (!evaluateWorkflowWhen(when, ctx)) {
           break;
         }
       }
+
+      if (evaluateWorkflowWhen(when, ctx)) {
+        const lastRole = steps[steps.length - 1]?.role;
+        const partial = lastRole ? ctx.roles[lastRole]?.output : undefined;
+        return returnHandback({
+          reason: 'max_rounds_exhausted',
+          detail: `Condition still true after ${max_rounds} round(s): ${when.trim()}`,
+          role: lastRole,
+          round: max_rounds,
+          partial_output: partial,
+        });
+      }
       continue;
     }
 
-    await runRoleStep(item, 'role');
+    const handback = await runRoleStep(item, 'role');
+    if (handback) return handback;
   }
 
   const flowRoles = definition.flow.flatMap((item) =>

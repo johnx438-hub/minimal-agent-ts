@@ -71,5 +71,18 @@ export function printRuntimeEvent(event: RuntimeEvent): void {
       console.log('═'.repeat(60));
       break;
     }
+
+    case 'workflow_handback': {
+      console.log(`\n${'═'.repeat(60)}`);
+      console.log(`workflow handback ▶ ${event.workflow} (${event.reason})`);
+      if (event.role) {
+        console.log(
+          `  role: ${event.role}${event.round !== undefined ? ` round ${event.round}` : ''}`,
+        );
+      }
+      console.log(`  ${event.detail}`);
+      console.log('═'.repeat(60));
+      break;
+    }
   }
 }
