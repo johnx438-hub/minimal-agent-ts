@@ -1,10 +1,19 @@
-import { estimateTokens, shouldCompress, type BudgetConfig } from './context-budget.js';
+import {
+  estimateTokens,
+  FIRST_HEAVY_COMPRESSION_RATIO,
+  shouldRunHeavyCompression,
+  usableContextTokens,
+  type BudgetConfig,
+} from './context-budget.js';
 import type { ChatMessage, SessionFile, TaskSummaryDoc } from './types.js';
 
 /** OpenCode-style prune thresholds (Phase 2c). */
 export const PRUNE_MIN_SAVINGS = 20_000;
 export const PROTECT_RECENT_TOKENS = 40_000;
 export const PROTECT_USER_TURNS = 2;
+
+/** Max pointer cards downgraded per turn (secondary compact). */
+export const MAX_POINTER_COMPACT_PER_TURN = 20;
 
 const NOTICE_PREFIX = '[context-notice]';
 const TASK_SUMMARY_PREFIX = '[Task ';
@@ -109,6 +118,88 @@ function canPrune(msg: ChatMessage): boolean {
   return msg.role === 'tool' || msg.role === 'assistant';
 }
 
+function canCompactPointerCard(msg: ChatMessage): boolean {
+  if (msg.role !== 'tool') return false;
+  if (!msg.pointerized || !msg.action_id) return false;
+  if (msg.compacted_at) return false;
+  if (isImmune(msg)) return false;
+  return true;
+}
+
+export function pointerCompactThreshold(budget: BudgetConfig): number {
+  return usableContextTokens(budget) * FIRST_HEAVY_COMPRESSION_RATIO;
+}
+
+export function shouldCompactPointerCards(
+  currentTokens: number,
+  budget: BudgetConfig,
+): boolean {
+  return currentTokens > pointerCompactThreshold(budget);
+}
+
+function findOldestCompactablePointerIndex(
+  messages: ChatMessage[],
+  currentTurn: number,
+): number {
+  const protectedSet = protectedIndices(messages, currentTurn);
+  for (let i = 0; i < messages.length; i++) {
+    if (protectedSet.has(i)) continue;
+    if (canCompactPointerCard(messages[i])) return i;
+  }
+  return -1;
+}
+
+/** Downgrade one pointer card to a compacted stub; ActionStore recall unchanged. */
+export function applyPointerSecondaryCompact(msg: ChatMessage): void {
+  const actionId = msg.action_id;
+  msg.compacted_at = Date.now();
+  msg.content = actionId
+    ? `[compacted tool action_id=${actionId}]`
+    : '[compacted tool]';
+}
+
+export function compactPointerCardsUntilUnderBudget(
+  messages: ChatMessage[],
+  currentTurn: number,
+  budget: BudgetConfig,
+): number {
+  let compacted = 0;
+
+  while (compacted < MAX_POINTER_COMPACT_PER_TURN) {
+    const visible = assembleApiMessages(messages);
+    const tokens = estimateTokens(visible);
+    if (!shouldCompactPointerCards(tokens, budget)) {
+      break;
+    }
+
+    const index = findOldestCompactablePointerIndex(messages, currentTurn);
+    if (index < 0) {
+      break;
+    }
+
+    applyPointerSecondaryCompact(messages[index]);
+    compacted++;
+  }
+
+  return compacted;
+}
+
+/**
+ * Secondary compact for pointer cards when context stays above 80% usable.
+ * Fills the gap where pointerized messages are immune to normal prune.
+ */
+export function maybeCompactPointerCards(
+  messages: ChatMessage[],
+  currentTurn: number,
+  budget: BudgetConfig,
+): number {
+  const visible = assembleApiMessages(messages);
+  if (!shouldCompactPointerCards(estimateTokens(visible), budget)) {
+    return 0;
+  }
+  return compactPointerCardsUntilUnderBudget(messages, currentTurn, budget);
+}
+
 export function estimatePruneSavings(messages: ChatMessage[], currentTurn: number): number {
   const protectedSet = protectedIndices(messages, currentTurn);
   let savings = 0;
@@ -191,12 +282,14 @@ export interface CompressionEventOptions {
 export function runCompressionEvent(opts: CompressionEventOptions): boolean {
   const { messages, session, currentTurn, budget, userTask } = opts;
   const visible = assembleApiMessages(messages);
+  const isRepeat = hasCompressionNotice(messages);
 
-  if (!shouldCompress(estimateTokens(visible), budget)) {
+  if (!shouldRunHeavyCompression(estimateTokens(visible), budget, isRepeat)) {
     return false;
   }
 
   applyPrune(messages, currentTurn);
+  compactPointerCardsUntilUnderBudget(messages, currentTurn, budget);
 
   if (session && session.tasks.length > 0 && !hasTaskSummaryBlock(messages)) {
     const summaries = buildTaskSummaryMessages(session.tasks);
@@ -205,12 +298,12 @@ export function runCompressionEvent(opts: CompressionEventOptions): boolean {
     messages.splice(insertAt, 0, ...summaries);
   }
 
-  if (!hasCompressionNotice(messages)) {
+  if (!isRepeat) {
     const topics = [...new Set(session?.tasks.flatMap((t) => t.tech_concepts) ?? [])];
     messages.push(appendCompressionNotice(topics));
+    messages.push(replayLastUserTask(userTask));
   }
 
-  messages.push(replayLastUserTask(userTask));
   return true;
 }
 

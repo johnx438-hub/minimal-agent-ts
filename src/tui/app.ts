@@ -200,7 +200,10 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
       console.log('(input paused — Ctrl+C to abort)');
     }
     if (event.type === 'compression') {
-      fatigueTracker.onCompression(event.turn, event.pruned ?? 0);
+      fatigueTracker.onCompression(
+        event.turn,
+        (event.pruned ?? 0) + (event.pointer_compacted ?? 0),
+      );
     }
     printRuntimeEvent(event);
     if (event.type === 'run_end') {

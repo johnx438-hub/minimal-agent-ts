@@ -3,6 +3,7 @@ import { indexActionAsync, scheduleIndexSync } from './action-index.js';
 import { saveAction } from './action-store.js';
 import {
   assembleApiMessages,
+  maybeCompactPointerCards,
   maybePrune,
   runCompressionEvent,
 } from './context-policy.js';
@@ -176,8 +177,6 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
   scheduleIndexSync(toolConfig.sessionId);
 
   const budget = createBudgetConfig(config.model);
-  let compressionEventDone = false;
-
   try {
   for (let turn = 1; ; turn++) {
     if (signal?.aborted) {
@@ -252,24 +251,26 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         previewPolicy: config.previewPolicy ?? DEFAULT_PREVIEW_POLICY,
       });
 
-      if (!compressionEventDone) {
-        const pruned = maybePrune(messages, turn);
-        if (pruned > 0) {
-          onStep?.({ type: 'compression', turn, pruned });
-        }
+      const pruned = maybePrune(messages, turn);
+      if (pruned > 0) {
+        onStep?.({ type: 'compression', turn, pruned });
+      }
 
-        if (
-          runCompressionEvent({
-            messages,
-            session,
-            currentTurn: turn,
-            budget,
-            userTask,
-          })
-        ) {
-          compressionEventDone = true;
-          onStep?.({ type: 'compression', turn });
-        }
+      const pointerCompacted = maybeCompactPointerCards(messages, turn, budget);
+      if (pointerCompacted > 0) {
+        onStep?.({ type: 'compression', turn, pointer_compacted: pointerCompacted });
+      }
+
+      if (
+        runCompressionEvent({
+          messages,
+          session,
+          currentTurn: turn,
+          budget,
+          userTask,
+        })
+      ) {
+        onStep?.({ type: 'compression', turn });
       }
     }
 

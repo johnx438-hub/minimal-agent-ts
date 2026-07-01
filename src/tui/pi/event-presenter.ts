@@ -193,7 +193,9 @@ export class PiEventPresenter {
         this.appendRunMeta(
           event.pruned
             ? `📦 pruned ${event.pruned} messages`
-            : '📦 compression: summaries + replay',
+            : event.pointer_compacted
+              ? `📦 compacted ${event.pointer_compacted} pointer cards`
+              : '📦 compression: summaries + replay',
         );
         break;
       case 'draft_discarded':

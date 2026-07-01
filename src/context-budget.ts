@@ -116,12 +116,39 @@ export function estimateSummaryTokens(summary: TaskSummaryDoc): number {
   return Math.ceil(text.split(/\s+/).length * 1.3);
 }
 
+/** First heavy compression: 80% of usable context. */
+export const FIRST_HEAVY_COMPRESSION_RATIO = 0.8;
+
+/** Subsequent heavy compression: 90% of usable context (hysteresis). */
+export const REPEAT_HEAVY_COMPRESSION_RATIO = 0.9;
+
+export function usableContextTokens(budget: BudgetConfig): number {
+  return budget.total * (1 - budget.system_pct);
+}
+
+export function heavyCompressionThreshold(
+  budget: BudgetConfig,
+  isRepeat: boolean,
+): number {
+  const ratio = isRepeat ? REPEAT_HEAVY_COMPRESSION_RATIO : FIRST_HEAVY_COMPRESSION_RATIO;
+  return usableContextTokens(budget) * ratio;
+}
+
 /**
- * Check if compression is needed based on current token usage.
+ * Whether a full compression event (prune + summaries + notice) should run.
+ * First event at 80% usable; repeats at 90% usable.
  */
+export function shouldRunHeavyCompression(
+  currentTokens: number,
+  budget: BudgetConfig,
+  isRepeat: boolean,
+): boolean {
+  return currentTokens > heavyCompressionThreshold(budget, isRepeat);
+}
+
+/** @deprecated Alias for first heavy compression check (session resume, docs). */
 export function shouldCompress(currentTokens: number, budget: BudgetConfig): boolean {
-  const threshold = (budget.total * (1 - budget.system_pct)) * 0.8; // 80% of usable budget
-  return currentTokens > threshold;
+  return shouldRunHeavyCompression(currentTokens, budget, false);
 }
 
 /**

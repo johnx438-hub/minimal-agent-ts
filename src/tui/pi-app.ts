@@ -206,7 +206,10 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
       editor.disableSubmit = true;
     }
     if (event.type === 'compression') {
-      fatigueTracker.onCompression(event.turn, event.pruned ?? 0);
+      fatigueTracker.onCompression(
+        event.turn,
+        (event.pruned ?? 0) + (event.pointer_compacted ?? 0),
+      );
     }
     presenter.handle(event);
     if (event.type === 'run_end') {

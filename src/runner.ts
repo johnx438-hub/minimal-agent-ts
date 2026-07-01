@@ -629,7 +629,9 @@ export function printStepEvent(event: AgentStepEvent): void {
       console.log(
         event.pruned
           ? `  📦 pruned ${event.pruned} messages (compacted_at)`
-          : `  📦 compression event: summaries + notice + replay user task`,
+          : event.pointer_compacted
+            ? `  📦 compacted ${event.pointer_compacted} pointer cards (secondary)`
+            : `  📦 compression event: summaries + notice + replay user task`,
       );
       break;
     case 'draft_discarded':
