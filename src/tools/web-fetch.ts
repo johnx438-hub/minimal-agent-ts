@@ -7,6 +7,7 @@ import { Readability } from '@mozilla/readability';
 import { parseHTML } from 'linkedom';
 import TurndownService from 'turndown';
 
+import { isCapabilityEnabled } from '../permission-gate.js';
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import type { WebFetchPolicy } from '../plugins/types.js';
 
@@ -320,8 +321,8 @@ export async function runWebFetchTool(
 ): Promise<string | null> {
   if (toolName !== 'web_fetch') return null;
 
-  if (!config.allowWeb) {
-    return 'error: web_fetch is disabled. Use --allow-web or set ALLOW_WEB=1.';
+  if (!isCapabilityEnabled(config, 'web')) {
+    return 'error: web_fetch is disabled. Use /web on, /approve always web, or --allow-web.';
   }
 
   const parsed = parseTargetUrl(String(args.url ?? ''));

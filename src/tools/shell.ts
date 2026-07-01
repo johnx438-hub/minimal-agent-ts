@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 
+import { isCapabilityEnabled } from '../permission-gate.js';
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import { resolveSafePath } from './path-utils.js';
 
@@ -249,8 +250,8 @@ export async function runShellTool(
 ): Promise<string | null> {
   if (name !== 'run_shell') return null;
 
-  if (!config.allowShell) {
-    return 'error: run_shell is disabled. Use --allow-shell or set ALLOW_SHELL=1.';
+  if (!isCapabilityEnabled(config, 'shell')) {
+    return 'error: run_shell is disabled. Use /shell on, /approve always shell, or --allow-shell.';
   }
 
   const parsed = parseShellArgs(args);

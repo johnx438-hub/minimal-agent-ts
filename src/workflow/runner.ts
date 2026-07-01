@@ -2,6 +2,7 @@ import { saveSessionThrottled } from '../session.js';
 import { runAgent } from '../agent.js';
 import type { AgentStepEvent } from '../events.js';
 
+import { isCapabilityEnabled } from '../permission-gate.js';
 import type { AgentConfig, SessionFile } from '../types.js';
 import { loadWorkflowDefinition } from './load-workflow.js';
 import { resolveWorkflowRole } from './load-role.js';
@@ -60,9 +61,9 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
       throw new Error(`Unknown workflow role: ${step.role}`);
     }
 
-    if (roleNeedsShell(role) && !config.allowShell) {
+    if (roleNeedsShell(role) && !isCapabilityEnabled(config, 'shell')) {
       throw new Error(
-        `Role "${step.role}" requires run_shell. Restart with --allow-shell or ALLOW_SHELL=1.`,
+        `Role "${step.role}" requires run_shell. Use /shell on, /approve always shell, or --allow-shell.`,
       );
     }
 

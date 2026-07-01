@@ -1,4 +1,5 @@
 import type { AgentStepEvent } from '../events.js';
+import { isCapabilityEnabled } from '../permission-gate.js';
 import type { AgentConfig } from '../types.js';
 import { getSpawnSemaphore } from './semaphore.js';
 import type { ResolvedSpawnPreset } from './types.js';
@@ -27,7 +28,7 @@ export async function runSpawnAgent(opts: RunSpawnOptions): Promise<string> {
     return `error: spawn depth limit (${MAX_SPAWN_DEPTH}) reached`;
   }
 
-  if (presetNeedsShell(preset) && !parentConfig.allowShell) {
+  if (presetNeedsShell(preset) && !isCapabilityEnabled(parentConfig, 'shell')) {
     const gate = parentConfig.permissionGate;
     if (
       !gate ||
@@ -36,7 +37,7 @@ export async function runSpawnAgent(opts: RunSpawnOptions): Promise<string> {
       return `error: preset "${preset.name}" requires run_shell; enable shell or approve when prompted`;
     }
   }
-  if (presetNeedsWeb(preset) && !parentConfig.allowWeb) {
+  if (presetNeedsWeb(preset) && !isCapabilityEnabled(parentConfig, 'web')) {
     const gate = parentConfig.permissionGate;
     if (
       !gate ||

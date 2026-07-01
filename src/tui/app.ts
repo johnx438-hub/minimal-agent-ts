@@ -47,8 +47,10 @@ function printStatus(runtime: AgentRuntime, armedWorkflow: string | null): void 
 
 export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
   const { runtime } = opts;
+  /** Prefs are project-scoped; do not follow `/cwd` agent working directory changes. */
+  const prefsCwd = resolve(runtime.config.cwd);
 
-  const saved = loadPrefs(runtime.config.cwd);
+  const saved = loadPrefs(prefsCwd);
   const needsConfirm = saved === null;
   let prefs: TuiPrefs = saved ?? defaultPrefs();
 
@@ -121,11 +123,10 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
       if (req.kind === 'shell') {
         runtime.setAllowShell(true);
         shellOn = true;
-        prefs = mergePrefs(runtime.config.cwd, { allowShell: true, allowWeb: webOn });
+        // session grant: runtime only (SPEC: /shell /web do not persist)
       } else {
         runtime.setAllowWeb(true);
         webOn = true;
-        prefs = mergePrefs(runtime.config.cwd, { allowShell: shellOn, allowWeb: true });
       }
     }
     return choice;
@@ -324,13 +325,19 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
     }
 
     if (result.message === '__shell_status__') {
-      console.log(`shell: ${runtime.config.allowShell ? 'on' : 'off'}  (/shell on|off)`);
+      const always = prefs.alwaysShell ? ' (always in prefs)' : '';
+      console.log(
+        `shell: ${runtime.config.allowShell ? 'on' : 'off'}${always}  (/shell on|off, session-only)`,
+      );
       showPrompt();
       return;
     }
 
     if (result.message === '__web_status__') {
-      console.log(`web: ${runtime.config.allowWeb ? 'on' : 'off'}  (/web on|off)`);
+      const always = prefs.alwaysWeb ? ' (always in prefs)' : '';
+      console.log(
+        `web: ${runtime.config.allowWeb ? 'on' : 'off'}${always}  (/web on|off, session-only)`,
+      );
       showPrompt();
       return;
     }
@@ -345,8 +352,7 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
       runtime.setAllowShell(on);
       shellOn = on;
       confirmShell = on;
-      prefs = mergePrefs(runtime.config.cwd, { allowShell: on });
-      console.log(`shell ${on ? 'on' : 'off'}`);
+      console.log(`shell ${on ? 'on' : 'off'} (this session only)`);
       showPrompt();
       return;
     }
@@ -361,21 +367,16 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
       runtime.setAllowWeb(on);
       webOn = on;
       confirmWeb = on;
-      prefs = mergePrefs(runtime.config.cwd, { allowWeb: on });
-      console.log(`web ${on ? 'on' : 'off'}`);
+      console.log(`web ${on ? 'on' : 'off'} (this session only)`);
       showPrompt();
       return;
     }
 
     if (result.message === '__approve_status__') {
-      prefs = loadPrefs(runtime.config.cwd) ?? defaultPrefs();
+      console.log(formatApproveStatus(prefs));
+      console.log(`  prefs file: ${prefsPath(prefsCwd)}`);
       console.log(
-        formatApproveStatus({
-          allowShell: runtime.config.allowShell,
-          allowWeb: runtime.config.allowWeb,
-          alwaysShell: prefs.alwaysShell,
-          alwaysWeb: prefs.alwaysWeb,
-        }),
+        `  runtime: shell:${runtime.config.allowShell ? 'on' : 'off'} web:${runtime.config.allowWeb ? 'on' : 'off'}`,
       );
       showPrompt();
       return;
@@ -388,11 +389,9 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
         if (kind === 'shell') {
           runtime.setAllowShell(true);
           shellOn = true;
-          prefs = mergePrefs(runtime.config.cwd, { allowShell: true });
         } else {
           runtime.setAllowWeb(true);
           webOn = true;
-          prefs = mergePrefs(runtime.config.cwd, { allowWeb: true });
         }
         console.log(`${kind} approved for this session`);
       }
@@ -404,13 +403,13 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
       const kind = result.message.slice('__approve_always__:'.length);
       if (kind === 'shell' || kind === 'web') {
         prefs = mergePrefs(
-          runtime.config.cwd,
+          prefsCwd,
           kind === 'shell'
             ? { allowShell: true, alwaysShell: true }
             : { allowWeb: true, alwaysWeb: true },
         );
         applyAlwaysFromPrefs(prefs);
-        console.log(`${kind} always-approved (saved to ${prefsPath(runtime.config.cwd)})`);
+        console.log(`${kind} always-approved → ${prefsPath(prefsCwd)}`);
       }
       showPrompt();
       return;
@@ -420,7 +419,7 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
       const kind = result.message.slice('__approve_revoke__:'.length);
       if (kind === 'shell' || kind === 'web') {
         prefs = mergePrefs(
-          runtime.config.cwd,
+          prefsCwd,
           kind === 'shell' ? { alwaysShell: false } : { alwaysWeb: false },
         );
         applyAlwaysFromPrefs(prefs);
@@ -567,7 +566,7 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
         showPrompt();
         return;
       }
-      prefs = mergePrefs(runtime.config.cwd, {
+      prefs = mergePrefs(prefsCwd, {
         allowShell: confirmShell,
         allowWeb: confirmWeb,
       });
