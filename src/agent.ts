@@ -1,21 +1,31 @@
 import { indexActionAsync, scheduleIndexSync } from './action-index.js';
-import { toolRegistry } from './tools/registry.js';
+
 import { saveAction } from './action-store.js';
 import {
   assembleApiMessages,
   maybePrune,
   runCompressionEvent,
 } from './context-policy.js';
-import { chat } from './llm.js';
+import {
+  commitAssistantText,
+  commitAssistantToolCalls,
+  invokeLlmTurn,
+} from './stream-draft.js';
 import {
   LoopGuard,
   resolveTurnCeiling,
   type LoopGuardConfig,
   type ToolTurnRecord,
 } from './loop-guard.js';
-import { attachActionPreview, DEFAULT_PREVIEW_POLICY } from './action-preview.js';
+import {
+  attachActionPreview,
+  DEFAULT_PREVIEW_POLICY,
+  formatLiveToolPreview,
+} from './action-preview.js';
+import { buildSystemPrompt } from './agent-prompt.js';
+import { isAbortError, type AgentStepEvent } from './events.js';
 import { materializePriorTurnTools } from './pointerize.js';
-import { parseAgentSummary, extractCleanAnswer, getSummaryPromptExtension } from './summary.js';
+import { parseAgentSummary, extractCleanAnswer } from './summary.js';
 import { buildContext, createBudgetConfig, shouldCompress, estimateTokens } from './context-budget.js';
 import { scheduleToolCalls } from './tool-scheduler.js';
 import { executeTool, getToolDefinitions } from './tools.js';
@@ -34,23 +44,8 @@ export interface RunAgentOptions {
   isolated?: boolean;
   onStep?: (event: AgentStepEvent) => void;
   onTaskComplete?: (summary: TaskSummaryDoc) => void;
+  signal?: AbortSignal;
 }
-
-export type AgentStepEvent =
-  | { type: 'turn_start'; turn: number }
-  | { type: 'token'; turn: number; delta: string }
-  | { type: 'llm_done'; turn: number; finishReason: string | null; usage?: object }
-  | { type: 'tool_batch'; turn: number; total: number; parallel: number }
-  | { type: 'tool_call'; turn: number; name: string; args: string }
-  | { type: 'tool_result'; turn: number; name: string; output: string }
-  | { type: 'compression'; turn: number; pruned?: number }
-  | {
-      type: 'loop_guard';
-      turn: number;
-      action: 'soft_nudge' | 'forced_summary' | 'terminate';
-      reason?: string;
-    }
-  | { type: 'final'; turn: number; text: string };
 
 export interface AgentResult {
   text: string;
@@ -81,7 +76,7 @@ function resolveInitialMessages(opts: RunAgentOptions): {
   const { prompt, config, session, systemPrompt, isolated } = opts;
   const system: ChatMessage = {
     role: 'system',
-    content: systemPrompt ?? buildSystemPrompt(),
+    content: systemPrompt ?? buildSystemPrompt(config),
   };
   const userTask = buildUserTaskMessage(config.cwd, prompt);
 
@@ -152,12 +147,17 @@ function finalizeSuccess(
 }
 
 export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
-  const { config, session, sessionId, stream = true, onStep, onTaskComplete } = opts;
+  const { config, session, sessionId, stream = true, onStep, onTaskComplete, signal } = opts;
 
   const toolConfig: AgentConfig = {
     ...config,
     sessionId: sessionId ?? session?.session_id,
+    abortSignal: signal ?? config.abortSignal,
+    nestedStepSink: onStep,
+    spawnDepth: config.spawnDepth ?? 0,
   };
+
+  const previewPolicy = config.previewPolicy ?? DEFAULT_PREVIEW_POLICY;
 
   const loopGuardConfig = config.loopGuard ?? DEFAULT_LOOP_GUARD;
   const loopGuard = new LoopGuard(loopGuardConfig);
@@ -178,7 +178,12 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
   const budget = createBudgetConfig(config.model);
   let compressionEventDone = false;
 
+  try {
   for (let turn = 1; ; turn++) {
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+
     if (turn > turnCeiling) {
       return buildStoppedResult(
         messages,
@@ -200,14 +205,19 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
       });
 
       const apiMessages = assembleApiMessages(messages);
-      const { message, finishReason, usage } = await chat(apiMessages, [], {
-        apiKey: config.apiKey,
-        baseUrl: config.baseUrl,
-        model: config.model,
+      const { message, finishReason, usage } = await invokeLlmTurn({
+        turn,
+        apiMessages,
+        tools: [],
         stream,
-        onToken: stream
-          ? (delta) => onStep?.({ type: 'token', turn, delta })
-          : undefined,
+        onStep,
+        chatOpts: {
+          apiKey: config.apiKey,
+          baseUrl: config.baseUrl,
+          model: config.model,
+          stream,
+          signal: toolConfig.abortSignal,
+        },
       });
 
       onStep?.({ type: 'llm_done', turn, finishReason, usage });
@@ -219,12 +229,12 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
       const rawText = (message.content ?? '').trim();
       if (rawText) {
-        messages.push({ role: 'assistant', content: rawText });
+        commitAssistantText(messages, rawText, turn);
         loopGuard.afterTextResponse();
         return finalizeSuccess(messages, rawText, turn, tracker, onStep, onTaskComplete);
       }
 
-      messages.push({ role: 'assistant', content: '' });
+      commitAssistantText(messages, '', turn);
       const emptyDecision = loopGuard.afterEmptyResponse();
       if (emptyDecision.action === 'terminate') {
         return buildStoppedResult(messages, emptyDecision.reason ?? 'empty during summary', turn, onStep);
@@ -266,14 +276,19 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
     const apiMessages = assembleApiMessages(messages);
     const toolDefs = getToolDefinitions(toolConfig);
 
-    const { message, finishReason, usage } = await chat(apiMessages, toolDefs, {
-      apiKey: config.apiKey,
-      baseUrl: config.baseUrl,
-      model: config.model,
+    const { message, finishReason, usage } = await invokeLlmTurn({
+      turn,
+      apiMessages,
+      tools: toolDefs,
       stream,
-      onToken: stream
-        ? (delta) => onStep?.({ type: 'token', turn, delta })
-        : undefined,
+      onStep,
+      chatOpts: {
+        apiKey: config.apiKey,
+        baseUrl: config.baseUrl,
+        model: config.model,
+        stream,
+        signal: toolConfig.abortSignal,
+      },
     });
 
     onStep?.({ type: 'llm_done', turn, finishReason, usage });
@@ -283,13 +298,14 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         role: 'assistant',
         content: message.content,
         tool_calls: message.tool_calls,
+        turn,
       };
 
       if (tracker) {
         tracker.onAssistantMessage(assistantMsg, turn);
       }
 
-      messages.push(assistantMsg);
+      commitAssistantToolCalls(messages, message, turn);
 
       const plan = scheduleToolCalls(message.tool_calls);
       onStep?.({
@@ -310,7 +326,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
         const output = await executeTool(name, args, toolConfig);
 
-        onStep?.({ type: 'tool_result', turn, name, output });
+        const preview = formatLiveToolPreview(name, args, output, previewPolicy);
+        onStep?.({ type: 'tool_result', turn, name, output, preview });
         turnRecords.push({ name, argsJson: args, output });
 
         let actionId: string | undefined;
@@ -372,12 +389,12 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
     const rawText = (message.content ?? '').trim();
     if (rawText) {
-      messages.push({ role: 'assistant', content: rawText });
+      commitAssistantText(messages, rawText, turn);
       loopGuard.afterTextResponse();
       return finalizeSuccess(messages, rawText, turn, tracker, onStep, onTaskComplete);
     }
 
-    messages.push({ role: 'assistant', content: '' });
+    commitAssistantText(messages, '', turn);
     const emptyDecision = loopGuard.afterEmptyResponse();
     if (emptyDecision.action === 'forced_summary' && emptyDecision.message) {
       messages.push({ role: 'user', content: emptyDecision.message });
@@ -395,20 +412,14 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
     messages.push({ role: 'user', content: 'Please continue or summarize what you found.' });
   }
-}
-
-function buildSystemPrompt(): string {
-  const skillExt = toolRegistry.isInitialized() ? toolRegistry.getSkillSystemExtension() : '';
-  const skillTools = toolRegistry.isInitialized()
-    ? '\n- Use invoke_skill(name) to load local SKILL.md guidance when a task matches a skill.'
-    : '';
-
-  return `You are a minimal coding assistant in a learning demo.
-
-You have builtin tools (read_file, write_file, edit_file, grep_search, list_files, diff_file, recall_query, invoke_skill) plus any MCP tools exposed as mcp_<server>_<tool>.
-- Prefer read_file before editing; use edit_file with expected_hash from [file_meta] for partial edits.
-- Explain briefly what you are doing.
-- When the task is done, reply with a short summary and stop calling tools.
-- Large tool outputs become [action:…] cards after a few turns; recent turns stay inline. Use recall_query(action_id=...) — returns full text up to 24KB by default.
-- If recall marks stale, use read_file for the latest file content.${skillTools}${skillExt}${getSummaryPromptExtension()}`;
+  } catch (err) {
+    if (isAbortError(err)) {
+      const text = '[aborted]';
+      const lastTurn =
+        [...messages].reverse().find((m) => m.turn !== undefined)?.turn ?? 1;
+      onStep?.({ type: 'final', turn: lastTurn, text });
+      return { text, messages };
+    }
+    throw err;
+  }
 }

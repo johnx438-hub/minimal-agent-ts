@@ -8,7 +8,29 @@
     "diff_file",
     "recall_query",
     "invoke_skill",
-    "run_shell"
+    "run_shell",
+    "web_fetch",
+    "spawn_agent"
+  ],
+  "spawn_presets": [
+    {
+      "name": "web-researcher",
+      "description": "Delegate web lookup and source summaries",
+      "prompt_file": "agents/web-researcher.md",
+      "tools": ["web_fetch", "read_file", "grep_search"]
+    },
+    {
+      "name": "skeleton-reader",
+      "description": "Read-only repo skeleton and entry-point map",
+      "prompt_file": "agents/skeleton-reader.md",
+      "tools": ["read_file", "grep_search", "list_files", "diff_file"]
+    },
+    {
+      "name": "hackernews-digest",
+      "description": "Fetch HN post URLs and return a short digest",
+      "prompt_file": "agents/hackernews-digest.md",
+      "tools": ["web_fetch", "read_file"]
+    }
   ],
   "skills_dirs": ["./skills"],
   "loaded_skills": [],
@@ -23,6 +45,14 @@
   },
   "recall_policy": {
     "auto_full_max_chars": 24000
+  },
+  "web_fetch_policy": {
+    "allow_domains": ["*"],
+    "deny_domains": [],
+    "default_timeout_ms": 15000,
+    "cloak_timeout_ms": 90000,
+    "max_chars": 80000,
+    "cloak_fetch_enabled": false
   },
   "mcp_policy": {
     "allow": ["*"],

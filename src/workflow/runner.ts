@@ -1,5 +1,7 @@
-import { saveSession } from '../session.js';
-import { runAgent, type AgentStepEvent, type RunAgentOptions } from '../agent.js';
+import { saveSessionThrottled } from '../session.js';
+import { runAgent } from '../agent.js';
+import type { AgentStepEvent } from '../events.js';
+
 import type { AgentConfig, SessionFile } from '../types.js';
 import { loadWorkflowDefinition } from './load-workflow.js';
 import { resolveWorkflowRole } from './load-role.js';
@@ -90,19 +92,23 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
       stream,
       systemPrompt: role.systemPrompt,
       isolated,
+      signal: config.abortSignal,
       onStep,
       onTaskComplete(taskSummary) {
         session.tasks.push(taskSummary);
-        saveSession(session);
       },
     });
+
+    if (result.text === '[aborted]') {
+      throw new DOMException('Aborted', 'AbortError');
+    }
 
     if (isolated) {
       session.current_messages = priorMessages;
     } else {
       session.current_messages = result.messages;
     }
-    saveSession(session);
+    saveSessionThrottled(session, { force: true });
 
     const verdict = extractWorkflowVerdict(result.text);
     ctx.roles[step.role] = { output: result.text, verdict };

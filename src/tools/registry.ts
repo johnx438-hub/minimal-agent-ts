@@ -12,6 +12,10 @@ import { READ_WRITE_DEFINITIONS, runReadWriteTool } from './read-write.js';
 import { RECALL_DEFINITIONS, runRecallTool } from './recall.js';
 import { SHELL_DEFINITIONS, runShellTool } from './shell.js';
 import { SKILLS_TOOL_DEFINITIONS, runSkillsTool } from './skills-tool.js';
+import { WEB_FETCH_DEFINITIONS, runWebFetchTool } from './web-fetch.js';
+import { loadSpawnPresets } from '../spawn/load-preset.js';
+import type { ResolvedSpawnPreset } from '../spawn/types.js';
+import { buildSpawnDefinitions, runSpawnTool } from './spawn.js';
 
 type BuiltinHandler = (
   toolName: string,
@@ -29,6 +33,7 @@ const ALL_BUILTIN: Record<string, { defs: ToolDefinition[]; handler: BuiltinHand
   recall_query: { defs: RECALL_DEFINITIONS, handler: runRecallTool },
   run_shell: { defs: SHELL_DEFINITIONS, handler: runShellTool },
   invoke_skill: { defs: SKILLS_TOOL_DEFINITIONS, handler: async () => null },
+  web_fetch: { defs: WEB_FETCH_DEFINITIONS, handler: runWebFetchTool },
 };
 
 export class ToolRegistry {
@@ -38,6 +43,7 @@ export class ToolRegistry {
   private mcpManager = new McpManager();
   private initialized = false;
   private enabledBuiltin = new Set<string>();
+  private spawnPresets: ResolvedSpawnPreset[] = [];
 
   async initialize(cwd: string, pluginConfig?: AgentPluginConfig): Promise<void> {
     this.pluginConfig = pluginConfig ?? loadAgentPluginConfig(cwd);
@@ -57,7 +63,20 @@ export class ToolRegistry {
     }
 
     this.enabledBuiltin = new Set(this.pluginConfig.builtin_tools ?? Object.keys(ALL_BUILTIN));
+    this.spawnPresets = loadSpawnPresets(cwd, this.pluginConfig.spawn_presets);
     this.initialized = true;
+  }
+
+  hasSpawnPresets(): boolean {
+    return this.spawnPresets.length > 0;
+  }
+
+  listSpawnPresetNames(): string[] {
+    return this.spawnPresets.map((p) => p.name);
+  }
+
+  getSpawnPresets(): ResolvedSpawnPreset[] {
+    return this.spawnPresets;
   }
 
   isInitialized(): boolean {
@@ -99,6 +118,7 @@ export class ToolRegistry {
 
     for (const toolName of this.enabledBuiltin) {
       if (toolName === 'run_shell' && !config.allowShell) continue;
+      if (toolName === 'web_fetch' && !config.allowWeb) continue;
       if (!this.isToolAllowed(toolName, allowlist)) continue;
       const entry = ALL_BUILTIN[toolName];
       if (!entry) continue;
@@ -107,6 +127,19 @@ export class ToolRegistry {
         const name = def.function.name;
         if (!this.enabledBuiltin.has(name)) continue;
         if (!this.isToolAllowed(name, allowlist)) continue;
+        if (seen.has(name)) continue;
+        seen.add(name);
+        defs.push(def);
+      }
+    }
+
+    if (
+      this.enabledBuiltin.has('spawn_agent') &&
+      this.spawnPresets.length > 0 &&
+      this.isToolAllowed('spawn_agent', allowlist)
+    ) {
+      for (const def of buildSpawnDefinitions(this.spawnPresets)) {
+        const name = def.function.name;
         if (seen.has(name)) continue;
         seen.add(name);
         defs.push(def);
@@ -150,10 +183,21 @@ export class ToolRegistry {
         return runSkillsTool(name, args, this.skills) ?? 'error: invoke_skill failed';
       }
 
+      if (name === 'spawn_agent') {
+        if (!this.enabledBuiltin.has('spawn_agent') || this.spawnPresets.length === 0) {
+          return 'error: spawn_agent is not configured (add spawn_presets and spawn_agent to agent.json)';
+        }
+        const result = await runSpawnTool(name, args, config, this.spawnPresets);
+        if (result !== null) return result;
+      }
+
       const builtin = ALL_BUILTIN[name];
       if (builtin && this.enabledBuiltin.has(name)) {
         if (name === 'run_shell' && !config.allowShell) {
-          return 'error: run_shell is disabled. Use --allow-shell or set ALLOW_SHELL=1.';
+          return 'error: run_shell is disabled. Use /shell on or --allow-shell.';
+        }
+        if (name === 'web_fetch' && !config.allowWeb) {
+          return 'error: web_fetch is disabled. Use /web on or --allow-web.';
         }
         const result = await builtin.handler(name, args, config);
         if (result !== null) return result;

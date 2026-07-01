@@ -8,6 +8,33 @@ export const PROTECT_USER_TURNS = 2;
 
 const NOTICE_PREFIX = '[context-notice]';
 const TASK_SUMMARY_PREFIX = '[Task ';
+const COMPACTED_STUB_PREFIX = '[compacted';
+
+/** Drop large in-memory bodies for API-pruned messages; cold storage retains full text. */
+export function releaseCompactedContent(msg: ChatMessage): void {
+  if (!msg.compacted_at || msg.pointerized) return;
+  const content = msg.content ?? '';
+  if (content.startsWith(COMPACTED_STUB_PREFIX)) return;
+
+  if (msg.role === 'tool' && msg.action_id) {
+    msg.content = `[compacted tool action_id=${msg.action_id}]`;
+  } else if (msg.role === 'assistant') {
+    msg.tool_calls = undefined;
+    msg.content = '[compacted assistant]';
+  } else {
+    msg.content = '[compacted]';
+  }
+}
+
+export function releaseAllCompactedContent(messages: ChatMessage[]): number {
+  let count = 0;
+  for (const msg of messages) {
+    const before = msg.content ?? '';
+    releaseCompactedContent(msg);
+    if ((msg.content ?? '') !== before) count++;
+  }
+  return count;
+}
 
 /**
  * Messages marked compacted_at are omitted from LLM requests (OpenCode-style prune).
@@ -107,6 +134,7 @@ export function applyPrune(messages: ChatMessage[], currentTurn: number): number
     if (protectedSet.has(i)) continue;
     if (!canPrune(messages[i])) continue;
     messages[i].compacted_at = now;
+    releaseCompactedContent(messages[i]);
     count++;
   }
 

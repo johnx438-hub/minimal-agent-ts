@@ -14,6 +14,7 @@ export const POINTER_RULES: Record<
   list_files: { minChars: 500, alwaysIfLines: 30 },
   diff_file: { minChars: 600, alwaysIfLines: 30 },
   recall_query: { minChars: 600, alwaysIfLines: 30 },
+  web_fetch: { minChars: 800, alwaysIfLines: 40 },
 };
 
 const NEVER_POINTERIZE_PREFIXES = ['error:', 'ok: wrote', 'ok: edited'];

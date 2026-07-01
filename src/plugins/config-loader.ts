@@ -37,6 +37,7 @@ export function defaultAgentPluginConfig(): AgentPluginConfig {
     },
     recall_policy: { auto_full_max_chars: 24_000 },
     loaded_skills: [],
+    spawn_presets: [],
   };
 }
 
@@ -50,7 +51,9 @@ function mergeConfig(base: AgentPluginConfig, patch: Partial<AgentPluginConfig>)
     mcp_policy: { ...base.mcp_policy, ...patch.mcp_policy },
     pointerize_policy: { ...base.pointerize_policy, ...patch.pointerize_policy },
     recall_policy: { ...base.recall_policy, ...patch.recall_policy },
+    web_fetch_policy: { ...base.web_fetch_policy, ...patch.web_fetch_policy },
     loaded_skills: patch.loaded_skills ?? base.loaded_skills,
+    spawn_presets: patch.spawn_presets ?? base.spawn_presets,
   };
 }
 

@@ -43,6 +43,7 @@ export interface ShellRunOptions {
   autoExtend: boolean;
   extendByMs: number;
   maxTimeoutMs: number;
+  abortSignal?: AbortSignal;
 }
 
 function parseShellArgs(args: Record<string, unknown>): ShellRunOptions | string {
@@ -102,7 +103,19 @@ export async function runShellCommand(opts: ShellRunOptions): Promise<string> {
     child.stdout?.on('data', (chunk: Buffer) => append(chunk, 'stdout'));
     child.stderr?.on('data', (chunk: Buffer) => append(chunk, 'stderr'));
 
+    const onAbort = (): void => {
+      if (child.exitCode !== null) return;
+      child.kill('SIGTERM');
+      setTimeout(() => {
+        if (child.exitCode === null) child.kill('SIGKILL');
+      }, 1_000);
+    };
+    opts.abortSignal?.addEventListener('abort', onAbort, { once: true });
+
     const poll = setInterval(() => {
+      if (opts.abortSignal?.aborted) {
+        onAbort();
+      }
       if (child.exitCode !== null) return;
 
       const now = Date.now();
@@ -128,6 +141,7 @@ export async function runShellCommand(opts: ShellRunOptions): Promise<string> {
 
     const finish = (code: number | null, signal: NodeJS.Signals | null): void => {
       clearInterval(poll);
+      opts.abortSignal?.removeEventListener('abort', onAbort);
       const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
       let meta = '';
 
@@ -144,6 +158,14 @@ export async function runShellCommand(opts: ShellRunOptions): Promise<string> {
             stdout,
             stderr,
           ),
+        );
+        return;
+      }
+
+      if (opts.abortSignal?.aborted) {
+        resolve(
+          meta +
+            formatShellError('command aborted', stdout, stderr),
         );
         return;
       }
@@ -248,5 +270,5 @@ export async function runShellTool(
     }
   }
 
-  return runShellCommand({ ...parsed, cwd: workDir });
+  return runShellCommand({ ...parsed, cwd: workDir, abortSignal: config.abortSignal });
 }

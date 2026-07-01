@@ -1,19 +1,9 @@
 import { resolve } from 'node:path';
-import 'dotenv/config';  // Load .env file
+import 'dotenv/config';
 
-import { loadAgentPluginConfig } from './plugins/config-loader.js';
-import { runAgent, type AgentStepEvent } from './agent.js';
-import { runWorkflow } from './workflow/runner.js';
-import { createSession, loadSession, saveSession } from './session.js';
-import { previewPolicyFromPointerize } from './action-preview.js';
-import { parseLoopGuardMode } from './loop-guard.js';
-import { ensureToolRegistry, toolRegistry } from './tools/registry.js';
-import type { AgentConfig } from './types.js';
-
-function env(name: string, fallback?: string): string | undefined {
-  const v = process.env[name]?.trim();
-  return v || fallback;
-}
+import type { RuntimeEvent } from './events.js';
+import { AgentRuntime, printStepEvent } from './runner.js';
+import { toolRegistry } from './tools/registry.js';
 
 function parseArgs(argv: string[]): {
   prompt: string;
@@ -22,16 +12,32 @@ function parseArgs(argv: string[]): {
   listTools: boolean;
   loadSkills: string[];
   allowShell: boolean;
+  allowWeb: boolean;
   workflowPath?: string;
+  jsonEvents: boolean;
 } {
   let listTools = false;
   const loadSkills: string[] = [];
   let allowShell = false;
+  let allowWeb = false;
+  let jsonEvents = false;
 
   const shellIdx = argv.indexOf('--allow-shell');
   if (shellIdx >= 0) {
     allowShell = true;
     argv = [...argv.slice(0, shellIdx), ...argv.slice(shellIdx + 1)];
+  }
+
+  const webIdx = argv.indexOf('--allow-web');
+  if (webIdx >= 0) {
+    allowWeb = true;
+    argv = [...argv.slice(0, webIdx), ...argv.slice(webIdx + 1)];
+  }
+
+  const jsonIdx = argv.indexOf('--json-events');
+  if (jsonIdx >= 0) {
+    jsonEvents = true;
+    argv = [...argv.slice(0, jsonIdx), ...argv.slice(jsonIdx + 1)];
   }
 
   const listIdx = argv.indexOf('--list-tools');
@@ -58,12 +64,11 @@ function parseArgs(argv: string[]): {
     argv = [...argv.slice(0, skillsIdx), ...argv.slice(skillsIdx + 2)];
   }
 
-  // Check for --resume <session_id>
   let resumeSessionId: string | undefined;
+
   const resumeIdx = argv.indexOf('--resume');
   if (resumeIdx >= 0 && argv[resumeIdx + 1]) {
     resumeSessionId = argv[resumeIdx + 1];
-    // Remove --resume and its arg from argv for further parsing
     argv = [...argv.slice(0, resumeIdx), ...argv.slice(resumeIdx + 2)];
   }
 
@@ -85,6 +90,7 @@ function parseArgs(argv: string[]): {
     console.error('  npm start -- --list-tools');
     console.error('  npm start -- --load-skills context-design "任务"');
     console.error('  npm start -- --workflow workflows/review-loop.json "任务"');
+    console.error('  npm start -- --json-events -- "任务"');
     console.error('');
     console.error('Optional env:');
     console.error('  OPENAI_BASE_URL  (default: Gemini OpenAI-compatible URL)');
@@ -93,12 +99,47 @@ function parseArgs(argv: string[]): {
     console.error('  LOOP_HARD_CEILING (default: 200)');
     console.error('  LOOP_GUARD       inject | terminate | off (default: inject)');
     console.error('  --allow-shell    enable run_shell tool (or ALLOW_SHELL=1)');
+    console.error('  --allow-web      enable web_fetch tool (or ALLOW_WEB=1)');
     console.error('');
-    console.error('Plugins: agent.json (builtin_tools, mcp_servers, skills_dirs)');
+    console.error('Plugins: agent.json (builtin_tools, mcp_servers, skills_dirs, web_fetch_policy)');
     process.exit(1);
   }
 
-  return { prompt, cwd, resumeSessionId, listTools, loadSkills, allowShell, workflowPath };
+  return {
+    prompt,
+    cwd,
+    resumeSessionId,
+    listTools,
+    loadSkills,
+    allowShell,
+    allowWeb,
+    workflowPath,
+    jsonEvents,
+  };
+}
+
+function defsCountMcp(defs: { function: { name: string } }[]): number {
+  return defs.filter((d) => d.function.name.startsWith('mcp_')).length;
+}
+
+function onRuntimeEvent(event: RuntimeEvent, jsonEvents: boolean): void {
+  if (jsonEvents) return;
+  if (event.type === 'workflow_step') {
+    const round = event.round !== undefined ? ` round ${event.round}` : '';
+    console.log(`\n${'═'.repeat(60)}`);
+    console.log(`workflow ▶ ${event.phase} / ${event.role}${round}`);
+    console.log('═'.repeat(60));
+    return;
+  }
+  if (
+    event.type === 'run_start' ||
+    event.type === 'run_end' ||
+    event.type === 'session_saved' ||
+    event.type === 'runtime'
+  ) {
+    return;
+  }
+  printStepEvent(event);
 }
 
 async function main(): Promise<void> {
@@ -109,201 +150,104 @@ async function main(): Promise<void> {
     resumeSessionId,
     listTools,
     loadSkills,
-    allowShell: cliAllowShell,
+    allowShell,
+    allowWeb,
     workflowPath,
-  } = parseArgs(rawArgv);
+    jsonEvents,
+  } = parseArgs([...rawArgv]);
 
-  const apiKey = env('OPENAI_API_KEY') ?? env('OPENROUTER_API_KEY');
-  if (!apiKey) {
-    console.error('Missing OPENAI_API_KEY or OPENROUTER_API_KEY');
-    process.exit(1);
-  }
-
-  const useStream = env('STREAM', '1') !== '0';
-
-  const loopGuardMode = parseLoopGuardMode(env('LOOP_GUARD', 'inject'));
-
-  const pluginConfig = loadAgentPluginConfig(cwd);
-  if (loadSkills.length > 0) {
-    pluginConfig.loaded_skills = [
-      ...new Set([...(pluginConfig.loaded_skills ?? []), ...loadSkills]),
-    ];
-  }
-
-  const keepInlineTurns = pluginConfig.pointerize_policy?.keep_inline_turns ?? 2;
-  const recallAutoFullMaxChars = pluginConfig.recall_policy?.auto_full_max_chars ?? 24_000;
-  const previewPolicy = previewPolicyFromPointerize(pluginConfig.pointerize_policy);
-
-  const config: AgentConfig = {
-    apiKey,
-    baseUrl: env('OPENAI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta/openai')!,
-    model: env('MODEL', 'gemini-2.0-flash')!,
-    maxTurns: Number(env('MAX_TURNS', '0')),
+  const runtime = new AgentRuntime({
     cwd,
-    allowShell: cliAllowShell || env('ALLOW_SHELL') === '1',
-    loopGuard: {
-      enabled: loopGuardMode !== 'off',
-      mode: loopGuardMode,
-      hardCeiling: Number(env('LOOP_HARD_CEILING', '200')),
-    },
-    keepInlineTurns,
-    recallAutoFullMaxChars,
-    previewPolicy,
-  };
+    resumeSessionId,
+    loadSkills,
+    allowShell,
+    allowWeb,
+    jsonEvents,
+  });
 
-  await ensureToolRegistry(cwd, pluginConfig);
+  await runtime.initialize();
 
   if (listTools) {
-    const defs = toolRegistry.getDefinitions(config);
+    const defs = toolRegistry.getDefinitions(runtime.config);
     console.log('Available tools:');
     for (const def of defs) {
       console.log(`  - ${def.function.name}`);
     }
     console.log(`Skills: ${toolRegistry.listSkillNames().join(', ') || '(none)'}`);
-    if (!config.allowShell) {
+    if (!runtime.config.allowShell) {
       console.log('Note: run_shell hidden until --allow-shell or ALLOW_SHELL=1');
     }
-    await toolRegistry.shutdown();
+    if (!runtime.config.allowWeb) {
+      console.log('Note: web_fetch hidden until --allow-web or ALLOW_WEB=1');
+    }
+    await runtime.shutdown();
     return;
   }
 
-  const mcpCount = defsCountMcp(toolRegistry.getDefinitions(config));
-  if (mcpCount > 0) {
-    console.log(`mcp: ${mcpCount} tools loaded`);
-  }
-  const skillNames = toolRegistry.listSkillNames();
-  if (skillNames.length > 0) {
-    console.log(`skills: ${skillNames.join(', ')}`);
-  }
-
-  // Session management: load existing or create new
-  let session;
-  if (resumeSessionId) {
-    session = loadSession(resumeSessionId);
-    if (!session) {
-      console.error(`Session not found: ${resumeSessionId}`);
-      process.exit(1);
+  const mcpCount = defsCountMcp(toolRegistry.getDefinitions(runtime.config));
+  if (!jsonEvents) {
+    if (mcpCount > 0) {
+      console.log(`mcp: ${mcpCount} tools loaded`);
     }
-    console.log(`Resumed session: ${session.session_id} (${session.tasks.length} previous tasks)`);
-  } else {
-    session = createSession(env('USER_ID') ?? 'user_default');
-    console.log(`New session: ${session.session_id}`);
-  }
-
-  console.log('─'.repeat(60));
-  console.log('minimal-agent-ts');
-  console.log(`model: ${config.model}`);
-  console.log(`cwd:   ${config.cwd}`);
-  console.log(`shell: ${config.allowShell ? 'on' : 'off (use --allow-shell)'}`);
-  console.log(`session: ${session.session_id}`);
-  console.log('─'.repeat(60));
-  if (workflowPath) {
-    console.log(`workflow: ${workflowPath}`);
-  }
-  console.log(`task: ${prompt}\n`);
-
-  const onStep = (event: AgentStepEvent) => {
-    switch (event.type) {
-      case 'turn_start':
-        console.log(`\n[turn ${event.turn}] ── LLM ──`);
-        break;
-      case 'token':
-        process.stdout.write(event.delta);
-        break;
-      case 'llm_done':
-        console.log(
-          `\n  finish=${event.finishReason ?? 'null'} tokens=${JSON.stringify(event.usage ?? {})}`,
-        );
-        break;
-      case 'compression':
-        console.log(
-          event.pruned
-            ? `  📦 pruned ${event.pruned} messages (compacted_at)`
-            : `  📦 compression event: summaries + notice + replay user task`,
-        );
-        break;
-      case 'loop_guard':
-        console.log(
-          `  🔄 loop_guard: ${event.action}${event.reason ? ` (${event.reason})` : ''}`,
-        );
-        break;
-      case 'tool_batch':
-        if (event.parallel > 1) {
-          console.log(`  ⚡ parallel batch: ${event.parallel}/${event.total} tools`);
-        }
-        break;
-      case 'tool_call':
-        console.log(`  → ${event.name}(${event.args})`);
-        break;
-      case 'tool_result': {
-        const preview =
-          event.output.length > 400
-            ? `${event.output.slice(0, 400)}…`
-            : event.output;
-        console.log(`  ← ${event.name}: ${preview.replace(/\n/g, '\\n')}`);
-        break;
-      }
-      case 'final':
-        console.log(`\n[done @ turn ${event.turn}]`);
-        break;
+    const skillNames = toolRegistry.listSkillNames();
+    if (skillNames.length > 0) {
+      console.log(`skills: ${skillNames.join(', ')}`);
     }
-  };
+    if (resumeSessionId) {
+      console.log(
+        `Resumed session: ${runtime.session.session_id} (${runtime.session.tasks.length} previous tasks)`,
+      );
+    } else {
+      console.log(`New session: ${runtime.session.session_id}`);
+    }
+    console.log('─'.repeat(60));
+    console.log('minimal-agent-ts');
+    console.log(`model: ${runtime.config.model}`);
+    console.log(`cwd:   ${runtime.config.cwd}`);
+    console.log(
+      `shell: ${runtime.config.allowShell ? 'on' : 'off (use --allow-shell)'}`,
+    );
+    console.log(`web:   ${runtime.config.allowWeb ? 'on' : 'off (use --allow-web)'}`);
+    console.log(`session: ${runtime.session.session_id}`);
+    console.log('─'.repeat(60));
+    if (workflowPath) {
+      console.log(`workflow: ${workflowPath}`);
+    }
+    console.log(`task: ${prompt}\n`);
+  }
+
+  runtime.onEvent((event) => onRuntimeEvent(event, jsonEvents));
 
   let finalText: string;
 
   if (workflowPath) {
-    const wfResult = await runWorkflow({
-      workflowPath: resolve(cwd, workflowPath),
-      userTask: prompt,
-      config,
-      session,
-      stream: useStream,
-      onStep,
-      onWorkflowStep(info) {
-        const round = info.round !== undefined ? ` round ${info.round}` : '';
-        console.log(`\n${'═'.repeat(60)}`);
-        console.log(`workflow ▶ ${info.phase} / ${info.role}${round}`);
-        console.log('═'.repeat(60));
-      },
-    });
+    const wfResult = await runtime.runWorkflowTask(prompt, workflowPath);
     finalText = wfResult.text;
-    console.log(`\nworkflow done: ${wfResult.workflow} (session ${wfResult.sessionId})`);
+    if (!jsonEvents) {
+      console.log(
+        `\nworkflow done (session ${runtime.session.session_id})`,
+      );
+    }
   } else {
-    const answer = await runAgent({
-      prompt,
-      config,
-      session,
-      sessionId: session.session_id,
-      stream: useStream,
-      onStep,
-      onTaskComplete(taskSummary) {
-        session.tasks.push(taskSummary);
-        saveSession(session);
-        console.log(`\n💾 Task saved: ${taskSummary.task_id}`);
-      },
-    });
-
-    session.current_messages = answer.messages;
-    saveSession(session);
+    const answer = await runtime.runTask(prompt);
     finalText = answer.text;
   }
 
-  console.log('\n' + '─'.repeat(60));
-  if (!useStream) {
-    console.log(finalText);
+  if (!jsonEvents) {
+    console.log('\n' + '─'.repeat(60));
+    if (process.env.STREAM !== '0') {
+      // streamed during run
+    } else {
+      console.log(finalText);
+    }
+    console.log('─'.repeat(60));
   }
-  console.log('─'.repeat(60));
-}
 
-function defsCountMcp(defs: { function: { name: string } }[]): number {
-  return defs.filter((d) => d.function.name.startsWith('mcp_')).length;
+  await runtime.shutdown();
 }
 
 main()
   .catch((err) => {
     console.error(err instanceof Error ? err.message : err);
     process.exit(1);
-  })
-  .finally(() => {
-    void toolRegistry.shutdown();
   });

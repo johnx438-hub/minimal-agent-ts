@@ -7,6 +7,7 @@ const PARALLEL_SAFE = new Set([
   'diff_file',
   'recall_query',
   'invoke_skill',
+  'web_fetch',
 ]);
 
 function isParallelSafeMcp(name: string): boolean {

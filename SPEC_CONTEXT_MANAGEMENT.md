@@ -2,7 +2,7 @@
 
 > **目标**: 让最简 ReAct Agent 具备分层上下文管理能力，支持长对话不丢失关键信息  
 > **日期**: 2026-06-26  
-> **状态**: Draft v1.6 (Phase 5 完整)
+> **状态**: Draft v1.9 (Phase 1–2、4–6 已实现；Phase 3 由外部 MemFileCli 承接)
 
 ---
 
@@ -12,15 +12,15 @@
 |-------|------|--------|------|------|
 | **1** | 会话续接 + TaskSummary + 滑动窗口 | P0 学习核心 | — | ✅ 已实现 |
 | **2** | 冷存储 + 指针化 + recall + context-policy | P0 长会话质量 | Phase 1 | ✅ 已实现 |
-| **3** | Session 层压缩 + 跨 session 索引 | P1 记忆纵深 | Phase 2d | 📋 草案 |
+| **3** | 跨 session / 跨 Agent 记忆 | P1 记忆纵深 | Phase 2d | 🔗 **外部**（MemFileCli，不内置） |
 | **4** | 工具扩展 + 并行执行 + SSE 流式 | P1 实用性与体感 | Phase 1 | ✅ 已实现 |
 | **5** | MCP / Skills 插件层 | P2 生态扩展 | Phase 4a | ✅ 已实现 |
-| **6** | 多角色工作流（config 驱动 Agent Loop） | P2 编排能力 | Phase 4c + 稳定 ReAct | 📋 本版新增 |
+| **6** | 多角色工作流（config 驱动 Agent Loop） | P2 编排能力 | Phase 4c + 稳定 ReAct | ✅ 已实现（6a–6d） |
 
 **原则**：先让「单 Agent + 干净上下文」跑稳（Phase 2），再叠工具与运行时（Phase 4），最后做编排（Phase 6）。Phase 1.5 内容并入 Phase 4，避免两条线并行改 `agent.ts`。
 
 ```
-Phase 1 ──► Phase 2 (上下文) ──► Phase 3 (跨 session)
+Phase 1 ──► Phase 2 (session 内上下文) ──► MemFileCli（跨 session，生态工具）
                 │
                 └──► Phase 4 (工具/并行/流式) ──► Phase 5 (MCP/Skills)
                                               └──► Phase 6 (多角色 Loop)
@@ -250,20 +250,22 @@ interface TaskSummaryDoc {
 | pending_tasks | Agent 最终回答后处理 | ~20 | 正则/LLM 提取 |
 | current_work | Agent 最终回答 | ~30 | 一句话摘要 |
 
-### SessionSummary 文档结构 (Phase 3)
+### SessionSummary 文档结构（原 Phase 3 草案，**不内置**）
+
+> **决策 (2026-06-30)**：跨 session / 跨 Agent 长期记忆由 **MemFileCli**（`memfilecli` CLI + `MemFileCli-skill`）承接。minimal 专注 **单 session 内** 的 TaskSummary、pointerize、recall_query；不在本仓库实现 `SessionSummaryDoc` 写入与跨 session 索引。
+
+以下为历史草案，仅供对照；集成方式见下文 Phase 3。
 
 ```typescript
+// 不在 minimal-agent-ts 实现 — 记忆落 MemFileCli Wiki 节点
 interface SessionSummaryDoc {
-  session_id: string;       // "session_20260626_143000"
-  user_id: string;          // "user_archer"
-  
-  task_count: number;       // 包含多少个 tasks
-  total_turns: number;      // 总轮次数
-  time_range: [number, number];  // [start_ts, end_ts]
-  
-  summary_text: string;     // session 级摘要
-  topics_covered: string[]; // 讨论的主题列表
-  
+  session_id: string;
+  user_id: string;
+  task_count: number;
+  total_turns: number;
+  time_range: [number, number];
+  summary_text: string;
+  topics_covered: string[];
   content: string;
   embedding: float[];
 }
@@ -276,7 +278,7 @@ interface SessionSummaryDoc {
 | 组件 | 选择 | npm 包 | 理由 |
 |------|------|--------|------|
 | **向量数据库** | Zvec v0.5+ | `@zvec/zvec` | 进程内嵌入式，混合检索（向量+全文+标量过滤），零服务依赖 |
-| **Token 估算** | tiktoken | `tiktoken` | OpenAI 官方方案，准确度高 |
+| **Token 估算** | 词数 × 1.3 启发式 | —（`context-budget.ts`） | 无额外依赖；精度够用 |
 | **Embedding 模型** | all-MiniLM-L6-v2 | `@xenova/transformers` | 22MB、384 维、CPU 最快（~5ms/文档）、ONNX 量化，速度优先场景最优解 |
 | **Session 持久化** | JSON 文件 | — | Phase 1 简单直接，Phase 2+ 可迁移至 Zvec |
 
@@ -374,8 +376,8 @@ Zvec 索引（recall_query 语义检索）           │ System Prompt (immutabl
   ```
 
 #### Step 4: Token 预算管理器（滑动窗口）
-- [ ] **Token 估算**
-  - 使用 `tiktoken` 或简化方案（每词 ~1.3 tokens）
+- [x] **Token 估算**
+  - `context-budget.ts`：`estimateTokens()`，约 1.3 tokens/词
   
 - [ ] **预算切分策略**
   | 层级 | 比例 | 内容 |
@@ -538,10 +540,14 @@ interface RecallResult {
 
 ```typescript
 const POINTER_RULES = {
-  read_file:   { minChars: 600,  alwaysIfLines: 40 },
-  run_shell:   { minChars: 800,  alwaysIfLines: 30 },
-  write_file:  { minChars: Infinity },  // 永不指针化（结果短）
-  grep_search: { minChars: 500,  alwaysIfLines: 20 },  // Phase 1.5
+  read_file:    { minChars: 600,  alwaysIfLines: 40 },
+  run_shell:    { minChars: 800,  alwaysIfLines: 30 },
+  write_file:   { minChars: Infinity },  // 永不指针化（结果短）
+  edit_file:    { minChars: Infinity },  // 永不指针化（ok: edited …）
+  grep_search:  { minChars: 500,  alwaysIfLines: 20 },
+  list_files:   { minChars: 500,  alwaysIfLines: 30 },
+  diff_file:    { minChars: 600,  alwaysIfLines: 30 },
+  recall_query: { minChars: 600,  alwaysIfLines: 30 },
 } as const;
 ```
 
@@ -577,8 +583,8 @@ recall=recall_query(action_id="action_x9y8z7_012", offset?, limit?)
 ```
 
 - `action_id` 一次生成永不修改
-- `preview`：首 80 字符或首 2 行
-- 若 `tools.ts` 已截断：`stored=truncated_at_8000 original_chars=245000`
+- `preview`：`action-preview.ts` 生成；`preview_mode: smart` 时按工具类型摘要（shell/grep/read/mcp_* 等），否则 head/tail
+- 若冷存已截断：`stored=truncated_at_8000 original_chars=245000`
 
 #### 2.2.6 缓存与干净上下文平衡
 
@@ -632,7 +638,7 @@ immutable 区（session 级冻结）:
 
 #### Step 4: recall_query tool
 
-- [ ] `src/recall.ts` + 注册到 `tools.ts`
+- [x] `src/recall.ts` + `src/tools/recall.ts` 注册到 `tools/registry.ts`
   ```typescript
   {
     name: "recall_query",
@@ -758,38 +764,38 @@ src/
 
 ---
 
-## 📋 Phase 3: Session 层压缩 + 多层索引同步
+## 🔗 Phase 3: 跨 session 记忆 — 外部 MemFileCli（不内置）
 
-**目标**: 支持跨 session 记忆，多层摘要保持结构一致性
+**决策**: 不在 minimal-agent-ts 内实现 Session 层压缩与跨 session 索引；由 **MemFileCli** 作为生态级记忆底座，可跨 session、跨 Agent 复用。
 
-### 功能清单
-- [ ] **Session 级摘要**
-  - 每 N 个 task 后生成一次 session summary
-  - 异步后台执行，不阻塞当前对话
-  
-- [ ] **引用追踪机制**
-  ```typescript
-  interface SummaryBlock {
-    references: string[];        // 原始 action_block uuids
-    entities_touched: string[];  // 结构化标签
-    summary_text: string;        // 人类可读摘要
-    version: number;             // 版本号，用于一致性校验
-  }
+### 职责分界
+
+| 范围 | 负责方 | 能力 |
+|------|--------|------|
+| **Session 内** | minimal | `.sessions/`、`TaskSummary`、`pointerize`、`recall_query`、compression |
+| **跨 session / 跨 Agent** | MemFileCli | `search` / `get` / `neighbors` / `recent`，UUID + Wiki 链接漫游 |
+
+### Agent 接入（已实现路径，无需新 TS 模块）
+
+- TUI 默认 `shell:on`；加载 skill：`MemFileCli-skill`（或 `agent.json` `loaded_skills`）
+- 典型命令（`--format json` 供程序解析）：
+  ```bash
+  memfilecli search "<query>" --limit 5
+  memfilecli get <uuid_or_prefix> --format json
+  memfilecli neighbors <uuid> --format json
+  memfilecli recent --format json
   ```
+- 可选后续：包一层 `memfile_query` builtin（内部仍调 CLI），**非 P0**
 
-- [ ] **多层索引同步保障**
-  - 压缩和存储原子操作
-  - 定期清理孤儿引用（summary 指向不存在的 action）
-  - 写入时双重校验（uuid 存在性 + 版本匹配）
+### 验收（生态级，非 minimal 代码验收）
 
-- [ ] **跨 session 持久化**
-  - session.json 文件存储完整消息历史
-  - 新 session 启动时加载相关历史摘要
+- ✅ 新 session 可通过 `memfilecli search` / `recent` 找到历史项目记忆
+- ✅ minimal session 内 recall 与 MemFileCli 语义搜索不冲突（各管一层）
+- ⏸️ 内置 `SessionSummaryDoc`、多层 SummaryBlock 同步 — **明确不做**
 
-### 验收标准
-- ✅ 跨 session 能检索到之前的任务记录
-- ✅ 多层摘要引用不断裂（无孤儿引用）
-- ✅ Agent 能区分"本次会话"和"之前讨论过"的内容
+### 当前验证重点（2026-06）
+
+压测 **session 内** 上下文上限：长轮次网络漫游、HTML 小游戏等常规任务（已观测 ~38+ turn 稳定）。系统提示词 MD 解析/替换由维护者自行实验，**不在本 Phase 路线图**。后续 TUI / 性能 / Rust 规划见 **[ROADMAP.md](./ROADMAP.md)**。
 
 ---
 
@@ -831,15 +837,23 @@ diff_file({ path: "src/agent.ts", before_action_id: "action_xxx_003" })
 |------|------|------|
 | `web_fetch` | `fetch` + `text/html` → markdown 简化 | 域名 allowlist（config）；默认关闭，`ALLOW_WEB=1` |
 
-#### 4a-3 文件结构
+#### 4a-3 文件结构（已实现）
 
 ```
 src/tools/
-├── registry.ts       # 汇总 TOOL_DEFINITIONS + executeTool 路由
-├── read-write.ts     # 现有 read_file / write_file
+├── registry.ts       # ToolRegistry：builtin + MCP 运行时合并
+├── read-write.ts     # read_file / write_file（含 [file_meta hash=…]）
+├── edit-file.ts      # edit_file（expected_hash 锚定局部编辑）
+├── file-hash.ts      # sha256 元数据
 ├── explore.ts        # grep_search / list_files / diff_file
-├── shell.ts          # run_shell
-└── web.ts            # web_fetch
+├── shell.ts          # run_shell（delay_ms / poll / auto_extend timeout）
+├── recall.ts         # recall_query 工具封装
+└── skills-tool.ts    # invoke_skill
+
+src/action-preview.ts # smart 摘要（shell/grep/read/mcp_* 等）
+src/loop-guard.ts     # 重复 tool 调用检测与收口总结
+
+└── web-fetch.ts      # web_fetch（L1 fetch+readability; L2 cloakFetch 可选）
 ```
 
 ---
@@ -957,7 +971,7 @@ onStep?.({ type: 'token', turn, delta });  // main.ts 直接 process.stdout.writ
 | 4a-1 | grep + list_files + diff_file + tools/ 拆分 | 低 |
 | 4c | SSE 流式 | 低（仅 llm.ts + main.ts） |
 | 4b-1 | 启发式并行 scheduler | 中（agent.ts） |
-| 4a-2 | web_fetch + allowlist | 低 |
+| 4a-2 | web_fetch + allowlist + cloakFetch L2 | ✅ `src/tools/web-fetch.ts` |
 | 4b-2 | 依赖图拓扑分层 | 中 |
 
 ---
@@ -1041,9 +1055,11 @@ npm start -- --load-skills context-design "你的任务"
 
 ## 📋 Phase 6: 多角色工作流（Config 驱动 Agent Loop）
 
-**目标**: 用 **JSON/YAML/Markdown frontmatter** 定义多个 Agent 角色与它们之间的 **工作循环**，实现「planner → solver → reviewer → 循环或结束」等 DIY 编排，而无需改 TypeScript 代码。
+**目标**: 用 **JSON/YAML/Markdown frontmatter** 定义多个 Agent 角色与它们之间的 **工作循环**，实现「planner → worker → reviewer → 循环或结束」等 DIY 编排，而无需改 TypeScript 代码。
 
 **依赖**: 单 Agent ReAct 稳定（Phase 2–4）；每个角色 = 不同 `system` + `tools` 子集 + 可选 `model`。
+
+**状态**: ✅ 已实现（`src/workflow/` + `workflows/review-loop.json` + `roles/*.md`）
 
 > 这是 **编排层**，不是替代 ReAct 内核。每个角色内部仍跑 `runAgent()`。
 
@@ -1053,48 +1069,43 @@ npm start -- --load-skills context-design "你的任务"
 
 支持两种（二选一，JSON 优先实现）：
 
-**`workflows/debug-loop.json`**
+**`workflows/review-loop.json`**（内置示例）
 
 ```json
 {
-  "name": "debug-loop",
+  "name": "review-loop",
+  "share_session": false,
   "roles": {
     "planner": {
-      "prompt_file": "./roles/planner.md",
-      "tools": ["read_file", "grep_search", "list_files"],
-      "model": "gemini-2.0-flash",
-      "max_turns": 5
+      "prompt_file": "../roles/planner.md",
+      "tools": ["read_file", "grep_search", "list_files", "recall_query"],
+      "max_turns": 8
     },
-    "solver": {
-      "prompt_file": "./roles/solver.md",
-      "tools": ["read_file", "write_file", "run_shell", "diff_file"],
-      "max_turns": 10
+    "worker": {
+      "prompt_file": "../roles/worker.md",
+      "tools": ["read_file", "write_file", "edit_file", "grep_search", "list_files", "diff_file", "recall_query"],
+      "max_turns": 15
     },
     "reviewer": {
-      "prompt_file": "./roles/reviewer.md",
-      "tools": ["read_file", "grep_search", "diff_file"],
-      "model": "gemini-2.0-flash",
-      "max_turns": 3
+      "prompt_file": "../roles/reviewer.md",
+      "tools": ["read_file", "grep_search", "diff_file", "recall_query"],
+      "max_turns": 6
     }
   },
   "flow": [
     { "role": "planner", "input": "{{user_task}}" },
-    { "role": "solver", "input": "Plan:\n{{planner.output}}" },
-    {
-      "role": "reviewer",
-      "input": "Changes:\n{{solver.output}}\n\nDiff summary requested."
-    },
+    { "role": "worker", "input": "## Plan (from planner)\n{{planner.output}}\n\n## Original task\n{{user_task}}" },
+    { "role": "reviewer", "input": "## Work output\n{{worker.output}}\n\nReview. End with JSON: {\"verdict\":\"approved\"|\"needs_revision\",\"notes\":\"...\"}" },
     {
       "loop": {
         "when": "{{reviewer.verdict}} == 'needs_revision'",
-        "max_rounds": 3,
+        "max_rounds": 2,
         "steps": [
-          { "role": "solver", "input": "Review feedback:\n{{reviewer.output}}" },
-          { "role": "reviewer", "input": "Re-review:\n{{solver.output}}" }
+          { "role": "worker", "input": "## Reviewer feedback\n{{reviewer.output}}\n\n## Original task\n{{user_task}}" },
+          { "role": "reviewer", "input": "## Revised work\n{{worker.output}}\n\nRe-review. End with JSON: {\"verdict\":\"approved\"|\"needs_revision\",\"notes\":\"...\"}" }
         ]
       }
-    },
-    { "emit": "{{reviewer.verdict}} == 'approved' ? solver.output : reviewer.output" }
+    }
   ]
 }
 ```
@@ -1119,16 +1130,12 @@ interface WorkflowContext {
   [role: string]: { output: string; messages: ChatMessage[]; summary?: TaskSummaryDoc };
 }
 
-// src/workflow-runner.ts
-export async function runWorkflow(
-  workflowPath: string,
-  userTask: string,
-  config: AgentConfig,
-): Promise<WorkflowResult>;
+// src/workflow/runner.ts
+export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowResult>;
 ```
 
 - 每步调用 `runAgent({ prompt, config, session, roleSystem })`
-- 步骤间 **共享 session**（同 `session_id`）或 **子 session**（reviewer 只看 solver 摘要，省 token）——config 可选 `share_session: true|false`
+- 步骤间 **共享 session**（同 `session_id`）或 **隔离上下文**（reviewer 只看 worker 的 `output` 模板变量，省 token）——config 可选 `share_session: true|false`
 - `{{role.output}}` 模板替换；`verdict` 由 reviewer 末尾 JSON 约定：`{"verdict":"approved"|"needs_revision"}`
 
 ### 6.3 与 Phase 2 上下文策略的配合
@@ -1141,42 +1148,56 @@ export async function runWorkflow(
 ### 6.4 CLI
 
 ```bash
-npm start -- --workflow workflows/debug-loop.json "修复登录 401"
-npm start -- --role planner "只分析不改代码：..."
+npm start -- --workflow workflows/review-loop.json "修复登录 401"
+npm start -- --resume session_xxx --workflow workflows/review-loop.json "继续审查"
+npm start -- --allow-shell --workflow workflows/review-loop.json "实现并跑测试"
 ```
+
+> `--role` 单角色快捷入口**未实现**；请用完整 `--workflow` 或单 Agent 模式。
 
 ### 6.5 实施顺序
 
-| 步骤 | 内容 |
-|------|------|
-| 6a | JSON workflow 解析 + 线性 flow（无 loop） |
-| 6b | `loop` + `when` 条件 + `max_rounds` |
-| 6c | Markdown role 文件 + frontmatter |
-| 6d | `share_session` 策略 + 跨角色 TaskSummary |
+| 步骤 | 内容 | 状态 |
+|------|------|------|
+| 6a | JSON workflow 解析 + 线性 flow（无 loop） | ✅ `load-workflow.ts` |
+| 6b | `loop` + `when` 条件 + `max_rounds` | ✅ `runner.ts` + `template.ts` + `verdict.ts` |
+| 6c | Markdown role 文件 + frontmatter | ✅ `load-role.ts` + `roles/*.md` |
+| 6d | `share_session` 策略 + 跨角色 TaskSummary | ✅ 默认隔离；`onTaskComplete` 写入 `session.tasks` |
 
 ### 6.6 验收标准
 
-- ✅ 三角色线性流：planner → solver → reviewer 跑通
-- ✅ reviewer 返回 `needs_revision` 时 solver↔reviewer 循环 ≤ `max_rounds`
-- ✅ `--workflow` 与 `--resume` 可组合（workflow 状态写入 session）
-- ✅ 改 `planner.md` 无需改 TypeScript
+- ✅ 三角色线性流：planner → worker → reviewer 跑通
+- ✅ reviewer 返回 `needs_revision` 时 worker↔reviewer 循环 ≤ `max_rounds`
+- ✅ `--workflow` 与 `--resume` 可组合（共用 `session_id`，各角色 TaskSummary 累积）
+- ✅ 改 `roles/planner.md` 无需改 TypeScript
 
 ### 6.7 刻意不做（避免 scope 膨胀）
 
 - 非 DAG 的任意图编排（先限 loop + 线性）
 - 角色间并行（Phase 6+ 再考虑）
 - 可视化 workflow 编辑器
+- `--role` 单角色快捷 CLI（请用 `--workflow` 或单 Agent）
+
+### 6.8 Phase 6 同期落地（非独立 Phase）
+
+| 能力 | 模块 | 说明 |
+|------|------|------|
+| 锚点编辑 | `edit-file.ts`, `file-hash.ts` | `read_file` 返回 hash → `edit_file` 带 `expected_hash` |
+| Smart 预览 | `action-preview.ts` | 指针卡片按工具类型生成摘要；配置见 `agent.json` `pointerize_policy` |
+| 循环收口 | `loop-guard.ts` | `LOOP_GUARD=inject` 检测重复 tool 调用并强制文字总结 |
+| Shell 长命令 | `shell.ts` | `delay_ms`、poll 间隔、`auto_extend` / `max_timeout_ms` |
 
 ---
 
 ## 🔧 技术选型
 
-| 组件 | 选择 | 理由 |
-|------|------|------|
-| Token 估算 | `tiktoken` (npm) | OpenAI 官方方案，准确度高 |
-| 向量存储 | ChromaDB | 与 MemFileCli 一致，本地轻量 |
-| Embedding | bge-m3 (本地) | 小模型，适合个人场景 |
-| Session 持久化 | JSON 文件 | 简单直接，Agent 可读 |
+| 组件 | 选择（实现） | 说明 |
+|------|-------------|------|
+| Token 估算 | `context-budget.ts` 词数 × 1.3 | 简化启发式，无 `tiktoken` 依赖 |
+| 向量存储 | `@zvec/zvec` | Phase 2d `agent_memory` 混合检索（向量 + FTS） |
+| Embedding | `@xenova/transformers` | 本地 embedding，个人场景轻量 |
+| Session 持久化 | `.sessions/*.json` + `actions/` | 不进 git；支持 `--resume` |
+| MCP | `@modelcontextprotocol/sdk` | stdio 传输，工具名 `mcp_<server>_<tool>` |
 
 ---
 
@@ -1214,7 +1235,9 @@ Agent 返回总结 → [Task Block 结束] → session.tasks + Zvec upsert
 | 缓存策略 | frozen 指针 + immutable system | 未特别强调 | 未特别强调 | rig prompt caching |
 | 持久化 | session.json + actions/ | DB 全消息 | SQLite + 向量库 | 内存为主 |
 | 工具并行 | 依赖图 + 启发式分批 (Phase 4b) | 内置 | — | — |
-| 多角色编排 | JSON/MD workflow (Phase 6) | `@agent` 切换 | subagent | `.` prompt 切换 |
+| 多角色编排 | JSON/MD workflow（✅ Phase 6） | `@agent` 切换 | subagent | `.` prompt 切换 |
+| 锚点编辑 | `edit_file` + `expected_hash` | — | — | — |
+| 循环收口 | `loop-guard` inject/terminate | — | — | — |
 
 ---
 
@@ -1224,6 +1247,9 @@ Agent 返回总结 → [Task Block 结束] → session.tasks + Zvec upsert
 
 | 日期 | 版本 | 变更内容 |
 |------|------|---------|
+| 2026-06-30 | v1.9 | **Phase 3 外置** + **ROADMAP.md**：MemFileCli 承接跨 session；轨 A/B/C（TUI / TS 性能 / Rust） |
+| 2026-06-29 | v1.8 | **文档对齐**: README/SPEC 与代码同步；Phase 6 标为已实现；补充 `edit_file`、`action-preview`、`loop-guard` |
+| 2026-06-29 | v1.7 | **Phase 6 + 工具增强**: `src/workflow/` 多角色 runner（6a–6d）、`workflows/review-loop.json`、`edit_file`（hash 锚定）、smart action preview、`loop-guard`、`run_shell` 长命令轮询 |
 | 2026-06-28 | v1.6 | **Phase 5 实现**: `agent.json` 插件配置、stdio MCP（`@modelcontextprotocol/sdk`）、`invoke_skill` + `--load-skills`、`ToolRegistry` 运行时合并、`--list-tools` |
 | 2026-06-27 | v1.4 | **Phase 2c 实现**: OpenCode 式 `compacted_at` prune（40k/2-user 保护、20k 阈值）、`runCompressionEvent`（摘要注入 + notice + replay user task） |
 | 2026-06-27 | v1.5 | **Phase 2d**: Zvec `agent_memory` 混合检索（向量+FTS）、`embedding.ts`、recall query 语义搜索 |
@@ -1235,4 +1261,4 @@ Agent 返回总结 → [Task Block 结束] → session.tasks + Zvec upsert
 
 ---
 
-*创建者: 小千Chikusa & 哥Jawn  | 最后更新: 2026-06-28 (v1.6)*
+*创建者: 小千Chikusa & 哥Jawn  | 最后更新: 2026-06-30 (v1.9)*

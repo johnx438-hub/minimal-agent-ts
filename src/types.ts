@@ -1,5 +1,7 @@
 import type { PreviewPolicy } from './action-preview.js';
+import type { AgentStepEvent } from './events.js';
 import type { LoopGuardConfig } from './loop-guard.js';
+import type { WebFetchPolicy } from './plugins/types.js';
 
 /** OpenAI-compatible chat message (subset we need for the loop). */
 export type Role = 'system' | 'user' | 'assistant' | 'tool';
@@ -64,6 +66,8 @@ export interface AgentConfig {
   maxTurns: number;
   cwd: string;
   allowShell: boolean;
+  allowWeb: boolean;
+  webFetchPolicy?: WebFetchPolicy;
   /** Set at runtime for recall_query session scoping. */
   sessionId?: string;
   loopGuard?: LoopGuardConfig;
@@ -74,6 +78,12 @@ export interface AgentConfig {
   previewPolicy?: PreviewPolicy;
   /** When set, only these builtin/MCP tool names are exposed to the API. */
   toolAllowlist?: string[];
+  /** When aborted, LLM fetch and long-running tools should stop. */
+  abortSignal?: AbortSignal;
+  /** Nested spawn_agent depth (0 = main agent). */
+  spawnDepth?: number;
+  /** Forward sub-agent step events to parent (spawn tool). */
+  nestedStepSink?: (event: AgentStepEvent) => void;
 }
 
 /** recall_query response shape (Phase 2b). */

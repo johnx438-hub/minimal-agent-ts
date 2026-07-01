@@ -8,5 +8,5 @@
     "noEmit": true,
     "lib": ["ES2022"]
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

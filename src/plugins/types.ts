@@ -36,13 +36,40 @@ export interface RecallPolicy {
   auto_full_max_chars?: number;
 }
 
+export interface WebFetchPolicy {
+  /** Allowed host patterns: exact host, `*.example.com`, or `*`. Default `["*"]` when web fetch enabled. */
+  allow_domains?: string[];
+  deny_domains?: string[];
+  default_timeout_ms?: number;
+  cloak_timeout_ms?: number;
+  max_chars?: number;
+  user_agent?: string;
+  /** Enable L2 fallback via cloakFetch / CloakBrowser script. */
+  cloak_fetch_enabled?: boolean;
+  /** Path to cloak_fetch.sh or cloak_fetch.py (overrides auto-discovery). */
+  cloak_fetch_script?: string;
+  /** Python with cloakbrowser importable (env CLOAKBROWSER_PYTHON also supported). */
+  cloak_browser_python?: string;
+}
+
+export interface SpawnPresetConfig {
+  name: string;
+  description?: string;
+  prompt_file: string;
+  tools: string[];
+  max_turns?: number;
+}
+
 export interface AgentPluginConfig {
   builtin_tools?: string[];
+  /** User-defined spawn presets (MD prompts under e.g. agents/). */
+  spawn_presets?: SpawnPresetConfig[];
   mcp_servers?: McpServerConfig[];
   skills_dirs?: string[];
   mcp_policy?: McpPolicy;
   pointerize_policy?: PointerizePolicy;
   recall_policy?: RecallPolicy;
+  web_fetch_policy?: WebFetchPolicy;
   /** Skill names to prepend into system prompt for this session. */
   loaded_skills?: string[];
 }

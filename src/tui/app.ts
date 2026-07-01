@@ -1,0 +1,363 @@
+import * as readline from 'node:readline';
+import { resolve } from 'node:path';
+
+import type { AgentRuntime } from '../runner.js';
+import { defaultPrefs, loadPrefs, savePrefs } from './prefs.js';
+import { isSlashCommand, parseSlashLine, SLASH_HELP_LINES } from './slash.js';
+import { printRuntimeEvent } from './log.js';
+import { resetMarkdownTerminal } from './markdown.js';
+export interface TuiAppOptions {
+  runtime: AgentRuntime;
+  noShell?: boolean;
+  noWeb?: boolean;
+  allowWeb?: boolean;
+}
+
+type AppMode = 'confirm' | 'idle' | 'running';
+
+function printBanner(runtime: AgentRuntime, shellOn: boolean, webOn: boolean): void {
+  console.log('─'.repeat(60));
+  console.log('minimal-agent-ts TUI  (scroll log + slash REPL)');
+  console.log(`model:   ${runtime.config.model}`);
+  console.log(`cwd:     ${runtime.config.cwd}`);
+  console.log(`session: ${runtime.session.session_id}`);
+  console.log(`shell:   ${shellOn ? 'on' : 'off'}   web: ${webOn ? 'on' : 'off'}`);
+  console.log('slash:   /help   while running: Ctrl+C to abort');
+  console.log('─'.repeat(60));
+}
+
+function printStatus(runtime: AgentRuntime, armedWorkflow: string | null): void {
+  const wf = armedWorkflow ? `  workflow armed: ${armedWorkflow}` : '';
+  console.log(
+    `[${runtime.session.session_id}] shell:${runtime.config.allowShell ? 'on' : 'off'} web:${runtime.config.allowWeb ? 'on' : 'off'}${wf}`,
+  );
+}
+
+export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
+  const { runtime } = opts;
+
+  const saved = loadPrefs(runtime.config.cwd);
+  const needsConfirm = saved === null;
+
+  let shellOn = saved?.allowShell ?? defaultPrefs().allowShell;
+  let webOn = saved?.allowWeb ?? defaultPrefs().allowWeb;
+
+  if (opts.noShell) shellOn = false;
+  if (opts.noWeb) webOn = false;
+  if (opts.allowWeb) webOn = true;
+
+  runtime.setAllowShell(shellOn);
+  runtime.setAllowWeb(webOn);
+
+  let mode: AppMode = needsConfirm ? 'confirm' : 'idle';
+  let confirmShell = shellOn;
+  let confirmWeb = webOn;
+  let armedWorkflow: string | null = null;
+
+  printBanner(runtime, shellOn, webOn);
+
+  if (needsConfirm) {
+    console.log('\nFirst run — confirm tools (Enter=ok, s=toggle shell, w=toggle web):');
+    console.log(`  shell [${confirmShell ? 'on' : 'off'}]  web [${confirmWeb ? 'on' : 'off'}]`);
+  }
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: true,
+    prompt: '› ',
+  });
+
+  const setPrompt = (): void => {
+    if (mode === 'confirm') {
+      rl.setPrompt('› confirm ');
+    } else if (armedWorkflow) {
+      rl.setPrompt(`› [${armedWorkflow}] `);
+    } else {
+      rl.setPrompt('› ');
+    }
+  };
+
+  const showPrompt = (): void => {
+    setPrompt();
+    rl.prompt();
+  };
+
+  runtime.onEvent((event) => {
+    if (event.type === 'run_start') {
+      mode = 'running';
+      rl.pause();
+      console.log('(input paused — Ctrl+C to abort)');
+    }
+    printRuntimeEvent(event);
+    if (event.type === 'run_end') {
+      mode = 'idle';
+      rl.resume();
+      showPrompt();
+    }
+  });
+
+  const handleSlash = async (
+    result: ReturnType<typeof parseSlashLine>,
+  ): Promise<void> => {
+    if (!result) return;
+
+    if (result.stop) {
+      if (runtime.isRunning()) {
+        console.log('… stopping');
+        runtime.abort();
+      } else {
+        console.log('(not running)');
+      }
+      showPrompt();
+      return;
+    }
+
+    if (result.quit) {
+      runtime.saveIfDirty();
+      rl.close();
+      await runtime.shutdown();
+      process.exit(0);
+    }
+
+    if (
+      runtime.isRunning() &&
+      (result.message?.startsWith('__resume__') ||
+        result.armWorkflow !== undefined ||
+        result.runWorkflow)
+    ) {
+      console.log('Busy — /stop or Ctrl+C first');
+      showPrompt();
+      return;
+    }
+
+    if (result.message === '__help__') {
+      for (const line of SLASH_HELP_LINES) console.log(`  ${line}`);
+      showPrompt();
+      return;
+    }
+
+    if (result.message === '__sessions__') {
+      const sessions = runtime.listSessions().slice(0, 20);
+      if (sessions.length === 0) {
+        console.log('(no sessions)');
+      } else {
+        for (const s of sessions) {
+          console.log(
+            `  ${s.session_id}  tasks=${s.task_count}  ${new Date(s.created_at).toISOString().slice(0, 16)}`,
+          );
+        }
+      }
+      showPrompt();
+      return;
+    }
+
+    if (result.message === '__new__') {
+      runtime.newSession();
+      armedWorkflow = null;
+      runtime.armWorkflow(null);
+      console.log(`New session: ${runtime.session.session_id}`);
+      printStatus(runtime, armedWorkflow);
+      showPrompt();
+      return;
+    }
+
+    if (result.message?.startsWith('__resume__')) {
+      const id = result.message.slice('__resume__:'.length);
+      if (!runtime.resumeSession(id)) {
+        console.log(`Session not found: ${id}`);
+      } else {
+        console.log(`Resumed ${id} (${runtime.session.tasks.length} tasks)`);
+        printStatus(runtime, armedWorkflow);
+      }
+      showPrompt();
+      return;
+    }
+
+    if (result.message?.startsWith('__shell__:')) {
+      const on = result.message.endsWith('on');
+      runtime.setAllowShell(on);
+      console.log(`shell ${on ? 'on' : 'off'}`);
+      showPrompt();
+      return;
+    }
+
+    if (result.message?.startsWith('__web__:')) {
+      const on = result.message.endsWith('on');
+      runtime.setAllowWeb(on);
+      console.log(`web ${on ? 'on' : 'off'}`);
+      showPrompt();
+      return;
+    }
+
+    if (result.message === '__skills__') {
+      const skills = runtime.listSkills();
+      if (skills.length === 0) {
+        console.log('(no skills)');
+      } else {
+        for (const s of skills) {
+          console.log(`  ${s.name}: ${s.description.slice(0, 72)}`);
+        }
+      }
+      showPrompt();
+      return;
+    }
+
+    if (result.message?.startsWith('__skill_load__:')) {
+      const name = result.message.slice('__skill_load__:'.length);
+      runtime.loadSkill(name);
+      console.log(`Loaded skill: ${name} (next task)`);
+      showPrompt();
+      return;
+    }
+
+    if (result.message === '__tools__') {
+      for (const t of runtime.listToolNames()) {
+        console.log(`  • ${t}`);
+      }
+      showPrompt();
+      return;
+    }
+
+    if (result.message === '__spawns__') {
+      const presets = runtime.listSpawnPresets();
+      if (presets.length === 0) {
+        console.log('(no spawn presets — add spawn_presets to agent.json)');
+      } else {
+        for (const p of presets) {
+          console.log(`  • ${p.name}: ${p.description}`);
+          console.log(`    tools: ${p.tools.join(', ')}`);
+        }
+      }
+      showPrompt();
+      return;
+    }
+
+    if (result.message?.startsWith('__cwd__:')) {
+      const path = result.message.slice('__cwd__:'.length);
+      runtime.setCwd(resolve(path));
+      console.log(`cwd → ${runtime.config.cwd}`);
+      showPrompt();
+      return;
+    }
+
+    if (result.message === '__workflow_list__') {
+      const wfs = runtime.listWorkflows();
+      if (wfs.length === 0) console.log('(no workflows)');
+      else for (const w of wfs) console.log(`  • ${w}`);
+      showPrompt();
+      return;
+    }
+
+    if (result.armWorkflow !== undefined) {
+      const name = result.armWorkflow;
+      if (name === null) {
+        runtime.armWorkflow(null);
+        armedWorkflow = null;
+        console.log('Workflow disarmed');
+      } else {
+        const path = runtime.resolveWorkflowPath(name);
+        if (!path) {
+          console.log(`Workflow not found: ${name}`);
+        } else {
+          runtime.armWorkflow(path);
+          armedWorkflow = name;
+          console.log(`Armed workflow: ${name} — next line is the task`);
+        }
+      }
+      showPrompt();
+      return;
+    }
+
+    if (result.runWorkflow) {
+      const path = runtime.resolveWorkflowPath(result.runWorkflow.path);
+      if (!path) {
+        console.log(`Workflow not found: ${result.runWorkflow.path}`);
+        showPrompt();
+        return;
+      }
+      await runTask(result.runWorkflow.task, path);
+      return;
+    }
+
+    if (result.message) {
+      console.log(result.message);
+      showPrompt();
+    }
+  };
+
+  const runTask = async (task: string, workflowPath?: string): Promise<void> => {
+    console.log(`\n▶ ${task.slice(0, 120)}${task.length > 120 ? '…' : ''}`);
+    armedWorkflow = null;
+    try {
+      if (workflowPath) {
+        await runtime.runWorkflowTask(task, workflowPath);
+      } else {
+        await runtime.runTask(task);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log(`✗ ${msg}`);
+      mode = 'idle';
+      rl.resume();
+      showPrompt();
+    }
+  };
+
+  rl.on('line', (line) => {
+    const trimmed = line.trim();
+
+    if (mode === 'confirm') {
+      if (isSlashCommand(trimmed)) {
+        void handleSlash(parseSlashLine(trimmed));
+        return;
+      }
+      if (trimmed === 's') {
+        confirmShell = !confirmShell;
+        console.log(`  shell [${confirmShell ? 'on' : 'off'}]  web [${confirmWeb ? 'on' : 'off'}]`);
+        showPrompt();
+        return;
+      }
+      if (trimmed === 'w') {
+        confirmWeb = !confirmWeb;
+        console.log(`  shell [${confirmShell ? 'on' : 'off'}]  web [${confirmWeb ? 'on' : 'off'}]`);
+        showPrompt();
+        return;
+      }
+      runtime.setAllowShell(confirmShell);
+      runtime.setAllowWeb(confirmWeb);
+      savePrefs(runtime.config.cwd, { allowShell: confirmShell, allowWeb: confirmWeb });
+      mode = 'idle';
+      console.log(`Tools: shell:${confirmShell ? 'on' : 'off'} web:${confirmWeb ? 'on' : 'off'}`);
+      showPrompt();
+      return;
+    }
+
+    if (!trimmed) {
+      showPrompt();
+      return;
+    }
+
+    if (isSlashCommand(trimmed)) {
+      void handleSlash(parseSlashLine(trimmed));
+      return;
+    }
+
+    void runTask(trimmed);
+  });
+
+  process.on('SIGINT', () => {
+    if (runtime.isRunning()) {
+      console.log('\n… Ctrl+C abort');
+      runtime.abort();
+      return;
+    }
+    runtime.saveIfDirty();
+    rl.close();
+    void runtime.shutdown().finally(() => process.exit(0));
+  });
+
+  process.stdout.on('resize', () => resetMarkdownTerminal());
+
+  showPrompt();
+}

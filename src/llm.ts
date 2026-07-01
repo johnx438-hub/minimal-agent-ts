@@ -28,6 +28,7 @@ export interface ChatOptions {
   model: string;
   stream?: boolean;
   onToken?: (delta: string) => void;
+  signal?: AbortSignal;
 }
 
 export async function chat(
@@ -48,7 +49,7 @@ async function chatBlocking(
 ): Promise<LlmResult> {
   const url = `${opts.baseUrl.replace(/\/$/, '')}/chat/completions`;
   const body = buildChatBody(opts.model, messages, tools, false);
-  const bodyText = await postChat(url, opts.apiKey, body);
+  const bodyText = await postChat(url, opts.apiKey, body, opts.signal);
 
   const data = JSON.parse(bodyText) as ChatCompletionResponse;
   return parseCompletion(data);
@@ -67,6 +68,7 @@ async function chatStream(
       Authorization: `Bearer ${opts.apiKey}`,
     },
     body: JSON.stringify(buildChatBody(opts.model, messages, tools, true)),
+    signal: opts.signal,
   });
 
   if (!res.ok) {
@@ -88,6 +90,10 @@ async function chatStream(
   let buffer = '';
 
   while (true) {
+    if (opts.signal?.aborted) {
+      await reader.cancel().catch(() => undefined);
+      throw new DOMException('Aborted', 'AbortError');
+    }
     const { done, value } = await reader.read();
     if (done) break;
 
@@ -195,6 +201,7 @@ async function postChat(
   url: string,
   apiKey: string,
   body: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<string> {
   const res = await fetch(url, {
     method: 'POST',
@@ -203,6 +210,7 @@ async function postChat(
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify(body),
+    signal,
   });
 
   const bodyText = await res.text();

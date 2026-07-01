@@ -1,6 +1,46 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
+
+import { releaseAllCompactedContent } from './context-policy.js';
 import type { SessionFile, SessionMeta } from './types.js';
+
+const DEFAULT_SAVE_MIN_INTERVAL_MS = 30_000;
+const lastSaveAtBySession = new Map<string, number>();
+
+export function getSessionSaveMinIntervalMs(): number {
+  const raw = process.env.SESSION_SAVE_MIN_INTERVAL_MS?.trim();
+  if (!raw) return DEFAULT_SAVE_MIN_INTERVAL_MS;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_SAVE_MIN_INTERVAL_MS;
+}
+
+export interface SaveSessionOptions {
+  /** Bypass throttle (run end, abort, workflow checkpoint). */
+  force?: boolean;
+  minIntervalMs?: number;
+}
+
+/**
+ * Persist session; skips write when called too soon unless force=true.
+ * Returns true if a write occurred.
+ */
+export function saveSessionThrottled(
+  session: SessionFile,
+  opts?: SaveSessionOptions,
+): boolean {
+  const force = opts?.force ?? false;
+  const minInterval = opts?.minIntervalMs ?? getSessionSaveMinIntervalMs();
+  const now = Date.now();
+  const last = lastSaveAtBySession.get(session.session_id) ?? 0;
+
+  if (!force && minInterval > 0 && now - last < minInterval) {
+    return false;
+  }
+
+  saveSession(session);
+  lastSaveAtBySession.set(session.session_id, now);
+  return true;
+}
 
 const SESSION_DIR = resolve(process.cwd(), '.sessions');
 const SESSION_FILE_PREFIX = 'session_';
@@ -59,7 +99,9 @@ export function loadSession(sessionId: string): SessionFile | null {
 
   try {
     const content = readFileSync(path, 'utf8');
-    return JSON.parse(content) as SessionFile;
+    const session = JSON.parse(content) as SessionFile;
+    releaseAllCompactedContent(session.current_messages);
+    return session;
   } catch {
     return null;
   }
@@ -69,8 +111,10 @@ export function loadSession(sessionId: string): SessionFile | null {
  * Save session state to disk.
  */
 export function saveSession(session: SessionFile): void {
+  releaseAllCompactedContent(session.current_messages);
   const path = getSessionPath(session.session_id);
   writeFileSync(path, JSON.stringify(session, null, 2), 'utf8');
+  lastSaveAtBySession.set(session.session_id, Date.now());
 }
 
 /**

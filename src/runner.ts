@@ -1,0 +1,441 @@
+import { existsSync, readdirSync } from 'node:fs';
+import { basename, isAbsolute, resolve } from 'node:path';
+
+import { loadAgentPluginConfig } from './plugins/config-loader.js';
+import { discoverSkills } from './plugins/skills.js';
+import { runAgent, type AgentResult } from './agent.js';
+import type { AgentStepEvent } from './events.js';
+import { previewPolicyFromPointerize } from './action-preview.js';
+import { emitJsonEvent, isAbortError, type RuntimeEvent } from './events.js';
+import { parseLoopGuardMode } from './loop-guard.js';
+import { ensureToolRegistry, toolRegistry } from './tools/registry.js';
+import {
+  createSession,
+  listSessions,
+  loadSession,
+  saveSessionThrottled,
+} from './session.js';
+import type { AgentPluginConfig } from './plugins/types.js';
+import type { AgentConfig, SessionFile, SessionMeta } from './types.js';
+import { runWorkflow } from './workflow/runner.js';
+
+function env(name: string, fallback?: string): string | undefined {
+  const v = process.env[name]?.trim();
+  return v || fallback;
+}
+
+export interface BuildConfigOptions {
+  cwd: string;
+  allowShell?: boolean;
+  allowWeb?: boolean;
+  loadSkills?: string[];
+}
+
+export function buildAgentConfig(opts: BuildConfigOptions): {
+  config: AgentConfig;
+  pluginConfig: AgentPluginConfig;
+} {
+  const apiKey = env('OPENAI_API_KEY') ?? env('OPENROUTER_API_KEY');
+  if (!apiKey) {
+    throw new Error('Missing OPENAI_API_KEY or OPENROUTER_API_KEY');
+  }
+
+  const pluginConfig = loadAgentPluginConfig(opts.cwd);
+  if (opts.loadSkills && opts.loadSkills.length > 0) {
+    pluginConfig.loaded_skills = [
+      ...new Set([...(pluginConfig.loaded_skills ?? []), ...opts.loadSkills]),
+    ];
+  }
+
+  const keepInlineTurns = pluginConfig.pointerize_policy?.keep_inline_turns ?? 2;
+  const recallAutoFullMaxChars = pluginConfig.recall_policy?.auto_full_max_chars ?? 24_000;
+  const previewPolicy = previewPolicyFromPointerize(pluginConfig.pointerize_policy);
+  const loopGuardMode = parseLoopGuardMode(env('LOOP_GUARD', 'inject'));
+
+  const config: AgentConfig = {
+    apiKey,
+    baseUrl: env('OPENAI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta/openai')!,
+    model: env('MODEL', 'gemini-2.0-flash')!,
+    maxTurns: Number(env('MAX_TURNS', '0')),
+    cwd: opts.cwd,
+    allowShell: opts.allowShell ?? false,
+    allowWeb: opts.allowWeb ?? false,
+    webFetchPolicy: pluginConfig.web_fetch_policy,
+    loopGuard: {
+      enabled: loopGuardMode !== 'off',
+      mode: loopGuardMode,
+      hardCeiling: Number(env('LOOP_HARD_CEILING', '200')),
+    },
+    keepInlineTurns,
+    recallAutoFullMaxChars,
+    previewPolicy,
+  };
+
+  return { config, pluginConfig };
+}
+
+export type RuntimeListener = (event: RuntimeEvent) => void;
+
+export interface AgentRuntimeOptions {
+  cwd: string;
+  resumeSessionId?: string;
+  loadSkills?: string[];
+  allowShell?: boolean;
+  allowWeb?: boolean;
+  /** TUI entry: shell defaults on unless overridden. */
+  tuiMode?: boolean;
+  jsonEvents?: boolean;
+}
+
+export class AgentRuntime {
+  config: AgentConfig;
+  pluginConfig: AgentPluginConfig;
+  session: SessionFile;
+
+  private listeners = new Set<RuntimeListener>();
+  private abortController = new AbortController();
+  private armedWorkflowPath: string | null = null;
+  private sessionDirty = false;
+  private running = false;
+  private readonly jsonEvents: boolean;
+  private readonly useStream: boolean;
+  constructor(opts: AgentRuntimeOptions) {
+    const built = buildAgentConfig({
+      cwd: opts.cwd,
+      loadSkills: opts.loadSkills,
+      allowShell: opts.tuiMode
+        ? opts.allowShell !== false
+        : (opts.allowShell ?? false) || env('ALLOW_SHELL') === '1',
+      allowWeb: (opts.allowWeb ?? false) || env('ALLOW_WEB') === '1',
+    });
+    this.config = built.config;
+    this.pluginConfig = built.pluginConfig;
+    this.jsonEvents = opts.jsonEvents ?? false;
+    this.useStream = env('STREAM', '1') !== '0';
+
+    if (opts.resumeSessionId) {
+      const loaded = loadSession(opts.resumeSessionId);
+      if (!loaded) {
+        throw new Error(`Session not found: ${opts.resumeSessionId}`);
+      }
+      this.session = loaded;
+    } else {
+      this.session = createSession(env('USER_ID') ?? 'user_default');
+      this.sessionDirty = true;
+    }
+  }
+
+  async initialize(): Promise<void> {
+    await ensureToolRegistry(this.config.cwd, this.pluginConfig);
+  }
+
+  onEvent(listener: RuntimeListener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private emit(event: RuntimeEvent): void {
+    if (this.jsonEvents) {
+      emitJsonEvent(event);
+    }
+    for (const listener of this.listeners) {
+      listener(event);
+    }
+  }
+
+  private onStep = (event: AgentStepEvent): void => {
+    this.emit(event);
+  };
+
+  listSessions(): SessionMeta[] {
+    return listSessions();
+  }
+
+  resumeSession(id: string): boolean {
+    const loaded = loadSession(id);
+    if (!loaded) return false;
+    this.session = loaded;
+    this.sessionDirty = false;
+    return true;
+  }
+
+  newSession(): void {
+    this.session = createSession(env('USER_ID') ?? 'user_default');
+    this.sessionDirty = true;
+  }
+
+  setAllowShell(on: boolean): void {
+    this.config.allowShell = on;
+    this.emit({ type: 'runtime', shell: on, web: this.config.allowWeb });
+  }
+
+  setAllowWeb(on: boolean): void {
+    this.config.allowWeb = on;
+    this.emit({ type: 'runtime', shell: this.config.allowShell, web: on });
+  }
+
+  loadSkill(name: string): void {
+    const skills = this.pluginConfig.loaded_skills ?? [];
+    if (!skills.includes(name)) {
+      this.pluginConfig.loaded_skills = [...skills, name];
+    }
+  }
+
+  setCwd(path: string): void {
+    this.config.cwd = resolve(path);
+    this.pluginConfig = loadAgentPluginConfig(this.config.cwd);
+  }
+
+  armWorkflow(path: string | null): void {
+    this.armedWorkflowPath = path;
+  }
+
+  getArmedWorkflow(): string | null {
+    return this.armedWorkflowPath;
+  }
+
+  listWorkflows(): string[] {
+    const dir = resolve(this.config.cwd, 'workflows');
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir)
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => basename(f, '.json'));
+  }
+
+  resolveWorkflowPath(nameOrPath: string): string | null {
+    let path = nameOrPath;
+    if (!path.includes('/') && !path.endsWith('.json')) {
+      path = `workflows/${path}.json`;
+    }
+    const resolved = isAbsolute(path) ? path : resolve(this.config.cwd, path);
+    if (!existsSync(resolved)) return null;
+    return resolved;
+  }
+
+  listToolNames(): string[] {
+    return toolRegistry.getDefinitions(this.config).map((d) => d.function.name);
+  }
+
+  listSpawnPresets(): Array<{ name: string; description: string; tools: string[] }> {
+    if (!toolRegistry.isInitialized()) return [];
+    return toolRegistry.getSpawnPresets().map((p) => ({
+      name: p.name,
+      description: p.description,
+      tools: p.tools,
+    }));
+  }
+
+  listSkills(): Array<{ name: string; description: string }> {
+    const dirs = this.pluginConfig.skills_dirs ?? [];
+    const skills = discoverSkills(dirs);
+    return [...skills.values()].map((s) => ({
+      name: s.name,
+      description: s.description,
+    }));
+  }
+
+  isRunning(): boolean {
+    return this.running;
+  }
+
+  abort(): void {
+    this.abortController.abort();
+  }
+
+  saveIfDirty(force = true): void {
+    if (!this.sessionDirty) return;
+    if (!saveSessionThrottled(this.session, { force })) return;
+    this.emit({
+      type: 'session_saved',
+      session_id: this.session.session_id,
+      task_count: this.session.tasks.length,
+    });
+    this.sessionDirty = false;
+  }
+
+  async runTask(prompt: string): Promise<AgentResult> {
+    if (this.running) {
+      throw new Error('Agent is already running');
+    }
+
+    const workflowPath = this.armedWorkflowPath;
+    this.armedWorkflowPath = null;
+
+    if (workflowPath) {
+      return this.runWorkflowTask(prompt, workflowPath);
+    }
+    return this.runSingleTask(prompt);
+  }
+
+  async runWorkflowTask(prompt: string, workflowPath: string): Promise<AgentResult> {
+    if (this.running) {
+      throw new Error('Agent is already running');
+    }
+
+    const resolved = this.resolveWorkflowPath(workflowPath) ?? workflowPath;
+    if (!existsSync(resolved)) {
+      throw new Error(`Workflow not found: ${workflowPath}`);
+    }
+
+    this.running = true;
+    this.abortController = new AbortController();
+    const signal = this.abortController.signal;
+
+    this.emit({
+      type: 'run_start',
+      session_id: this.session.session_id,
+      cwd: this.config.cwd,
+    });
+
+    const runConfig: AgentConfig = {
+      ...this.config,
+      sessionId: this.session.session_id,
+      abortSignal: signal,
+    };
+
+    try {
+      const wfResult = await runWorkflow({
+        workflowPath: resolved,
+        userTask: prompt,
+        config: runConfig,
+        session: this.session,
+        stream: this.useStream,
+        onStep: this.onStep,
+        onWorkflowStep: (info) => {
+          this.emit({
+            type: 'workflow_step',
+            phase: info.phase,
+            role: info.role,
+            round: info.round,
+          });
+        },
+      });
+
+      this.session.current_messages = [];
+      this.sessionDirty = true;
+      this.saveIfDirty();
+
+      this.emit({ type: 'run_end', reason: 'completed' });
+      return { text: wfResult.text, messages: [] };
+    } catch (err) {
+      if (isAbortError(err)) {
+        this.sessionDirty = true;
+        this.saveIfDirty();
+        this.emit({ type: 'run_end', reason: 'aborted' });
+        return { text: '[aborted]', messages: this.session.current_messages };
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      this.emit({ type: 'run_end', reason: 'error', message });
+      throw err;
+    } finally {
+      this.running = false;
+    }
+  }
+
+  private async runSingleTask(prompt: string): Promise<AgentResult> {
+    this.running = true;
+    this.abortController = new AbortController();
+    const signal = this.abortController.signal;
+
+    this.emit({
+      type: 'run_start',
+      session_id: this.session.session_id,
+      cwd: this.config.cwd,
+    });
+
+    const runConfig: AgentConfig = {
+      ...this.config,
+      sessionId: this.session.session_id,
+      abortSignal: signal,
+    };
+
+    try {
+      const answer = await runAgent({
+        prompt,
+        config: runConfig,
+        session: this.session,
+        sessionId: this.session.session_id,
+        stream: this.useStream,
+        signal,
+        onStep: this.onStep,
+        onTaskComplete: (taskSummary) => {
+          this.session.tasks.push(taskSummary);
+          this.sessionDirty = true;
+        },
+      });
+
+      this.session.current_messages = answer.messages;
+      this.sessionDirty = true;
+      this.saveIfDirty();
+
+      this.emit({ type: 'run_end', reason: 'completed' });
+      return answer;
+    } catch (err) {
+      if (isAbortError(err)) {
+        this.sessionDirty = true;
+        this.saveIfDirty();
+        this.emit({ type: 'run_end', reason: 'aborted' });
+        return { text: '[aborted]', messages: this.session.current_messages };
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      this.emit({ type: 'run_end', reason: 'error', message });
+      throw err;
+    } finally {
+      this.running = false;
+    }
+  }
+
+  async shutdown(): Promise<void> {
+    await toolRegistry.shutdown();
+  }
+}
+
+/** CLI-style step printer (headless human output). */
+export function printStepEvent(event: AgentStepEvent): void {
+  switch (event.type) {
+    case 'turn_start':
+      console.log(`\n[turn ${event.turn}] ── LLM ──`);
+      break;
+    case 'token':
+      process.stdout.write(event.delta);
+      break;
+    case 'llm_done':
+      console.log(
+        `\n  finish=${event.finishReason ?? 'null'} tokens=${JSON.stringify(event.usage ?? {})}`,
+      );
+      break;
+    case 'compression':
+      console.log(
+        event.pruned
+          ? `  📦 pruned ${event.pruned} messages (compacted_at)`
+          : `  📦 compression event: summaries + notice + replay user task`,
+      );
+      break;
+    case 'draft_discarded':
+      console.log(`  ⊗ draft discarded (turn ${event.turn}, ${event.chars} chars)`);
+      break;
+    case 'loop_guard':
+      console.log(
+        `  🔄 loop_guard: ${event.action}${event.reason ? ` (${event.reason})` : ''}`,
+      );
+      break;
+    case 'tool_batch':
+      if (event.parallel > 1) {
+        console.log(`  ⚡ parallel batch: ${event.parallel}/${event.total} tools`);
+      }
+      break;
+    case 'tool_call':
+      console.log(`  → ${event.name}(${event.args})`);
+      break;
+    case 'tool_result': {
+      const preview = event.preview ?? event.output;
+      const shown =
+        preview.length > 400 ? `${preview.slice(0, 400)}…` : preview;
+      console.log(`  ← ${event.name}: ${shown.replace(/\n/g, '\\n')}`);
+      break;
+    }
+    case 'final':
+      console.log(`\n[done @ turn ${event.turn}]`);
+      break;
+  }
+}

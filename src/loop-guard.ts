@@ -77,6 +77,8 @@ function normalizeArgs(toolName: string, args: Record<string, unknown>): Record<
       };
     case 'write_file':
       return { path: String(args.path ?? '') };
+    case 'web_fetch':
+      return { url: String(args.url ?? '').trim() };
     case 'run_shell': {
       const out: Record<string, unknown> = { command: String(args.command ?? '').trim() };
       if (args.working_dir !== undefined) out.working_dir = String(args.working_dir);

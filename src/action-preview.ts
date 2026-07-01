@@ -65,6 +65,25 @@ function parseArgsJson(argsJson: string): Record<string, unknown> {
 }
 
 /** Step 1 (A): ratio-based head/tail excerpt. */
+/** One-line preview for live tool_result events (before ActionBlock exists). */
+export function formatLiveToolPreview(
+  toolName: string,
+  _argsJson: string,
+  output: string,
+  policy: PreviewPolicy = DEFAULT_PREVIEW_POLICY,
+): string {
+  const flat = output.replace(/\r\n/g, '\n').trim();
+  const max = Math.min(400, policy.preview_max_chars);
+  if (flat.length <= max) {
+    return flat.replace(/\n/g, '\\n');
+  }
+  if (toolName === 'grep_search' && flat.startsWith('(no matches)')) {
+    return flat;
+  }
+  const head = flat.slice(0, Math.ceil(max * 0.75)).replace(/\n/g, '\\n');
+  return `${head}…`;
+}
+
 export function buildGenericPreview(
   text: string,
   byteSize: number,
@@ -101,6 +120,7 @@ function isSmartTool(toolName: string): boolean {
     toolName === 'grep_search' ||
     toolName === 'read_file' ||
     toolName === 'run_shell' ||
+    toolName === 'web_fetch' ||
     isMcpTool(toolName)
   );
 }
@@ -162,6 +182,21 @@ export function buildSmartToolPreview(
           policy,
         ),
         preview_lines: [truncateLine(text, 100)],
+      };
+    }
+
+    case 'web_fetch': {
+      const url = String(args.url ?? '?');
+      const meta = text.match(/^\[web_meta[^\]]+\]/m)?.[0] ?? '';
+      const via = meta.includes('via=cloak') ? 'cloak' : 'http';
+      const title = text.match(/^#\s+(.+)/m)?.[1]?.trim();
+      const lines = nonEmptyLines(text, policy.preview_max_lines);
+      return {
+        summary: clipSummary(
+          `web_fetch: ${url}${title ? ` — ${title}` : ''} (${via})`,
+          policy,
+        ),
+        preview_lines: lines.slice(0, policy.preview_max_lines).map((l) => truncateLine(l, 100)),
       };
     }
 
