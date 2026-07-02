@@ -1,6 +1,13 @@
 import { Loader, Markdown, Text, type Component, type TUI } from '@earendil-works/pi-tui';
 
 import {
+  buildEditDisplayParts,
+  formatEditCallLineFromArgs,
+  formatEditResultMarkdown,
+  formatEditSummaryLine,
+  parseEditArgs,
+} from './edit-display.js';
+import {
   buildShellDisplayParts,
   formatShellCallLine,
   formatShellLoaderMessage,
@@ -18,7 +25,8 @@ export interface PiToolPresenterOptions {
 }
 
 /**
- * Rich pi-tui rendering for tool_call / tool_result (step 1: run_shell).
+ * Rich pi-tui rendering for tool_call / tool_result.
+ * Steps 1–2: run_shell (loader + multiline), edit_file (diff).
  * Other tools fall through to the default one-line presenter.
  */
 export class PiToolPresenter {
@@ -26,9 +34,10 @@ export class PiToolPresenter {
   private readonly tui: TUI;
   private readonly getAnchor: () => Component | null;
 
-  /** FIFO queue — run_shell is serial-only in the scheduler. */
+  /** FIFO queues — serial-only tools in the scheduler. */
   private readonly shellArgsQueue: string[] = [];
   private readonly shellLoaders: Loader[] = [];
+  private readonly editArgsQueue: string[] = [];
 
   constructor(opts: PiToolPresenterOptions) {
     this.chat = opts.chat;
@@ -43,10 +52,20 @@ export class PiToolPresenter {
     }
     this.shellLoaders.length = 0;
     this.shellArgsQueue.length = 0;
+    this.editArgsQueue.length = 0;
   }
 
   /** @returns true if handled (caller should skip default rendering). */
   handleToolCall(name: string, args: string): boolean {
+    if (name === 'edit_file') {
+      this.editArgsQueue.push(args);
+      this.insertBeforeAnchor(
+        new Text(formatEditCallLineFromArgs(parseEditArgs(args)), 1, 0, (s) => piChalk.dim(s)),
+      );
+      this.tui.requestRender();
+      return true;
+    }
+
     if (name !== 'run_shell') return false;
 
     this.shellArgsQueue.push(args);
@@ -71,6 +90,17 @@ export class PiToolPresenter {
 
   /** @returns true if handled (caller should skip default rendering). */
   handleToolResult(name: string, output: string): boolean {
+    if (name === 'edit_file') {
+      const args = this.editArgsQueue.shift() ?? '{}';
+      const parts = buildEditDisplayParts(args, output);
+      this.insertBeforeAnchor(
+        new Text(formatEditSummaryLine(parts), 1, 0, (s) => piChalk.dim(s)),
+      );
+      this.insertBeforeAnchor(new Markdown(formatEditResultMarkdown(parts), 1, 1, piMarkdownTheme));
+      this.tui.requestRender();
+      return true;
+    }
+
     if (name !== 'run_shell') return false;
 
     const args = this.shellArgsQueue.shift() ?? '{}';

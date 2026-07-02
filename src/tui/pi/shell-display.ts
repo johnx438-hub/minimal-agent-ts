@@ -1,3 +1,5 @@
+import { pickCodeFence } from './markdown-fence.js';
+
 /** Pure formatting helpers for run_shell tool display in pi TUI. */
 
 export interface ShellDisplayParts {
@@ -67,12 +69,4 @@ export function formatShellResultMarkdown(parts: ShellDisplayParts): string {
   const fence = pickCodeFence(parts.body);
   const lang = parts.body.includes('error:') ? 'text' : 'console';
   return `**$** \`${cmd || '(empty)'}\`\n\n${fence}${lang}\n${parts.body}\n${fence}`;
-}
-
-function pickCodeFence(body: string): string {
-  let ticks = 3;
-  for (const match of body.matchAll(/`{3,}/g)) {
-    ticks = Math.max(ticks, match[0].length + 1);
-  }
-  return '`'.repeat(ticks);
 }
