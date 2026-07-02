@@ -15,6 +15,12 @@ import {
   formatShellSummaryLine,
   parseShellCommand,
 } from './shell-display.js';
+import {
+  buildWriteDisplayParts,
+  formatWriteCallLine,
+  formatWriteResultMarkdown,
+  formatWriteSummaryLine,
+} from './write-display.js';
 import type { PiChatLog } from './chat-log.js';
 import { piChalk, piMarkdownTheme } from './themes.js';
 
@@ -26,7 +32,7 @@ export interface PiToolPresenterOptions {
 
 /**
  * Rich pi-tui rendering for tool_call / tool_result.
- * Steps 1–2: run_shell (loader + multiline), edit_file (diff).
+ * Steps 1–3: run_shell, edit_file, write_file rich display.
  * Other tools fall through to the default one-line presenter.
  */
 export class PiToolPresenter {
@@ -38,6 +44,7 @@ export class PiToolPresenter {
   private readonly shellArgsQueue: string[] = [];
   private readonly shellLoaders: Loader[] = [];
   private readonly editArgsQueue: string[] = [];
+  private readonly writeArgsQueue: string[] = [];
 
   constructor(opts: PiToolPresenterOptions) {
     this.chat = opts.chat;
@@ -53,10 +60,20 @@ export class PiToolPresenter {
     this.shellLoaders.length = 0;
     this.shellArgsQueue.length = 0;
     this.editArgsQueue.length = 0;
+    this.writeArgsQueue.length = 0;
   }
 
   /** @returns true if handled (caller should skip default rendering). */
   handleToolCall(name: string, args: string): boolean {
+    if (name === 'write_file') {
+      this.writeArgsQueue.push(args);
+      this.insertBeforeAnchor(
+        new Text(formatWriteCallLine(args), 1, 0, (s) => piChalk.dim(s)),
+      );
+      this.tui.requestRender();
+      return true;
+    }
+
     if (name === 'edit_file') {
       this.editArgsQueue.push(args);
       this.insertBeforeAnchor(
@@ -89,7 +106,20 @@ export class PiToolPresenter {
   }
 
   /** @returns true if handled (caller should skip default rendering). */
-  handleToolResult(name: string, output: string): boolean {
+  handleToolResult(name: string, output: string, display?: string): boolean {
+    if (name === 'write_file') {
+      const args = this.writeArgsQueue.shift() ?? '{}';
+      const parts = buildWriteDisplayParts(args, output, display);
+      this.insertBeforeAnchor(
+        new Text(formatWriteSummaryLine(parts), 1, 0, (s) => piChalk.dim(s)),
+      );
+      this.insertBeforeAnchor(
+        new Markdown(formatWriteResultMarkdown(parts), 1, 1, piMarkdownTheme),
+      );
+      this.tui.requestRender();
+      return true;
+    }
+
     if (name === 'edit_file') {
       const args = this.editArgsQueue.shift() ?? '{}';
       const parts = buildEditDisplayParts(args, output);

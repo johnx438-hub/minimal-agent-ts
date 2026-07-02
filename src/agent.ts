@@ -30,6 +30,7 @@ import { parseAgentSummary, extractCleanAnswer } from './summary.js';
 import { buildContext, createBudgetConfig, shouldCompress, estimateTokens } from './context-budget.js';
 import { scheduleToolCalls } from './tool-scheduler.js';
 import { executeTool, getToolDefinitions } from './tools.js';
+import { splitWriteToolOutput } from './tools/write-display.js';
 import { TaskTracker } from './task-tracker.js';
 import type { AgentConfig, ChatMessage, TaskSummaryDoc, SessionFile, ToolCall } from './types.js';
 
@@ -367,10 +368,12 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
         onStep?.({ type: 'tool_call', turn, name, args });
 
-        const output = await executeTool(name, args, toolConfig);
+        const rawOutput = await executeTool(name, args, toolConfig);
+        const { output, display } =
+          name === 'write_file' ? splitWriteToolOutput(rawOutput) : { output: rawOutput };
 
         const preview = formatLiveToolPreview(name, args, output, previewPolicy);
-        onStep?.({ type: 'tool_result', turn, name, output, preview });
+        onStep?.({ type: 'tool_result', turn, name, output, preview, display });
         turnRecords.push({ name, argsJson: args, output });
 
         let actionId: string | undefined;

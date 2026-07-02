@@ -3,6 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import { formatFileMeta } from './file-hash.js';
 import { resolveSafePath, sliceLines } from './path-utils.js';
+import { formatWriteToolResult } from './write-display.js';
 
 export const READ_WRITE_DEFINITIONS: ToolDefinition[] = [
   {
@@ -65,8 +66,21 @@ export async function runReadWriteTool(
       const path = String(args.path ?? '');
       const content = String(args.content ?? '');
       const file = resolveSafePath(config.cwd, path);
+
+      let previous: string | null = null;
+      try {
+        previous = await readFile(file, 'utf8');
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== 'ENOENT') {
+          const msg = err instanceof Error ? err.message : String(err);
+          return `error: cannot read ${path}: ${msg}`;
+        }
+      }
+
       await writeFile(file, content, 'utf8');
-      return `ok: wrote ${content.length} bytes to ${path}`;
+      const byteSize = Buffer.byteLength(content, 'utf8');
+      return formatWriteToolResult(path, byteSize, previous, content);
     }
 
     default:

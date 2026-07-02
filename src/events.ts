@@ -37,7 +37,15 @@ export type AgentStepEvent =
     }
   | { type: 'tool_batch'; turn: number; total: number; parallel: number }
   | { type: 'tool_call'; turn: number; name: string; args: string }
-  | { type: 'tool_result'; turn: number; name: string; output: string; preview?: string }
+  | {
+      type: 'tool_result';
+      turn: number;
+      name: string;
+      output: string;
+      preview?: string;
+      /** Rich TUI payload (e.g. write_file diff); not stored in agent messages. */
+      display?: string;
+    }
   | { type: 'compression'; turn: number; pruned?: number; pointer_compacted?: number }
   | { type: 'draft_discarded'; turn: number; chars: number }
   | {
