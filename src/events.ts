@@ -36,10 +36,11 @@ export type AgentStepEvent =
       entries: ToolPlanEntry[];
     }
   | { type: 'tool_batch'; turn: number; total: number; parallel: number }
-  | { type: 'tool_call'; turn: number; name: string; args: string }
+  | { type: 'tool_call'; turn: number; call_id: string; name: string; args: string }
   | {
       type: 'tool_result';
       turn: number;
+      call_id: string;
       name: string;
       args: string;
       output: string;

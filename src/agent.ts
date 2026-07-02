@@ -367,7 +367,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         const name = call.function.name;
         const args = call.function.arguments;
 
-        onStep?.({ type: 'tool_call', turn, name, args });
+        onStep?.({ type: 'tool_call', turn, call_id: call.id, name, args });
 
         const rawOutput = await executeTool(name, args, toolConfig);
         let output = rawOutput;
@@ -379,7 +379,16 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         }
 
         const preview = formatLiveToolPreview(name, args, output, previewPolicy);
-        onStep?.({ type: 'tool_result', turn, name, args, output, preview, display });
+        onStep?.({
+          type: 'tool_result',
+          turn,
+          call_id: call.id,
+          name,
+          args,
+          output,
+          preview,
+          display,
+        });
         turnRecords.push({ name, argsJson: args, output });
 
         let actionId: string | undefined;

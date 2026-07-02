@@ -708,7 +708,7 @@ export function printStepEvent(event: AgentStepEvent): void {
       }
       break;
     case 'tool_call':
-      console.log(`  → ${event.name}(${event.args})`);
+      console.log(`  → ${event.name}#${event.call_id}(${event.args})`);
       break;
     case 'tool_result': {
       const preview = event.preview ?? event.output;

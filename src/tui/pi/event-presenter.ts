@@ -252,13 +252,14 @@ export class PiEventPresenter {
         }
         break;
       case 'tool_call':
-        if (!this.toolPresenter.handleToolCall(event.name, event.args)) {
+        if (!this.toolPresenter.handleToolCall(event.call_id, event.name, event.args)) {
           this.appendRunMeta(`→ ${event.name}(${event.args})`);
         }
         break;
       case 'tool_result': {
         if (
           !this.toolPresenter.handleToolResult(
+            event.call_id,
             event.name,
             event.output,
             event.display,
