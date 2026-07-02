@@ -9,6 +9,7 @@ import {
 import { shouldFormatFinal } from '../markdown.js';
 import type { PiChatLog } from './chat-log.js';
 import { piChalk, piMarkdownTheme } from './themes.js';
+import { PiToolPresenter } from './tool-presenter.js';
 
 function isAgentStep(event: RuntimeEvent): event is AgentStepEvent {
   return (
@@ -41,11 +42,17 @@ export class PiEventPresenter {
   private streamBuffer = '';
   private streamMd: Markdown | null = null;
   private loader: CancellableLoader | null = null;
+  private readonly toolPresenter: PiToolPresenter;
 
   constructor(opts: PiEventPresenterOptions) {
     this.chat = opts.chat;
     this.tui = opts.tui;
     this.onAbort = opts.onAbort;
+    this.toolPresenter = new PiToolPresenter({
+      chat: this.chat,
+      tui: this.tui,
+      getAnchor: () => this.streamMd ?? this.loader,
+    });
   }
 
   handle(event: RuntimeEvent): void {
@@ -164,6 +171,7 @@ export class PiEventPresenter {
   private beginRun(sessionId: string, cwd: string): void {
     this.streamBuffer = '';
     this.streamMd = null;
+    this.toolPresenter.reset();
 
     this.loader = new CancellableLoader(
       this.tui,
@@ -180,6 +188,7 @@ export class PiEventPresenter {
   }
 
   private endRun(reason: 'completed' | 'aborted' | 'error', message?: string): void {
+    this.toolPresenter.reset();
     if (this.loader) {
       this.loader.stop();
       this.chat.remove(this.loader);
@@ -243,12 +252,16 @@ export class PiEventPresenter {
         }
         break;
       case 'tool_call':
-        this.appendRunMeta(`→ ${event.name}(${event.args})`);
+        if (!this.toolPresenter.handleToolCall(event.name, event.args)) {
+          this.appendRunMeta(`→ ${event.name}(${event.args})`);
+        }
         break;
       case 'tool_result': {
-        const preview = event.preview ?? event.output;
-        const shown = preview.length > 400 ? `${preview.slice(0, 400)}…` : preview;
-        this.appendRunMeta(`← ${event.name}: ${shown.replace(/\n/g, '\\n')}`);
+        if (!this.toolPresenter.handleToolResult(event.name, event.output)) {
+          const preview = event.preview ?? event.output;
+          const shown = preview.length > 400 ? `${preview.slice(0, 400)}…` : preview;
+          this.appendRunMeta(`← ${event.name}: ${shown.replace(/\n/g, '\\n')}`);
+        }
         break;
       }
       case 'final': {
