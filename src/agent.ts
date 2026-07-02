@@ -67,6 +67,22 @@ function throwIfAborted(signal?: AbortSignal): void {
   }
 }
 
+/** Reject as soon as signal aborts — do not wait for in-flight parallel work. */
+function awaitWithAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  throwIfAborted(signal);
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      signal.addEventListener(
+        'abort',
+        () => reject(new DOMException('Aborted', 'AbortError')),
+        { once: true },
+      );
+    }),
+  ]);
+}
+
 function stripSystemMessages(msgs: ChatMessage[]): ChatMessage[] {
   return msgs.filter((m) => m.role !== 'system');
 }
@@ -371,19 +387,43 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         resultById.set(call.id, { output, actionId });
       }
 
-      await Promise.all(plan.parallel.map(runOne));
-      for (const call of plan.serial) {
-        if (signal?.aborted) {
-          resultById.set(call.id, { output: ABORTED_TOOL_OUTPUT });
-          continue;
+      try {
+        await awaitWithAbort(Promise.all(plan.parallel.map(runOne)), signal);
+        for (const call of plan.serial) {
+          if (signal?.aborted) {
+            resultById.set(call.id, { output: ABORTED_TOOL_OUTPUT });
+            continue;
+          }
+          await awaitWithAbort(runOne(call), signal);
         }
-        await runOne(call);
+      } catch (err) {
+        if (!isAbortError(err)) throw err;
+        for (const call of message.tool_calls) {
+          if (!resultById.has(call.id)) {
+            resultById.set(call.id, { output: ABORTED_TOOL_OUTPUT });
+          }
+        }
       }
 
-      for (const call of message.tool_calls) {
-        if (!resultById.has(call.id)) {
-          resultById.set(call.id, { output: ABORTED_TOOL_OUTPUT });
+      if (signal?.aborted) {
+        for (const call of message.tool_calls) {
+          if (!resultById.has(call.id)) {
+            resultById.set(call.id, { output: ABORTED_TOOL_OUTPUT });
+          }
+          const result = resultById.get(call.id);
+          if (!result) continue;
+
+          const toolMsg: ChatMessage = {
+            role: 'tool',
+            tool_call_id: call.id,
+            content: result.output,
+            action_id: result.actionId,
+            turn,
+          };
+          if (tracker) tracker.onToolResult(toolMsg);
+          messages.push(toolMsg);
         }
+        throw new DOMException('Aborted', 'AbortError');
       }
 
       for (const call of message.tool_calls) {
@@ -404,8 +444,6 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
         messages.push(toolMsg);
       }
-
-      throwIfAborted(signal);
 
       const loopDecision = loopGuard.afterToolTurn(turn, turnRecords);
       if (loopDecision.action === 'soft_nudge' && loopDecision.message) {

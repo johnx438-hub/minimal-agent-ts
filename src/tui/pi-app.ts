@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import {
   CombinedAutocompleteProvider,
   Editor,
+  getKeybindings,
   ProcessTerminal,
   Text,
   TUI,
@@ -138,7 +139,8 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
   let lastRunAborted = false;
 
   const resumeEditor = (): void => {
-    editor.disableSubmit = mode === 'running' || mode === 'stopping';
+    // Keep Enter enabled — onSubmit blocks non-slash input while running.
+    editor.disableSubmit = false;
     tui.setFocus(editor);
     tui.requestRender();
   };
@@ -146,7 +148,6 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
   const requestStop = (): void => {
     if (!runtime.isRunning()) return;
     mode = 'stopping';
-    editor.disableSubmit = true;
     presenter.setStopping();
     say('… stopping', true);
     runtime.abort();
@@ -215,11 +216,9 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     if (event.type === 'run_start') {
       mode = 'running';
       lastRunAborted = false;
-      editor.disableSubmit = true;
     }
     if (event.type === 'run_stopping') {
       mode = 'stopping';
-      editor.disableSubmit = true;
     }
     if (event.type === 'compression') {
       fatigueTracker.onCompression(
@@ -240,7 +239,6 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     }
     chat.appendMarkdown(`**›** ${task}`);
     armedWorkflow = null;
-    editor.disableSubmit = true;
     try {
       if (workflowPath) {
         await runtime.runWorkflowTask(task, workflowPath);
@@ -621,6 +619,30 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
   };
 
   tui.start();
+
+  const kb = getKeybindings();
+  tui.addInputListener((data) => {
+    if (mode !== 'running' && mode !== 'stopping') return { data };
+    if (kb.matches(data, 'tui.select.cancel')) {
+      requestStop();
+      return { consume: true };
+    }
+    if (kb.matches(data, 'tui.input.copy')) {
+      requestStop();
+      return { consume: true };
+    }
+    return { data };
+  });
+
+  process.on('SIGINT', () => {
+    if (runtime.isRunning()) {
+      requestStop();
+      return;
+    }
+    runtime.saveIfDirty();
+    tui.stop();
+    void runtime.shutdown().finally(() => process.exit(0));
+  });
 
   if (needsConfirm) {
     await runPiFirstRunConfirm(

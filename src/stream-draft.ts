@@ -62,6 +62,10 @@ export async function invokeLlmTurn(opts: LlmTurnOptions): Promise<LlmResult> {
   const { maxAttempts } = DEFAULT_LLM_RETRY_CONFIG;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (chatOpts.signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+
     const draft = createAssistantDraft(turn);
 
     try {
@@ -76,6 +80,18 @@ export async function invokeLlmTurn(opts: LlmTurnOptions): Promise<LlmResult> {
       });
     } catch (err) {
       const tokensEmitted = draft.text.length > 0;
+      const aborted =
+        (err instanceof DOMException && err.name === 'AbortError') ||
+        (err instanceof Error && err.name === 'AbortError') ||
+        chatOpts.signal?.aborted;
+
+      if (aborted) {
+        if (tokensEmitted) {
+          onStep?.({ type: 'draft_discarded', turn, chars: draft.text.length });
+        }
+        throw err;
+      }
+
       const willRetry =
         attempt < maxAttempts && isRetriableLlmError(err, tokensEmitted);
 

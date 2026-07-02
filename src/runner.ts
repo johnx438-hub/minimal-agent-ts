@@ -625,7 +625,8 @@ export class AgentRuntime {
       this.sessionDirty = true;
       this.saveIfDirty();
 
-      this.emit({ type: 'run_end', reason: 'completed' });
+      const aborted = answer.text === '[aborted]';
+      this.emit({ type: 'run_end', reason: aborted ? 'aborted' : 'completed' });
       return answer;
     } catch (err) {
       if (isAbortError(err)) {
