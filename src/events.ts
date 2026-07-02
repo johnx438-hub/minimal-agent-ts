@@ -138,7 +138,66 @@ export function isAbortError(err: unknown): boolean {
   );
 }
 
+/** One NDJSON line envelope for --json-events consumers. */
+export interface JsonEventEnvelope {
+  ts: number;
+  event: RuntimeEvent;
+}
+
+/** Stable tool_result shape on the JSON stream (display is UI-only in agent messages). */
+export type ToolResultJsonEvent = Extract<AgentStepEvent, { type: 'tool_result' }>;
+
+function isToolResultEvent(event: RuntimeEvent): event is ToolResultJsonEvent {
+  return event.type === 'tool_result';
+}
+
+/**
+ * Normalize events before JSON serialization.
+ * tool_result: always emit call_id/args/output; include display only when present.
+ */
+export function normalizeRuntimeEventForJson(event: RuntimeEvent): RuntimeEvent {
+  if (!isToolResultEvent(event)) return event;
+
+  const normalized: ToolResultJsonEvent = {
+    type: 'tool_result',
+    turn: event.turn,
+    call_id: event.call_id,
+    name: event.name,
+    args: event.args,
+    output: event.output,
+  };
+
+  if (event.preview !== undefined) {
+    normalized.preview = event.preview;
+  }
+  if (event.display !== undefined && event.display.length > 0) {
+    normalized.display = event.display;
+  }
+
+  return normalized;
+}
+
+export function buildJsonEventEnvelope(
+  event: RuntimeEvent,
+  ts: number = Date.now(),
+): JsonEventEnvelope {
+  return { ts, event: normalizeRuntimeEventForJson(event) };
+}
+
+/** Serialize one runtime event as a single NDJSON line. */
+export function serializeRuntimeEvent(event: RuntimeEvent, ts?: number): string {
+  return JSON.stringify(buildJsonEventEnvelope(event, ts));
+}
+
+/** Parse one NDJSON line emitted by serializeRuntimeEvent / emitJsonEvent. */
+export function parseJsonEventLine(line: string): JsonEventEnvelope {
+  const parsed = JSON.parse(line) as JsonEventEnvelope;
+  if (!parsed || typeof parsed.ts !== 'number' || !parsed.event || typeof parsed.event !== 'object') {
+    throw new Error('invalid json event line');
+  }
+  return parsed;
+}
+
 export function emitJsonEvent(event: RuntimeEvent): void {
-  const line = JSON.stringify({ ts: Date.now(), event });
-  process.stdout.write(`${line}\n`);
+  process.stdout.write(`${serializeRuntimeEvent(event)}\n`);
 }

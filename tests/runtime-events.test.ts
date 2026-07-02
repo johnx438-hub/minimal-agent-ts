@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { emitJsonEvent } from '../src/events.js';
+import {
+  buildJsonEventEnvelope,
+  emitJsonEvent,
+  normalizeRuntimeEventForJson,
+  parseJsonEventLine,
+  serializeRuntimeEvent,
+} from '../src/events.js';
 import {
   workflowConfirmEndEvent,
   workflowConfirmStartEvent,
@@ -64,6 +70,66 @@ describe('emitJsonEvent lifecycle', () => {
     } finally {
       process.stdout.write = original;
     }
+  });
+
+  it('serializes tool_result display for --json-events consumers', () => {
+    const event = normalizeRuntimeEventForJson({
+      type: 'tool_result',
+      turn: 2,
+      call_id: 'call_write_1',
+      name: 'write_file',
+      args: '{"path":"src/a.ts","content":"hello"}',
+      output: 'ok: wrote 5 bytes to src/a.ts (new file)',
+      preview: 'ok: wrote 5 bytes to src/a.ts (new file)',
+      display: '--- /dev/null\n+++ b/src/a.ts\n@@ src/a.ts @@\n+ hello',
+    });
+
+    assert.equal(event.type, 'tool_result');
+    if (event.type !== 'tool_result') return;
+    assert.equal(event.call_id, 'call_write_1');
+    assert.match(event.display ?? '', /\+ hello/);
+
+    const line = serializeRuntimeEvent(event, 1_700_000_000_000);
+    const parsed = parseJsonEventLine(line);
+    assert.equal(parsed.ts, 1_700_000_000_000);
+    assert.equal(parsed.event.type, 'tool_result');
+    if (parsed.event.type !== 'tool_result') return;
+    assert.equal(parsed.event.name, 'write_file');
+    assert.equal(parsed.event.output, 'ok: wrote 5 bytes to src/a.ts (new file)');
+    assert.match(parsed.event.display ?? '', /--- \/dev\/null/);
+    assert.match(parsed.event.display ?? '', /\n\+ hello/);
+    assert.match(line, /\\n/); // display newlines are JSON-escaped on the wire
+  });
+
+  it('omits empty tool_result display from json events', () => {
+    const event = normalizeRuntimeEventForJson({
+      type: 'tool_result',
+      turn: 1,
+      call_id: 'call_read_1',
+      name: 'read_file',
+      args: '{"path":"README.md"}',
+      output: '# Title',
+      display: '',
+    });
+    if (event.type !== 'tool_result') return;
+    assert.equal(event.display, undefined);
+
+    const parsed = parseJsonEventLine(serializeRuntimeEvent(event));
+    if (parsed.event.type !== 'tool_result') return;
+    assert.equal('display' in parsed.event, false);
+  });
+
+  it('buildJsonEventEnvelope preserves tool_call call_id', () => {
+    const envelope = buildJsonEventEnvelope({
+      type: 'tool_call',
+      turn: 3,
+      call_id: 'call_edit_9',
+      name: 'edit_file',
+      args: '{"path":"x.ts","old_string":"a","new_string":"b"}',
+    });
+    assert.equal(envelope.event.type, 'tool_call');
+    if (envelope.event.type !== 'tool_call') return;
+    assert.equal(envelope.event.call_id, 'call_edit_9');
   });
 
   it('serializes run_stopping for --json-events consumers', () => {
