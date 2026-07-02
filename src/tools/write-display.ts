@@ -1,9 +1,9 @@
+import { buildUnifiedLineDiff } from './line-diff.js';
+
 /** write_file result formatting — short agent summary + optional UI diff block. */
 
 export const WRITE_DISPLAY_START = '\n[write_display]\n';
 export const WRITE_DISPLAY_END = '\n[/write_display]';
-
-const MAX_DIFF_LINES = 48;
 
 export function splitWriteToolOutput(raw: string): { output: string; display?: string } {
   const start = raw.indexOf(WRITE_DISPLAY_START);
@@ -21,28 +21,20 @@ export function buildWriteDiff(
   newContent: string,
 ): string {
   if (oldContent === null) {
-    const lines = ['--- /dev/null', `+++ ${path}`];
-    for (const line of newContent.split('\n')) {
-      lines.push(`+ ${line}`);
-    }
-    return truncateDiffLines(lines).join('\n');
+    return buildUnifiedLineDiff({
+      path,
+      oldText: '',
+      newText: newContent,
+      oldLabel: '/dev/null',
+      newLabel: `b/${path}`,
+    });
   }
 
-  const lines = [`--- ${path}`, `+++ ${path}`];
-  for (const line of oldContent.split('\n')) {
-    lines.push(`- ${line}`);
-  }
-  for (const line of newContent.split('\n')) {
-    lines.push(`+ ${line}`);
-  }
-  return truncateDiffLines(lines).join('\n');
-}
-
-function truncateDiffLines(lines: string[]): string[] {
-  if (lines.length <= MAX_DIFF_LINES) return lines;
-  const head = lines.slice(0, MAX_DIFF_LINES - 1);
-  head.push(`… (${lines.length - MAX_DIFF_LINES + 1} more diff lines omitted)`);
-  return head;
+  return buildUnifiedLineDiff({
+    path,
+    oldText: oldContent,
+    newText: newContent,
+  });
 }
 
 export function formatWriteToolResult(

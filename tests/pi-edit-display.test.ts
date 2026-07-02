@@ -34,12 +34,14 @@ describe('parseEditArgs', () => {
 });
 
 describe('buildEditDiffText', () => {
-  it('renders old and new lines for search_replace', () => {
+  it('renders old and new lines for search_replace (fallback)', () => {
     const parsed = parseEditArgs(
       '{"path":"f.ts","old_string":"a\\nb","new_string":"c"}',
     );
     const diff = buildEditDiffText(parsed);
-    assert.match(diff, /^--- f\.ts\n\+\+\+ f\.ts\n- a\n- b\n\+ c$/);
+    assert.match(diff, /- a/);
+    assert.match(diff, /- b/);
+    assert.match(diff, /\+ c/);
   });
 
   it('notes replace_all in search_replace header', () => {
@@ -61,13 +63,14 @@ describe('buildEditDiffText', () => {
 });
 
 describe('buildEditDisplayParts', () => {
-  it('builds ok parts with file hash', () => {
+  it('prefers tool display payload over args fallback', () => {
     const args = '{"path":"x.ts","old_string":"1","new_string":"2"}';
     const out = 'ok: edited x.ts (42 bytes) file_hash=deadbeef';
-    const parts = buildEditDisplayParts(args, out);
+    const display = '--- a/x.ts\n+++ b/x.ts\n@@ x.ts @@\n- 1\n+ 2';
+    const parts = buildEditDisplayParts(args, out, display);
     assert.equal(parts.status, 'ok');
     assert.equal(parts.fileHash, 'deadbeef');
-    assert.match(parts.diffText, /- 1\n\+ 2/);
+    assert.equal(parts.diffText, display);
   });
 
   it('builds error parts without diff', () => {

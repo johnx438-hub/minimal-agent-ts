@@ -106,10 +106,16 @@ export class PiToolPresenter {
   }
 
   /** @returns true if handled (caller should skip default rendering). */
-  handleToolResult(name: string, output: string, display?: string): boolean {
+  handleToolResult(
+    name: string,
+    output: string,
+    display?: string,
+    args?: string,
+  ): boolean {
     if (name === 'write_file') {
-      const args = this.writeArgsQueue.shift() ?? '{}';
-      const parts = buildWriteDisplayParts(args, output, display);
+      const queued = this.writeArgsQueue.shift();
+      const argsJson = args ?? queued ?? '{}';
+      const parts = buildWriteDisplayParts(argsJson, output, display);
       this.insertBeforeAnchor(
         new Text(formatWriteSummaryLine(parts), 1, 0, (s) => piChalk.dim(s)),
       );
@@ -121,8 +127,9 @@ export class PiToolPresenter {
     }
 
     if (name === 'edit_file') {
-      const args = this.editArgsQueue.shift() ?? '{}';
-      const parts = buildEditDisplayParts(args, output);
+      const queued = this.editArgsQueue.shift();
+      const argsJson = args ?? queued ?? '{}';
+      const parts = buildEditDisplayParts(argsJson, output, display);
       this.insertBeforeAnchor(
         new Text(formatEditSummaryLine(parts), 1, 0, (s) => piChalk.dim(s)),
       );
@@ -133,14 +140,14 @@ export class PiToolPresenter {
 
     if (name !== 'run_shell') return false;
 
-    const args = this.shellArgsQueue.shift() ?? '{}';
+    const shellArgs = args ?? this.shellArgsQueue.shift() ?? '{}';
     const loader = this.shellLoaders.shift();
     if (loader) {
       loader.stop();
       this.chat.remove(loader);
     }
 
-    const parts = buildShellDisplayParts(args, output);
+    const parts = buildShellDisplayParts(shellArgs, output);
     this.insertBeforeAnchor(
       new Text(formatShellSummaryLine(parts), 1, 0, (s) => piChalk.dim(s)),
     );

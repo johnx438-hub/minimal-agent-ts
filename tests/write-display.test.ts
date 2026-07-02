@@ -12,12 +12,16 @@ import {
 describe('buildWriteDiff', () => {
   it('shows all lines as added for a new file', () => {
     const diff = buildWriteDiff('new.ts', null, 'a\nb');
-    assert.match(diff, /^--- \/dev\/null\n\+\+\+ new\.ts\n\+ a\n\+ b$/);
+    assert.match(diff, /^--- \/dev\/null\n\+\+\+ b\/new\.ts/);
+    assert.match(diff, /\+ a\n\+ b$/);
   });
 
   it('shows removed and added lines on overwrite', () => {
     const diff = buildWriteDiff('f.ts', 'old\nline', 'new');
-    assert.match(diff, /^--- f\.ts\n\+\+\+ f\.ts\n- old\n- line\n\+ new$/);
+    assert.match(diff, /^--- a\/f\.ts\n\+\+\+ b\/f\.ts/m);
+    assert.match(diff, /- old/);
+    assert.match(diff, /- line/);
+    assert.match(diff, /\+ new/);
   });
 });
 
@@ -27,7 +31,8 @@ describe('formatWriteToolResult', () => {
     assert.match(raw, /^ok: wrote 3 bytes to x\.ts \(new file\)/);
     const { output, display } = splitWriteToolOutput(raw);
     assert.equal(output, 'ok: wrote 3 bytes to x.ts (new file)');
-    assert.match(display ?? '', /\+\+\+ x\.ts/);
+    assert.match(display ?? '', /\+\+\+ b\/x\.ts/);
+    assert.match(display ?? '', /\+ abc/);
   });
 
   it('labels overwrite files', () => {

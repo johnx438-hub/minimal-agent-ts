@@ -257,7 +257,14 @@ export class PiEventPresenter {
         }
         break;
       case 'tool_result': {
-        if (!this.toolPresenter.handleToolResult(event.name, event.output, event.display)) {
+        if (
+          !this.toolPresenter.handleToolResult(
+            event.name,
+            event.output,
+            event.display,
+            event.args,
+          )
+        ) {
           const preview = event.preview ?? event.output;
           const shown = preview.length > 400 ? `${preview.slice(0, 400)}…` : preview;
           this.appendRunMeta(`← ${event.name}: ${shown.replace(/\n/g, '\\n')}`);

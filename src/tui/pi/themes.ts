@@ -11,6 +11,17 @@ export const piSelectListTheme: SelectListTheme = {
   noMatch: (text: string) => chalk.dim(text),
 };
 
+function highlightDiffLine(line: string): string {
+  if (line.startsWith('@@')) return chalk.cyan(line);
+  if (line.startsWith('+++')) return chalk.green.bold(line);
+  if (line.startsWith('---')) return chalk.red.bold(line);
+  if (line.startsWith('+ ')) return chalk.green(line);
+  if (line.startsWith('- ')) return chalk.red(line);
+  if (line.startsWith('+')) return chalk.green(line);
+  if (line.startsWith('-')) return chalk.red(line);
+  return chalk.dim(line);
+}
+
 export const piMarkdownTheme: MarkdownTheme = {
   heading: (text: string) => chalk.bold.cyan(text),
   link: (text: string) => chalk.blue(text),
@@ -18,6 +29,12 @@ export const piMarkdownTheme: MarkdownTheme = {
   code: (text: string) => chalk.yellow(text),
   codeBlock: (text: string) => chalk.green(text),
   codeBlockBorder: (text: string) => chalk.dim(text),
+  highlightCode: (code: string, lang?: string) => {
+    if (lang === 'diff') {
+      return code.split('\n').map(highlightDiffLine);
+    }
+    return code.split('\n').map((line) => chalk.green(line));
+  },
   quote: (text: string) => chalk.italic(text),
   quoteBorder: (text: string) => chalk.dim(text),
   hr: (text: string) => chalk.dim(text),

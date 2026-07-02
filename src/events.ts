@@ -41,6 +41,7 @@ export type AgentStepEvent =
       type: 'tool_result';
       turn: number;
       name: string;
+      args: string;
       output: string;
       preview?: string;
       /** Rich TUI payload (e.g. write_file diff); not stored in agent messages. */

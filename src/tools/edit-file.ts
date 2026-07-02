@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 
 import type { AgentConfig, ToolDefinition } from '../types.js';
+import { formatEditToolResult } from './edit-display.js';
 import { hashFileContent } from './file-hash.js';
 import { resolveSafePath } from './path-utils.js';
 
@@ -108,6 +109,10 @@ export async function runEditFileTool(
     return 'error: use either old_string+new_string or start_line+end_line+new_content, not both';
   }
 
+  let oldSnippet = '';
+  let newSnippet = '';
+  let editMode: 'search_replace' | 'line_range' = 'search_replace';
+
   if (hasSearch) {
     const oldString = String(args.old_string);
     const newString = String(args.new_string ?? '');
@@ -122,6 +127,10 @@ export async function runEditFileTool(
     if (matches > 1 && !replaceAll) {
       return `error: old_string matches ${matches} times; narrow the snippet or set replace_all=true`;
     }
+
+    oldSnippet = oldString;
+    newSnippet = newString;
+    editMode = 'search_replace';
 
     content = replaceAll
       ? content.split(oldString).join(newString)
@@ -146,6 +155,10 @@ export async function runEditFileTool(
     const startIdx = startLine - 1;
     const endIdx = Math.min(endLine, lines.length) - 1;
     const replacement = newBlock.split('\n');
+    oldSnippet = lines.slice(startIdx, endIdx + 1).join('\n');
+    newSnippet = newBlock;
+    editMode = 'line_range';
+
     content = [...lines.slice(0, startIdx), ...replacement, ...lines.slice(endIdx + 1)].join(
       '\n',
     );
@@ -157,5 +170,5 @@ export async function runEditFileTool(
   const newHash = hashFileContent(content);
   const byteSize = Buffer.byteLength(content, 'utf8');
 
-  return `ok: edited ${path} (${byteSize} bytes) file_hash=${newHash}`;
+  return formatEditToolResult(path, byteSize, newHash, oldSnippet, newSnippet, editMode);
 }

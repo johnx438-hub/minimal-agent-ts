@@ -110,7 +110,11 @@ function truncateDiffLines(lines: string[]): string[] {
   return head;
 }
 
-export function buildEditDisplayParts(argsJson: string, output: string): EditDisplayParts {
+export function buildEditDisplayParts(
+  argsJson: string,
+  output: string,
+  display?: string,
+): EditDisplayParts {
   const parsed = parseEditArgs(argsJson);
   const status = editStatusFromOutput(output);
   const { fileHash } = parseEditOkOutput(output);
@@ -130,6 +134,8 @@ export function buildEditDisplayParts(argsJson: string, output: string): EditDis
     };
   }
 
+  const diffText = display?.trim() || buildEditDiffText(parsed);
+
   return {
     path: parsed.path,
     mode: parsed.mode,
@@ -139,7 +145,7 @@ export function buildEditDisplayParts(argsJson: string, output: string): EditDis
       parsed.startLine !== undefined
         ? { start: parsed.startLine, end: parsed.endLine ?? parsed.startLine }
         : undefined,
-    diffText: buildEditDiffText(parsed),
+    diffText,
     fileHash,
   };
 }
