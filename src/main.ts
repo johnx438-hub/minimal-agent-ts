@@ -158,6 +158,26 @@ function defsCountMcp(defs: { function: { name: string } }[]): number {
 
 function onRuntimeEvent(event: RuntimeEvent, jsonEvents: boolean): void {
   if (jsonEvents) return;
+  if (event.type === 'permission_prompt_start') {
+    console.error(`permission ▶ ${event.kind} (${event.reason})`);
+    return;
+  }
+  if (event.type === 'permission_prompt_end') {
+    console.error(
+      `permission ${event.approved ? '✓' : '⊗'} ${event.kind} (${event.reason})`,
+    );
+    return;
+  }
+  if (event.type === 'workflow_confirm_start') {
+    console.error(`workflow confirm ▶ ${event.workflow} (awaiting approval)`);
+    return;
+  }
+  if (event.type === 'workflow_confirm_end') {
+    console.error(
+      `workflow confirm ${event.approved ? '✓' : '⊗'} ${event.workflow} (${event.reason})`,
+    );
+    return;
+  }
   if (event.type === 'workflow_step') {
     const round = event.round !== undefined ? ` round ${event.round}` : '';
     console.log(`\n${'═'.repeat(60)}`);
@@ -193,10 +213,14 @@ function onRuntimeEvent(event: RuntimeEvent, jsonEvents: boolean): void {
   }
   if (
     event.type === 'run_start' ||
+    event.type === 'run_stopping' ||
     event.type === 'run_end' ||
     event.type === 'session_saved' ||
     event.type === 'runtime'
   ) {
+    if (event.type === 'run_stopping') {
+      console.error('… stopping (waiting for current step)');
+    }
     return;
   }
   printStepEvent(event);
@@ -231,7 +255,8 @@ async function main(): Promise<void> {
   });
 
   if (workflowPath && confirmWorkflow) {
-    runtime.setWorkflowConfirmFn(async (info) => {
+    runtime.setWorkflowConfirmFn(async (info, signal) => {
+      if (signal?.aborted) return false;
       if (!jsonEvents) {
         console.error(formatWorkflowCheckpoint(info));
         console.error('(--confirm-workflow: proceeding)');
@@ -292,6 +317,17 @@ async function main(): Promise<void> {
   }
 
   runtime.onEvent((event) => onRuntimeEvent(event, jsonEvents));
+
+  process.on('SIGINT', () => {
+    if (runtime.isRunning()) {
+      if (!jsonEvents) {
+        console.error('\n… Ctrl+C abort');
+      }
+      runtime.abort();
+      return;
+    }
+    void runtime.shutdown().finally(() => process.exit(0));
+  });
 
   let finalText: string;
 

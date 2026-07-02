@@ -20,6 +20,7 @@ export function createPiPermissionPrompter(
         { value: 'once', label: 'Once', description: 'Allow once for this run' },
         { value: 'deny', label: 'Deny', description: 'Reject this request' },
       ],
+      { abortSignal: req.abortSignal },
     );
     if (!item || item.value === 'deny') return 'deny';
     if (item.value === 'session') {
@@ -30,12 +31,16 @@ export function createPiPermissionPrompter(
   };
 }
 
-export function createPiWorkflowConfirm(tui: TUI): (info: WorkflowCheckpointInfo) => Promise<boolean> {
-  return async (info) => {
+export function createPiWorkflowConfirm(
+  tui: TUI,
+): (info: WorkflowCheckpointInfo, signal?: AbortSignal) => Promise<boolean> {
+  return async (info, signal) => {
+    if (signal?.aborted) return false;
     const item = await showSelectOverlay(tui, formatWorkflowCheckpoint(info), [
       { value: 'yes', label: 'Run workflow', description: 'Proceed with checkpoint' },
       { value: 'no', label: 'Cancel', description: 'Return to prompt' },
-    ]);
+    ], { abortSignal: signal });
+    if (signal?.aborted) return false;
     return item?.value === 'yes';
   };
 }

@@ -30,6 +30,8 @@ import {
 import {
   buildWorkflowCheckpoint,
   formatWorkflowCheckpoint,
+  workflowConfirmEndEvent,
+  workflowConfirmStartEvent,
   type WorkflowCheckpointInfo,
 } from './workflow-checkpoint.js';
 import type { AgentPluginConfig } from './plugins/types.js';
@@ -103,7 +105,10 @@ export function buildAgentConfig(opts: BuildConfigOptions): {
 
 export type RuntimeListener = (event: RuntimeEvent) => void;
 
-export type WorkflowConfirmFn = (info: WorkflowCheckpointInfo) => Promise<boolean>;
+export type WorkflowConfirmFn = (
+  info: WorkflowCheckpointInfo,
+  signal?: AbortSignal,
+) => Promise<boolean>;
 
 export interface AgentRuntimeOptions {
   cwd: string;
@@ -153,6 +158,7 @@ export class AgentRuntime {
     this.pluginConfig = built.pluginConfig;
     this.jsonEvents = opts.jsonEvents ?? false;
     this.useStream = env('STREAM', '1') !== '0';
+    this.permissionGate.setLifecycle((event) => this.emit(event));
 
     const deferSession = opts.deferSession === true;
 
@@ -423,6 +429,9 @@ export class AgentRuntime {
   }
 
   abort(): void {
+    if (!this.running) return;
+    const sessionId = this.session?.session_id ?? 'unknown';
+    this.emit({ type: 'run_stopping', session_id: sessionId });
     this.abortController.abort();
   }
 
@@ -466,23 +475,6 @@ export class AgentRuntime {
     }
 
     const checkpoint = buildWorkflowCheckpoint(resolved, this.config.cwd);
-    const approved = await this.confirmWorkflowEntry(checkpoint);
-    if (!approved) {
-      return { text: '[workflow cancelled]', messages: session.current_messages };
-    }
-
-    if (checkpoint.needsShell && !(await this.permissionGate.ensureShell(this.config, 'workflow'))) {
-      return {
-        text: '[workflow cancelled: shell not approved]',
-        messages: session.current_messages,
-      };
-    }
-    if (checkpoint.needsWeb && !(await this.permissionGate.ensureWeb(this.config, 'workflow'))) {
-      return {
-        text: '[workflow cancelled: web not approved]',
-        messages: session.current_messages,
-      };
-    }
 
     this.running = true;
     this.abortController = new AbortController();
@@ -494,9 +486,63 @@ export class AgentRuntime {
       cwd: this.config.cwd,
     });
 
-    const runConfig = this.buildRunConfig(signal);
-
     try {
+      this.emit(workflowConfirmStartEvent(checkpoint));
+      const approved = await this.confirmWorkflowEntry(checkpoint, signal);
+      this.emit(workflowConfirmEndEvent(checkpoint, approved, signal));
+      if (!approved) {
+        const aborted = signal.aborted;
+        if (aborted) {
+          this.sessionDirty = true;
+          this.saveIfDirty();
+        }
+        this.emit({
+          type: 'run_end',
+          reason: aborted ? 'aborted' : 'completed',
+          message: aborted ? undefined : 'workflow cancelled',
+        });
+        return {
+          text: aborted ? '[aborted]' : '[workflow cancelled]',
+          messages: session.current_messages,
+        };
+      }
+
+      const runConfig = this.buildRunConfig(signal);
+
+      if (checkpoint.needsShell && !(await this.permissionGate.ensureShell(runConfig, 'workflow'))) {
+        if (signal.aborted) {
+          this.sessionDirty = true;
+          this.saveIfDirty();
+          this.emit({ type: 'run_end', reason: 'aborted' });
+          return { text: '[aborted]', messages: session.current_messages };
+        }
+        this.emit({
+          type: 'run_end',
+          reason: 'completed',
+          message: 'workflow cancelled: shell not approved',
+        });
+        return {
+          text: '[workflow cancelled: shell not approved]',
+          messages: session.current_messages,
+        };
+      }
+      if (checkpoint.needsWeb && !(await this.permissionGate.ensureWeb(runConfig, 'workflow'))) {
+        if (signal.aborted) {
+          this.sessionDirty = true;
+          this.saveIfDirty();
+          this.emit({ type: 'run_end', reason: 'aborted' });
+          return { text: '[aborted]', messages: session.current_messages };
+        }
+        this.emit({
+          type: 'run_end',
+          reason: 'completed',
+          message: 'workflow cancelled: web not approved',
+        });
+        return {
+          text: '[workflow cancelled: web not approved]',
+          messages: session.current_messages,
+        };
+      }
       const wfResult = await runWorkflow({
         workflowPath: resolved,
         userTask: prompt,
@@ -600,9 +646,13 @@ export class AgentRuntime {
     await toolRegistry.shutdown();
   }
 
-  private async confirmWorkflowEntry(info: WorkflowCheckpointInfo): Promise<boolean> {
+  private async confirmWorkflowEntry(
+    info: WorkflowCheckpointInfo,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    if (signal?.aborted) return false;
     if (this.workflowConfirmFn) {
-      return this.workflowConfirmFn(info);
+      return this.workflowConfirmFn(info, signal);
     }
     console.error(formatWorkflowCheckpoint(info));
     console.error(

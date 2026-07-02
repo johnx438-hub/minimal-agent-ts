@@ -46,7 +46,7 @@ const SLASH_AUTOCOMPLETE = SLASH_HELP_LINES.map((line) => {
   return { name, description };
 });
 
-type AppMode = 'confirm' | 'idle' | 'running';
+type AppMode = 'confirm' | 'idle' | 'running' | 'stopping';
 
 export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
   const { runtime } = opts;
@@ -102,7 +102,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     `cwd:     ${runtime.config.cwd}`,
     `session: ${runtime.sessionLabel()}`,
     `shell:   ${shellOn ? 'on' : 'off'}   web: ${webOn ? 'on' : 'off'}`,
-    'slash: /help   Esc aborts while running',
+    'slash: /help   /stop or Esc while running',
   ];
   if (!runtime.hasActiveSession()) {
     bannerLines.push('(no session yet — /resume, /new, or first task)');
@@ -135,16 +135,27 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     chat.appendText(msg, dim);
   };
 
+  let lastRunAborted = false;
+
   const resumeEditor = (): void => {
-    editor.disableSubmit = mode === 'running';
+    editor.disableSubmit = mode === 'running' || mode === 'stopping';
     tui.setFocus(editor);
     tui.requestRender();
+  };
+
+  const requestStop = (): void => {
+    if (!runtime.isRunning()) return;
+    mode = 'stopping';
+    editor.disableSubmit = true;
+    presenter.setStopping();
+    say('… stopping', true);
+    runtime.abort();
   };
 
   const presenter = new PiEventPresenter({
     chat,
     tui,
-    onAbort: () => runtime.abort(),
+    onAbort: () => requestStop(),
   });
 
   runtime.permissionGate.setPrompter(
@@ -173,7 +184,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
 
   const finishRun = async (): Promise<void> => {
     mode = 'idle';
-    if (fatigueTracker.shouldPrompt()) {
+    if (!lastRunAborted && fatigueTracker.shouldPrompt()) {
       const choice = await fatiguePrompter(fatigueTracker.stats());
       fatigueTracker.snooze();
       if (choice === 'handoff') {
@@ -203,6 +214,11 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
   runtime.onEvent((event) => {
     if (event.type === 'run_start') {
       mode = 'running';
+      lastRunAborted = false;
+      editor.disableSubmit = true;
+    }
+    if (event.type === 'run_stopping') {
+      mode = 'stopping';
       editor.disableSubmit = true;
     }
     if (event.type === 'compression') {
@@ -213,6 +229,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     }
     presenter.handle(event);
     if (event.type === 'run_end') {
+      lastRunAborted = event.reason === 'aborted';
       void finishRun();
     }
   });
@@ -243,8 +260,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
 
     if (result.stop) {
       if (runtime.isRunning()) {
-        say('… stopping');
-        runtime.abort();
+        requestStop();
       } else {
         say('(not running)');
       }
@@ -568,10 +584,17 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
   };
 
   editor.onSubmit = (value: string) => {
-    if (mode === 'running') return;
-
     const trimmed = normalizeReplInput(value);
     if (!trimmed) {
+      resumeEditor();
+      return;
+    }
+
+    if (mode === 'running' || mode === 'stopping') {
+      if (isSlashCommand(trimmed)) {
+        void handleSlash(parseSlashLine(trimmed));
+        return;
+      }
       resumeEditor();
       return;
     }

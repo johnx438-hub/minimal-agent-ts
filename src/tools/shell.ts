@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 
+import { sleep } from '../llm-retry.js';
 import { isCapabilityEnabled } from '../permission-gate.js';
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import { resolveSafePath } from './path-utils.js';
@@ -9,10 +10,6 @@ const DEFAULT_POLL_INTERVAL_MS = 2_000;
 const DEFAULT_EXTEND_BY_MS = 30_000;
 const DEFAULT_MAX_TIMEOUT_MS = 300_000;
 const MAX_BUFFER_BYTES = 1024 * 1024;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function clampInt(
   value: unknown,
@@ -69,7 +66,7 @@ function parseShellArgs(args: Record<string, unknown>): ShellRunOptions | string
 
 export async function runShellCommand(opts: ShellRunOptions): Promise<string> {
   if (opts.delayMs > 0) {
-    await sleep(opts.delayMs);
+    await sleep(opts.delayMs, opts.abortSignal);
   }
 
   const startedAt = Date.now();

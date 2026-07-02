@@ -31,7 +31,7 @@ export interface TuiAppOptions {
   allowWeb?: boolean;
 }
 
-type AppMode = 'confirm' | 'idle' | 'running';
+type AppMode = 'confirm' | 'idle' | 'running' | 'stopping';
 
 function printBanner(runtime: AgentRuntime, shellOn: boolean, webOn: boolean): void {
   console.log('─'.repeat(60));
@@ -43,7 +43,7 @@ function printBanner(runtime: AgentRuntime, shellOn: boolean, webOn: boolean): v
     console.log('  (lazy — /resume, /new, or first task creates a session)');
   }
   console.log(`shell:   ${shellOn ? 'on' : 'off'}   web: ${webOn ? 'on' : 'off'}`);
-  console.log('slash:   /help   while running: Ctrl+C to abort');
+  console.log('slash:   /help   while running: /stop, Esc, or Ctrl+C to abort');
   console.log('─'.repeat(60));
 }
 
@@ -158,11 +158,18 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
   };
 
   const fatigueTracker = new CompressionFatigueTracker();
+  let lastRunAborted = false;
+
+  const requestStop = (): void => {
+    if (!runtime.isRunning()) return;
+    mode = 'stopping';
+    console.log('… stopping');
+    runtime.abort();
+  };
 
   const finishRun = async (): Promise<void> => {
     mode = 'idle';
-    rl.resume();
-    if (fatigueTracker.shouldPrompt()) {
+    if (!lastRunAborted && fatigueTracker.shouldPrompt()) {
       rl.pause();
       const choice = await createFatiguePrompter(fatigueTracker.stats())();
       fatigueTracker.snooze();
@@ -196,8 +203,12 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
   runtime.onEvent((event) => {
     if (event.type === 'run_start') {
       mode = 'running';
-      rl.pause();
-      console.log('(input paused — Ctrl+C to abort)');
+      lastRunAborted = false;
+      console.log('(running — /stop or Ctrl+C to abort; other slash commands still work)');
+    }
+    if (event.type === 'run_stopping') {
+      mode = 'stopping';
+      console.log('… stopping (waiting for current step)');
     }
     if (event.type === 'compression') {
       fatigueTracker.onCompression(
@@ -207,6 +218,7 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
     }
     printRuntimeEvent(event);
     if (event.type === 'run_end') {
+      lastRunAborted = event.reason === 'aborted';
       void finishRun();
     }
   });
@@ -218,8 +230,7 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
 
     if (result.stop) {
       if (runtime.isRunning()) {
-        console.log('… stopping');
-        runtime.abort();
+        requestStop();
       } else {
         console.log('(not running)');
       }
@@ -604,6 +615,16 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
       return;
     }
 
+    if (mode === 'running' || mode === 'stopping') {
+      if (isSlashCommand(trimmed)) {
+        void handleSlash(parseSlashLine(trimmed));
+        return;
+      }
+      console.log('Busy — /stop or Ctrl+C first');
+      showPrompt();
+      return;
+    }
+
     if (isSlashCommand(trimmed)) {
       void handleSlash(parseSlashLine(trimmed));
       return;
@@ -615,7 +636,7 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
   process.on('SIGINT', () => {
     if (runtime.isRunning()) {
       console.log('\n… Ctrl+C abort');
-      runtime.abort();
+      requestStop();
       return;
     }
     runtime.saveIfDirty();

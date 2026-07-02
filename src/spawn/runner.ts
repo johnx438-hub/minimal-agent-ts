@@ -1,4 +1,5 @@
 import type { AgentStepEvent } from '../events.js';
+import { isAbortError } from '../events.js';
 import { isCapabilityEnabled } from '../permission-gate.js';
 import type { AgentConfig } from '../types.js';
 import type { SpawnLifecycleEvent } from '../types.js';
@@ -39,6 +40,7 @@ export async function runSpawnAgent(opts: RunSpawnOptions): Promise<string> {
       !gate ||
       !(await gate.ensureShell(parentConfig, `spawn preset "${preset.name}" needs run_shell`))
     ) {
+      if (parentConfig.abortSignal?.aborted) return '[aborted]';
       return `error: preset "${preset.name}" requires run_shell; enable shell or approve when prompted`;
     }
   }
@@ -48,6 +50,7 @@ export async function runSpawnAgent(opts: RunSpawnOptions): Promise<string> {
       !gate ||
       !(await gate.ensureWeb(parentConfig, `spawn preset "${preset.name}" needs web_fetch`))
     ) {
+      if (parentConfig.abortSignal?.aborted) return '[aborted]';
       return `error: preset "${preset.name}" requires web_fetch; enable web or approve when prompted`;
     }
   }
@@ -57,9 +60,27 @@ export async function runSpawnAgent(opts: RunSpawnOptions): Promise<string> {
     return 'error: task is required';
   }
 
-  const release = await getSpawnSemaphore().acquire();
+  if (parentConfig.abortSignal?.aborted) {
+    return '[aborted]';
+  }
+
+  const release = await getSpawnSemaphore().acquire(parentConfig.abortSignal);
   try {
+    if (parentConfig.abortSignal?.aborted) {
+      return '[aborted]';
+    }
     return await runSpawnAgentInner({ preset, task: trimmed, parentConfig, depth });
+  } catch (err) {
+    if (isAbortError(err)) {
+      emitSpawnLifecycle(parentConfig, {
+        phase: 'end',
+        preset: preset.name,
+        ok: false,
+        detail: 'aborted',
+      });
+      return '[aborted]';
+    }
+    throw err;
   } finally {
     release();
   }
@@ -104,9 +125,28 @@ async function runSpawnAgentInner(opts: {
       onStep,
     });
 
+    if (result.text === '[aborted]') {
+      emitSpawnLifecycle(parentConfig, {
+        phase: 'end',
+        preset: preset.name,
+        ok: false,
+        detail: 'aborted',
+      });
+      return '[aborted]';
+    }
+
     emitSpawnLifecycle(parentConfig, { phase: 'end', preset: preset.name, ok: true });
     return result.text || '(empty reply from sub-agent)';
   } catch (err) {
+    if (isAbortError(err)) {
+      emitSpawnLifecycle(parentConfig, {
+        phase: 'end',
+        preset: preset.name,
+        ok: false,
+        detail: 'aborted',
+      });
+      return '[aborted]';
+    }
     const msg = err instanceof Error ? err.message : String(err);
     emitSpawnLifecycle(parentConfig, {
       phase: 'end',

@@ -2,7 +2,6 @@ import { saveSessionThrottled } from '../session.js';
 import { runAgent } from '../agent.js';
 import type { AgentStepEvent } from '../events.js';
 
-import { isCapabilityEnabled } from '../permission-gate.js';
 import type { AgentConfig, SessionFile } from '../types.js';
 import { loadWorkflowDefinition } from './load-workflow.js';
 import { resolveWorkflowRole } from './load-role.js';
@@ -46,6 +45,44 @@ function roleNeedsShell(role: ResolvedWorkflowRole): boolean {
   return role.tools.includes('run_shell');
 }
 
+function roleNeedsWeb(role: ResolvedWorkflowRole): boolean {
+  return role.tools.includes('web_fetch');
+}
+
+async function ensureRoleCapabilities(
+  role: ResolvedWorkflowRole,
+  roleName: string,
+  config: AgentConfig,
+): Promise<void> {
+  if (config.abortSignal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
+  }
+
+  const gate = config.permissionGate;
+
+  if (roleNeedsShell(role)) {
+    if (!gate || !(await gate.ensureShell(config, `workflow role "${roleName}" needs run_shell`))) {
+      if (config.abortSignal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+      throw new Error(
+        `Role "${roleName}" requires run_shell. Use /shell on, /approve always shell, or --allow-shell.`,
+      );
+    }
+  }
+
+  if (roleNeedsWeb(role)) {
+    if (!gate || !(await gate.ensureWeb(config, `workflow role "${roleName}" needs web_fetch`))) {
+      if (config.abortSignal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+      throw new Error(
+        `Role "${roleName}" requires web_fetch. Use /web on, /approve always web, or --allow-web.`,
+      );
+    }
+  }
+}
+
 export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowResult> {
   const { workflowPath, userTask, config, session, stream, onStep, onWorkflowStep } = opts;
   const definition = loadWorkflowDefinition(workflowPath, config.cwd);
@@ -80,11 +117,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
       throw new Error(`Unknown workflow role: ${step.role}`);
     }
 
-    if (roleNeedsShell(role) && !isCapabilityEnabled(config, 'shell')) {
-      throw new Error(
-        `Role "${step.role}" requires run_shell. Use /shell on, /approve always shell, or --allow-shell.`,
-      );
-    }
+    await ensureRoleCapabilities(role, step.role, config);
 
     const prompt = renderWorkflowTemplate(step.input, ctx);
     onWorkflowStep?.({ phase, role: step.role, round, input: prompt });

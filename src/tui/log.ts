@@ -47,6 +47,10 @@ export function printRuntimeEvent(event: RuntimeEvent): void {
       console.log(`  cwd: ${event.cwd}`);
       break;
 
+    case 'run_stopping':
+      console.log('… stopping (waiting for current step)');
+      break;
+
     case 'run_end':
       if (event.reason === 'aborted') {
         console.log('\n⊗ run aborted (session saved)');
@@ -64,6 +68,30 @@ export function printRuntimeEvent(event: RuntimeEvent): void {
 
     case 'runtime':
       console.log(`⚙ shell:${event.shell ? 'on' : 'off'} web:${event.web ? 'on' : 'off'}`);
+      break;
+
+    case 'permission_prompt_start':
+      console.log(`permission ▶ ${event.kind} (${event.reason})`);
+      break;
+
+    case 'permission_prompt_end':
+      console.log(
+        `permission ${event.approved ? '✓' : '⊗'} ${event.kind} (${event.reason})`,
+      );
+      break;
+
+    case 'workflow_confirm_start':
+      console.log(`workflow confirm ▶ ${event.workflow} (awaiting approval)`);
+      console.log(`  path: ${event.path}`);
+      console.log(
+        `  shell: ${event.needs_shell ? 'required' : 'not required'}  web: ${event.needs_web ? 'required' : 'not required'}`,
+      );
+      break;
+
+    case 'workflow_confirm_end':
+      console.log(
+        `workflow confirm ${event.approved ? '✓' : '⊗'} ${event.workflow} (${event.reason})`,
+      );
       break;
 
     case 'workflow_step': {

@@ -302,6 +302,7 @@ function concatChunks(chunks: Uint8Array[]): Uint8Array {
 export async function readBodyWithByteLimit(
   stream: ReadableStream<Uint8Array>,
   maxBytes: number,
+  abortSignal?: AbortSignal,
 ): Promise<string> {
   const reader = stream.getReader();
   const chunks: Uint8Array[] = [];
@@ -309,6 +310,10 @@ export async function readBodyWithByteLimit(
 
   try {
     while (true) {
+      if (abortSignal?.aborted) {
+        await reader.cancel().catch(() => undefined);
+        throw new DOMException('Aborted', 'AbortError');
+      }
       const { done, value } = await reader.read();
       if (done) break;
       if (!value || value.byteLength === 0) continue;
@@ -348,39 +353,40 @@ function appendStdoutBounded(
   return { text: current + partial, tooLarge: true };
 }
 
+function fetchAbortSignal(timeoutMs: number, external?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return external ? AbortSignal.any([timeout, external]) : timeout;
+}
+
 async function fetchHttp(
   url: string,
   timeoutMs: number,
   userAgent: string,
   maxBytes: number,
+  abortSignal?: AbortSignal,
 ): Promise<{ status: number; body: string; contentType: string }> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'User-Agent': userAgent,
-      },
-      redirect: 'follow',
-    });
+  const signal = fetchAbortSignal(timeoutMs, abortSignal);
+  const res = await fetch(url, {
+    signal,
+    headers: {
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'User-Agent': userAgent,
+    },
+    redirect: 'follow',
+  });
 
-    const tooLarge = checkContentLengthHeader(res.headers.get('content-length'), maxBytes);
-    if (tooLarge) throw tooLarge;
+  const tooLarge = checkContentLengthHeader(res.headers.get('content-length'), maxBytes);
+  if (tooLarge) throw tooLarge;
 
-    const contentType = res.headers.get('content-type') ?? '';
-    const body = res.body
-      ? await readBodyWithByteLimit(res.body, maxBytes)
-      : await res.text();
-    if (!res.body && Buffer.byteLength(body, 'utf8') > maxBytes) {
-      throw new WebFetchResponseTooLargeError(Buffer.byteLength(body, 'utf8'), maxBytes);
-    }
-    return { status: res.status, body, contentType };
-  } finally {
-    clearTimeout(timer);
+  const contentType = res.headers.get('content-type') ?? '';
+  const body = res.body
+    ? await readBodyWithByteLimit(res.body, maxBytes, abortSignal)
+    : await res.text();
+  if (!res.body && Buffer.byteLength(body, 'utf8') > maxBytes) {
+    throw new WebFetchResponseTooLargeError(Buffer.byteLength(body, 'utf8'), maxBytes);
   }
+  return { status: res.status, body, contentType };
 }
 
 function discoverCloakScript(configured?: string): string | undefined {
@@ -407,7 +413,11 @@ function cloakPython(configured?: string): string {
   return 'python3';
 }
 
-async function runCloakFetch(url: string, policy: ReturnType<typeof resolvedPolicy>): Promise<string> {
+async function runCloakFetch(
+  url: string,
+  policy: ReturnType<typeof resolvedPolicy>,
+  abortSignal?: AbortSignal,
+): Promise<string> {
   const script = discoverCloakScript(policy.cloak_fetch_script);
   if (!script) {
     return [
@@ -443,8 +453,15 @@ async function runCloakFetch(url: string, policy: ReturnType<typeof resolvedPoli
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      abortSignal?.removeEventListener('abort', onAbort);
       resolvePromise(value);
     };
+
+    const onAbort = (): void => {
+      child.kill('SIGTERM');
+      finish('error: cloak_fetch aborted');
+    };
+    abortSignal?.addEventListener('abort', onAbort, { once: true });
 
     child.stdout.on('data', (chunk: Buffer) => {
       const next = appendStdoutBounded(stdout, chunk, maxBytes);
@@ -509,6 +526,7 @@ export async function runWebFetchTool(
       timeoutMs,
       policy.user_agent,
       policy.max_response_bytes,
+      config.abortSignal,
     );
 
     if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
@@ -537,7 +555,7 @@ export async function runWebFetchTool(
       ].join(' ');
     }
 
-    const cloakOut = await runCloakFetch(url, policy);
+    const cloakOut = await runCloakFetch(url, policy, config.abortSignal);
     if (cloakOut.startsWith('error:')) return cloakOut;
 
     const titleMatch = cloakOut.match(/^#\s+(.+)/m);
@@ -547,8 +565,17 @@ export async function runWebFetchTool(
     if (err instanceof WebFetchResponseTooLargeError) {
       return `error: ${err.message}`;
     }
+    if (
+      (err instanceof DOMException && err.name === 'AbortError') ||
+      (err instanceof Error && err.name === 'AbortError')
+    ) {
+      if (config.abortSignal?.aborted) {
+        return 'error: fetch aborted';
+      }
+      return `error: fetch timed out after ${timeoutMs}ms`;
+    }
     const msg = err instanceof Error ? err.message : String(err);
-    if (/aborted|timeout/i.test(msg)) {
+    if (/timeout/i.test(msg)) {
       return `error: fetch timed out after ${timeoutMs}ms`;
     }
     return `error: fetch failed: ${msg}`;

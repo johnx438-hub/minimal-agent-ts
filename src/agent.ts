@@ -59,6 +59,14 @@ const DEFAULT_LOOP_GUARD: LoopGuardConfig = {
   hardCeiling: 200,
 };
 
+const ABORTED_TOOL_OUTPUT = '[aborted]';
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
+  }
+}
+
 function stripSystemMessages(msgs: ChatMessage[]): ChatMessage[] {
   return msgs.filter((m) => m.role !== 'system');
 }
@@ -295,6 +303,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
     onStep?.({ type: 'llm_done', turn, finishReason, usage });
 
     if (message.tool_calls && message.tool_calls.length > 0) {
+      throwIfAborted(signal);
+
       const assistantMsg: ChatMessage = {
         role: 'assistant',
         content: message.content,
@@ -331,6 +341,11 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
       const turnRecords: ToolTurnRecord[] = [];
 
       async function runOne(call: ToolCall): Promise<void> {
+        if (signal?.aborted) {
+          resultById.set(call.id, { output: ABORTED_TOOL_OUTPUT });
+          return;
+        }
+
         const name = call.function.name;
         const args = call.function.arguments;
 
@@ -358,7 +373,17 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
       await Promise.all(plan.parallel.map(runOne));
       for (const call of plan.serial) {
+        if (signal?.aborted) {
+          resultById.set(call.id, { output: ABORTED_TOOL_OUTPUT });
+          continue;
+        }
         await runOne(call);
+      }
+
+      for (const call of message.tool_calls) {
+        if (!resultById.has(call.id)) {
+          resultById.set(call.id, { output: ABORTED_TOOL_OUTPUT });
+        }
       }
 
       for (const call of message.tool_calls) {
@@ -379,6 +404,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
         messages.push(toolMsg);
       }
+
+      throwIfAborted(signal);
 
       const loopDecision = loopGuard.afterToolTurn(turn, turnRecords);
       if (loopDecision.action === 'soft_nudge' && loopDecision.message) {

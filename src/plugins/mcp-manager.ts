@@ -1,5 +1,6 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
 import type { McpPolicy, McpServerConfig, McpToolBinding } from './types.js';
 
@@ -112,11 +113,28 @@ export class McpManager {
           toolName: tool.name,
           description: tool.description ?? `MCP tool ${tool.name} from ${server.name}`,
           parameters: inputSchema,
-          call: async (args) => {
+          call: async (args, signal) => {
+            if (signal?.aborted) return '[aborted]';
             const active = this.clients.get(server.name);
             if (!active) return `error: MCP server disconnected: ${server.name}`;
-            const result = await active.callTool({ name: tool.name, arguments: args });
-            return formatToolResult(result);
+            try {
+              const result = await active.callTool(
+                { name: tool.name, arguments: args },
+                CallToolResultSchema,
+                { signal },
+              );
+              return formatToolResult(result);
+            } catch (err) {
+              if (
+                (err instanceof DOMException && err.name === 'AbortError') ||
+                (err instanceof Error && err.name === 'AbortError') ||
+                signal?.aborted
+              ) {
+                return '[aborted]';
+              }
+              const msg = err instanceof Error ? err.message : String(err);
+              return `error: MCP tool failed: ${msg}`;
+            }
           },
         });
       }

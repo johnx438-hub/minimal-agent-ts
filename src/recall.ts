@@ -130,10 +130,18 @@ function scoreAction(block: ActionBlock, query: string): number {
   return score;
 }
 
+function throwIfAborted(config: AgentConfig): void {
+  if (config.abortSignal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
+  }
+}
+
 async function resolveActionBlock(
   params: RecallQueryParams,
   config: AgentConfig,
 ): Promise<ActionBlock | null> {
+  throwIfAborted(config);
+
   if (params.action_id) {
     const block = loadAction(params.action_id);
     if (!block) return null;
@@ -154,8 +162,10 @@ async function resolveActionBlock(
     taskId,
     topk: 5,
   });
+  throwIfAborted(config);
 
   for (const id of indexedIds) {
+    throwIfAborted(config);
     const block = loadAction(id);
     if (block) return block;
   }
@@ -169,6 +179,7 @@ async function resolveActionBlock(
   let best: ActionBlock | null = null;
   let bestScore = 0;
   for (const block of candidates) {
+    throwIfAborted(config);
     const s = scoreAction(block, query);
     if (s > bestScore) {
       bestScore = s;
@@ -183,9 +194,39 @@ export async function recallQuery(
   params: RecallQueryParams,
   config: AgentConfig,
 ): Promise<RecallResult> {
+  if (config.abortSignal?.aborted) {
+    return {
+      action_id: params.action_id ?? '',
+      tool_name: '',
+      matched: false,
+      content: '[aborted]',
+      total_chars: 0,
+      has_more: false,
+    };
+  }
+
   const autoFullMaxChars =
     config.recallAutoFullMaxChars ?? DEFAULT_AUTO_FULL_MAX_CHARS;
-  const block = await resolveActionBlock(params, config);
+
+  let block: ActionBlock | null;
+  try {
+    block = await resolveActionBlock(params, config);
+  } catch (err) {
+    if (
+      (err instanceof DOMException && err.name === 'AbortError') ||
+      config.abortSignal?.aborted
+    ) {
+      return {
+        action_id: params.action_id ?? '',
+        tool_name: '',
+        matched: false,
+        content: '[aborted]',
+        total_chars: 0,
+        has_more: false,
+      };
+    }
+    throw err;
+  }
   const format = resolveRecallFormat(params, block, autoFullMaxChars);
 
   if (!block) {

@@ -58,6 +58,9 @@ export class PiEventPresenter {
       case 'run_start':
         this.beginRun(event.session_id, event.cwd);
         break;
+      case 'run_stopping':
+        this.setStopping();
+        break;
       case 'run_end':
         this.endRun(event.reason, event.message);
         break;
@@ -68,6 +71,24 @@ export class PiEventPresenter {
         this.chat.appendText(
           `⚙ shell:${event.shell ? 'on' : 'off'} web:${event.web ? 'on' : 'off'}`,
           true,
+        );
+        break;
+      case 'permission_prompt_start':
+        this.appendRunMeta(`permission ▶ ${event.kind} (${event.reason})`);
+        break;
+      case 'permission_prompt_end':
+        this.appendRunMeta(
+          `permission ${event.approved ? '✓' : '⊗'} ${event.kind} (${event.reason})`,
+        );
+        break;
+      case 'workflow_confirm_start':
+        this.appendRunMeta(
+          `workflow confirm ▶ ${event.workflow}\n  shell:${event.needs_shell ? 'required' : 'no'} web:${event.needs_web ? 'required' : 'no'}`,
+        );
+        break;
+      case 'workflow_confirm_end':
+        this.appendRunMeta(
+          `workflow confirm ${event.approved ? '✓' : '⊗'} ${event.workflow} (${event.reason})`,
         );
         break;
       case 'workflow_step': {
@@ -133,6 +154,11 @@ export class PiEventPresenter {
     }
     this.streamMd = comp;
     return comp;
+  }
+
+  setStopping(): void {
+    this.loader?.setMessage('Stopping… (waiting for current step)');
+    this.tui.requestRender();
   }
 
   private beginRun(sessionId: string, cwd: string): void {

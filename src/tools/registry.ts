@@ -199,6 +199,10 @@ export class ToolRegistry {
     }
 
     try {
+      if (config.abortSignal?.aborted) {
+        return '[aborted]';
+      }
+
       const allowlist = config.toolAllowlist;
       if (allowlist?.length && !this.isToolAllowed(name, allowlist)) {
         return `error: tool ${name} is not allowed for this role`;
@@ -221,12 +225,14 @@ export class ToolRegistry {
         if (name === 'run_shell' && !isCapabilityEnabled(config, 'shell')) {
           const gate = config.permissionGate;
           if (!gate || !(await gate.ensureShell(config, 'run_shell'))) {
+            if (config.abortSignal?.aborted) return '[aborted]';
             return 'error: run_shell is disabled. Use /shell on or approve when prompted.';
           }
         }
         if (name === 'web_fetch' && !isCapabilityEnabled(config, 'web')) {
           const gate = config.permissionGate;
           if (!gate || !(await gate.ensureWeb(config, 'web_fetch'))) {
+            if (config.abortSignal?.aborted) return '[aborted]';
             return 'error: web_fetch is disabled. Use /web on or approve when prompted.';
           }
         }
@@ -236,7 +242,7 @@ export class ToolRegistry {
 
       const mcp = this.mcpBindings.find((b) => b.apiName === name);
       if (mcp) {
-        return await mcp.call(args);
+        return await mcp.call(args, config.abortSignal);
       }
 
       return `error: unknown tool ${name}`;

@@ -1,14 +1,95 @@
-import { execFile } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 
+import { isAbortError } from '../events.js';
 import { loadAction } from '../action-store.js';
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import { resolveSafePath } from './path-utils.js';
 
-const execFileAsync = promisify(execFile);
+const GREP_TIMEOUT_MS = 30_000;
+const MAX_BUFFER_BYTES = 1024 * 1024;
+
+function abortedOutput(signal?: AbortSignal): string | null {
+  return signal?.aborted ? '[aborted]' : null;
+}
+
+interface ExecResult {
+  stdout: string;
+  stderr: string;
+  code: number | null;
+}
+
+function execFileAbortable(
+  command: string,
+  args: string[],
+  opts: {
+    cwd?: string;
+    timeoutMs: number;
+    abortSignal?: AbortSignal;
+  },
+): Promise<ExecResult> {
+  return new Promise((resolve, reject) => {
+    if (opts.abortSignal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+
+    const child = spawn(command, args, {
+      cwd: opts.cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+
+    const finish = (result: ExecResult): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      opts.abortSignal?.removeEventListener('abort', onAbort);
+      resolve(result);
+    };
+
+    const fail = (err: Error): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      opts.abortSignal?.removeEventListener('abort', onAbort);
+      if (child.exitCode === null) child.kill('SIGTERM');
+      reject(err);
+    };
+
+    const onAbort = (): void => {
+      if (child.exitCode === null) child.kill('SIGTERM');
+      fail(new DOMException('Aborted', 'AbortError'));
+    };
+    opts.abortSignal?.addEventListener('abort', onAbort, { once: true });
+
+    const timer = setTimeout(() => {
+      if (child.exitCode === null) child.kill('SIGTERM');
+      fail(new Error(`command timed out after ${opts.timeoutMs}ms`));
+    }, opts.timeoutMs);
+
+    const append = (chunk: Buffer, target: 'stdout' | 'stderr'): void => {
+      const text = chunk.toString();
+      const next = (target === 'stdout' ? stdout : stderr) + text;
+      if (Buffer.byteLength(next, 'utf8') > MAX_BUFFER_BYTES) {
+        fail(new Error(`output exceeded ${MAX_BUFFER_BYTES} bytes`));
+        return;
+      }
+      if (target === 'stdout') stdout = next;
+      else stderr = next;
+    };
+
+    child.stdout?.on('data', (chunk: Buffer) => append(chunk, 'stdout'));
+    child.stderr?.on('data', (chunk: Buffer) => append(chunk, 'stderr'));
+    child.on('error', (err) => fail(err));
+    child.on('close', (code) => finish({ stdout, stderr, code }));
+  });
+}
 
 export const EXPLORE_DEFINITIONS: ToolDefinition[] = [
   {
@@ -65,12 +146,20 @@ export const EXPLORE_DEFINITIONS: ToolDefinition[] = [
 ];
 
 async function grepSearch(args: Record<string, unknown>, config: AgentConfig): Promise<string> {
+  const aborted = abortedOutput(config.abortSignal);
+  if (aborted) return aborted;
+
   const pattern = String(args.pattern ?? '');
   const rel = String(args.path ?? '.');
   const searchPath = resolveSafePath(config.cwd, rel);
   const glob = args.glob ? String(args.glob) : undefined;
   const context = args.context_lines === undefined ? 0 : Number(args.context_lines);
   const maxMatches = args.max_matches === undefined ? 50 : Number(args.max_matches);
+  const execOpts = {
+    cwd: config.cwd,
+    timeoutMs: GREP_TIMEOUT_MS,
+    abortSignal: config.abortSignal,
+  };
 
   const rgArgs = ['--no-heading', '--line-number', '-m', String(maxMatches)];
   if (context > 0) rgArgs.push('-C', String(context));
@@ -78,28 +167,21 @@ async function grepSearch(args: Record<string, unknown>, config: AgentConfig): P
   rgArgs.push(pattern, searchPath);
 
   try {
-    const { stdout } = await execFileAsync('rg', rgArgs, {
-      cwd: config.cwd,
-      maxBuffer: 1024 * 1024,
-      timeout: 30_000,
-    });
+    const { stdout, code } = await execFileAbortable('rg', rgArgs, execOpts);
+    if (code === 1) return '(no matches)';
     const out = stdout.trim();
     return out || '(no matches)';
   } catch (err) {
-    const code = err && typeof err === 'object' && 'code' in err ? err.code : null;
-    if (code === 1) return '(no matches)';
+    if (isAbortError(err) || config.abortSignal?.aborted) return '[aborted]';
     // fallback grep
     const grepArgs = ['-rn', pattern, searchPath];
     try {
-      const { stdout } = await execFileAsync('grep', grepArgs, {
-        maxBuffer: 1024 * 1024,
-        timeout: 30_000,
-      });
+      const { stdout, code } = await execFileAbortable('grep', grepArgs, execOpts);
+      if (code === 1) return '(no matches)';
       const lines = stdout.trim().split('\n').slice(0, maxMatches);
       return lines.join('\n') || '(no matches)';
     } catch (grepErr) {
-      const gCode = grepErr && typeof grepErr === 'object' && 'code' in grepErr ? grepErr.code : null;
-      if (gCode === 1) return '(no matches)';
+      if (isAbortError(grepErr) || config.abortSignal?.aborted) return '[aborted]';
       const msg = err instanceof Error ? err.message : String(err);
       return `error: grep failed: ${msg}`;
     }
@@ -113,13 +195,20 @@ async function listTree(
   maxDepth: number,
   includeHidden: boolean,
   lines: string[],
+  abortSignal?: AbortSignal,
 ): Promise<void> {
+  if (abortSignal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
+  }
   if (depth > maxDepth) return;
 
   const entries = await readdir(dir, { withFileTypes: true });
   const sorted = entries.sort((a, b) => a.name.localeCompare(b.name));
 
   for (const entry of sorted) {
+    if (abortSignal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
     if (!includeHidden && entry.name.startsWith('.')) continue;
     if (entry.name === 'node_modules') continue;
 
@@ -132,20 +221,29 @@ async function listTree(
         maxDepth,
         includeHidden,
         lines,
+        abortSignal,
       );
     }
   }
 }
 
 async function listFiles(args: Record<string, unknown>, config: AgentConfig): Promise<string> {
+  const aborted = abortedOutput(config.abortSignal);
+  if (aborted) return aborted;
+
   const rel = String(args.path ?? '.');
   const dir = resolveSafePath(config.cwd, rel);
   const maxDepth = args.max_depth === undefined ? 3 : Number(args.max_depth);
   const includeHidden = args.include_hidden === true;
 
-  const lines: string[] = [`${rel}/`];
-  await listTree(dir, '  ', 1, maxDepth, includeHidden, lines);
-  return lines.join('\n');
+  try {
+    const lines: string[] = [`${rel}/`];
+    await listTree(dir, '  ', 1, maxDepth, includeHidden, lines, config.abortSignal);
+    return lines.join('\n');
+  } catch (err) {
+    if (isAbortError(err) || config.abortSignal?.aborted) return '[aborted]';
+    throw err;
+  }
 }
 
 function resolveBeforeText(
@@ -170,33 +268,35 @@ function resolveBeforeText(
   return action.result_text;
 }
 
-async function unifiedDiff(before: string, after: string, label: string): Promise<string> {
+async function unifiedDiff(
+  before: string,
+  after: string,
+  label: string,
+  abortSignal?: AbortSignal,
+): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'ma-diff-'));
   const beforePath = join(dir, 'before');
   const afterPath = join(dir, 'after');
   try {
     await writeFile(beforePath, before, 'utf8');
     await writeFile(afterPath, after, 'utf8');
-    try {
-      const { stdout } = await execFileAsync(
-        'diff',
-        ['-u', '--label', `${label} (before)`, '--label', `${label} (after)`, beforePath, afterPath],
-        { maxBuffer: 1024 * 1024 },
-      );
-      return stdout.trim() || '(no differences)';
-    } catch (err) {
-      if (err && typeof err === 'object' && 'stdout' in err && typeof err.stdout === 'string') {
-        const out = err.stdout.trim();
-        return out || '(no differences)';
-      }
-      throw err;
-    }
+    const { stdout, code } = await execFileAbortable(
+      'diff',
+      ['-u', '--label', `${label} (before)`, '--label', `${label} (after)`, beforePath, afterPath],
+      { timeoutMs: GREP_TIMEOUT_MS, abortSignal },
+    );
+    if (code === 0) return '(no differences)';
+    if (code === 1) return stdout.trim() || '(no differences)';
+    return `error: diff failed (exit ${code ?? 'null'})`;
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 }
 
 async function diffFile(args: Record<string, unknown>, config: AgentConfig): Promise<string> {
+  const aborted = abortedOutput(config.abortSignal);
+  if (aborted) return aborted;
+
   const path = String(args.path ?? '');
   const file = resolveSafePath(config.cwd, path);
   const after = await readFile(file, 'utf8');
@@ -207,9 +307,14 @@ async function diffFile(args: Record<string, unknown>, config: AgentConfig): Pro
       args.before_text !== undefined ? String(args.before_text) : undefined,
     ) ?? '';
 
-  const diff = await unifiedDiff(before, after, path);
-  const max = 8000;
-  return diff.length > max ? `${diff.slice(0, max)}\n...(truncated)` : diff;
+  try {
+    const diff = await unifiedDiff(before, after, path, config.abortSignal);
+    const max = 8000;
+    return diff.length > max ? `${diff.slice(0, max)}\n...(truncated)` : diff;
+  } catch (err) {
+    if (isAbortError(err) || config.abortSignal?.aborted) return '[aborted]';
+    throw err;
+  }
 }
 
 export async function runExploreTool(

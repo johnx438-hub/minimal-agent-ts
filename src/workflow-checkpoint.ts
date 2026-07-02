@@ -53,6 +53,55 @@ export function buildWorkflowCheckpoint(workflowPath: string, cwd: string): Work
   };
 }
 
+export function workflowConfirmStartEvent(
+  info: WorkflowCheckpointInfo,
+): {
+  type: 'workflow_confirm_start';
+  workflow: string;
+  path: string;
+  needs_shell: boolean;
+  needs_web: boolean;
+  roles: Array<{
+    name: string;
+    tools: string[];
+    needs_shell: boolean;
+    needs_web: boolean;
+  }>;
+} {
+  return {
+    type: 'workflow_confirm_start',
+    workflow: info.name,
+    path: info.path,
+    needs_shell: info.needsShell,
+    needs_web: info.needsWeb,
+    roles: info.roles.map((role) => ({
+      name: role.name,
+      tools: role.tools,
+      needs_shell: role.needsShell,
+      needs_web: role.needsWeb,
+    })),
+  };
+}
+
+export function workflowConfirmEndEvent(
+  info: WorkflowCheckpointInfo,
+  approved: boolean,
+  signal?: AbortSignal,
+): {
+  type: 'workflow_confirm_end';
+  workflow: string;
+  approved: boolean;
+  reason: 'approved' | 'denied' | 'aborted';
+} {
+  const reason = signal?.aborted ? 'aborted' : approved ? 'approved' : 'denied';
+  return {
+    type: 'workflow_confirm_end',
+    workflow: info.name,
+    approved,
+    reason,
+  };
+}
+
 export function formatWorkflowCheckpoint(info: WorkflowCheckpointInfo): string {
   const lines: string[] = [
     `Workflow "${info.name}" will run with:`,

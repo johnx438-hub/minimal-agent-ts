@@ -52,9 +52,40 @@ export type AgentStepEvent =
 export type RuntimeEvent =
   | AgentStepEvent
   | { type: 'run_start'; session_id: string; cwd: string }
+  | { type: 'run_stopping'; session_id: string }
   | { type: 'run_end'; reason: 'completed' | 'aborted' | 'error'; message?: string }
   | { type: 'session_saved'; session_id: string; task_count: number }
   | { type: 'runtime'; shell: boolean; web: boolean }
+  | {
+      type: 'workflow_confirm_start';
+      workflow: string;
+      path: string;
+      needs_shell: boolean;
+      needs_web: boolean;
+      roles: Array<{
+        name: string;
+        tools: string[];
+        needs_shell: boolean;
+        needs_web: boolean;
+      }>;
+    }
+  | {
+      type: 'workflow_confirm_end';
+      workflow: string;
+      approved: boolean;
+      reason: 'approved' | 'denied' | 'aborted';
+    }
+  | {
+      type: 'permission_prompt_start';
+      kind: 'shell' | 'web';
+      reason: string;
+    }
+  | {
+      type: 'permission_prompt_end';
+      kind: 'shell' | 'web';
+      approved: boolean;
+      reason: 'approved' | 'denied' | 'aborted';
+    }
   | {
       type: 'workflow_step';
       phase: 'role' | 'loop';
