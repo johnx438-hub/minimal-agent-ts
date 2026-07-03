@@ -1,4 +1,11 @@
-import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import {
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  readdirSync,
+  statSync,
+} from 'node:fs';
 import { resolve } from 'node:path';
 
 import { releaseAllCompactedContent } from './context-policy.js';
@@ -63,17 +70,18 @@ export function getSessionPath(sessionId: string): string {
  */
 export function createSession(userId: string = 'user_default'): SessionFile {
   const sessionId = generateSessionId();
+  const now = Date.now();
   const session: SessionFile = {
     session_id: sessionId,
     user_id: userId,
-    created_at: Date.now(),
+    created_at: now,
+    updated_at: now,
     tasks: [],
     current_messages: [],
   };
 
   ensureSessionsDir();
-  const path = sessionPath(sessionId);
-  writeFileSync(path, JSON.stringify(session, null, 2), 'utf8');
+  saveSession(session);
 
   return session;
 }
@@ -103,15 +111,24 @@ export function loadSession(sessionId: string): SessionFile | null {
  */
 export function saveSession(session: SessionFile): void {
   releaseAllCompactedContent(session.current_messages);
+  session.updated_at = Date.now();
   ensureSessionsDir();
   const path = sessionPath(session.session_id);
   writeFileSync(path, JSON.stringify(session, null, 2), 'utf8');
-  lastSaveAtBySession.set(session.session_id, Date.now());
+  lastSaveAtBySession.set(session.session_id, session.updated_at);
+}
+
+/** Sort key for resume-last: prefer updated_at, then file mtime, then created_at. */
+export function sessionActiveAt(
+  session: Pick<SessionFile, 'created_at' | 'updated_at'>,
+  fileMtimeMs?: number,
+): number {
+  return session.updated_at ?? fileMtimeMs ?? session.created_at;
 }
 
 /**
  * List all available sessions for a user.
- * Returns sessions sorted by created_at (newest first).
+ * Returns sessions sorted by last activity (updated_at), newest first.
  */
 export function listSessions(userId?: string): SessionMeta[] {
   const dir = sessionsDir();
@@ -129,6 +146,7 @@ export function listSessions(userId?: string): SessionMeta[] {
 
     const path = resolve(dir, entry.name);
     try {
+      const stat = statSync(path);
       const content = readFileSync(path, 'utf8');
       const session = JSON.parse(content) as SessionFile;
 
@@ -136,10 +154,13 @@ export function listSessions(userId?: string): SessionMeta[] {
         continue;
       }
 
+      const updated_at = session.updated_at ?? stat.mtimeMs;
+
       sessions.push({
         session_id: session.session_id,
         user_id: session.user_id,
         created_at: session.created_at,
+        updated_at,
         task_count: session.tasks.length,
         path,
       });
@@ -148,12 +169,15 @@ export function listSessions(userId?: string): SessionMeta[] {
     }
   }
 
-  sessions.sort((a, b) => b.created_at - a.created_at);
+  sessions.sort(
+    (a, b) =>
+      (b.updated_at ?? b.created_at) - (a.updated_at ?? a.created_at),
+  );
   return sessions;
 }
 
 /**
- * Get the most recent session for a user.
+ * Get the most recently active session for a user.
  */
 export function getLatestSession(userId?: string): SessionMeta | null {
   const sessions = listSessions(userId);

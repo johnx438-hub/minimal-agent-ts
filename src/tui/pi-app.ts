@@ -25,6 +25,7 @@ import {
   isSlashCommand,
   normalizeReplInput,
   parseSlashLine,
+  slashAutocompleteItems,
   SLASH_HELP_LINES,
 } from './slash.js';
 import type { TuiAppOptions } from './app.js';
@@ -38,14 +39,7 @@ import {
 } from './pi/prompts.js';
 import { piEditorTheme } from './pi/themes.js';
 
-const SLASH_AUTOCOMPLETE = SLASH_HELP_LINES.map((line) => {
-  const trimmed = line.trim();
-  const space = trimmed.indexOf(' ');
-  const cmd = space === -1 ? trimmed : trimmed.slice(0, space);
-  const name = cmd.replace(/^\//, '');
-  const description = space === -1 ? '' : trimmed.slice(space + 1).trim();
-  return { name, description };
-});
+const SLASH_AUTOCOMPLETE = slashAutocompleteItems();
 
 type AppMode = 'confirm' | 'idle' | 'running' | 'stopping';
 
@@ -296,8 +290,9 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
       if (sessions.length === 0) say('(no sessions)');
       else {
         for (const s of sessions) {
+          const active = new Date(s.updated_at ?? s.created_at).toISOString().slice(0, 16);
           say(
-            `  ${s.session_id}  tasks=${s.task_count}  ${new Date(s.created_at).toISOString().slice(0, 16)}`,
+            `  ${s.session_id}  tasks=${s.task_count}  active=${active}`,
             true,
           );
         }
@@ -370,7 +365,9 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     if (result.message === '__resume_last__') {
       if (!runtime.resumeLatestSession()) say('(no saved sessions)');
       else {
-        say(`Resumed latest ${runtime.sessionLabel()} (${runtime.session!.tasks.length} tasks)`);
+        say(
+          `Resumed active session ${runtime.sessionLabel()} (${runtime.session!.tasks.length} tasks)`,
+        );
         printStatus();
       }
       resumeEditor();

@@ -116,7 +116,7 @@ function parseArgs(argv: string[]): {
     console.error('  OPENROUTER_API_KEY=... npm start -- "你的任务"');
     console.error('  npm start -- --cwd /path/to/project "你的任务"');
     console.error('  npm start -- --resume <session_id> "继续上次的工作"');
-    console.error('  npm start -- --resume-last "继续最近一次 session"');
+    console.error('  npm start -- --resume-last "继续最近活跃的 session"');
     console.error('  npm start -- --list-tools');
     console.error('  npm start -- --load-skills context-design "任务"');
     console.error('  npm start -- --workflow workflows/review-loop.json --confirm-workflow "任务"');

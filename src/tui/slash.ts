@@ -22,50 +22,208 @@ export interface SlashResult {
   approveAction?: ApproveAction;
 }
 
+/** Single source of truth for slash help, aliases, and autocomplete hints. */
+export interface SlashHelpEntry {
+  /** Primary form shown in /help (may include arg pattern). */
+  command: string;
+  hintZh: string;
+  hintEn: string;
+  /** Extra aliases resolving to the primary command word (e.g. /session → /sessions). */
+  aliases?: string[];
+  /** Tab-complete name without leading slash; defaults to first token of command. */
+  autocompleteName?: string;
+  /** Set false for help-only sub-lines (no duplicate autocomplete entry). */
+  autocomplete?: boolean;
+}
+
+const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
+  {
+    command: '/sessions',
+    aliases: ['/session'],
+    hintZh: '列出已保存会话',
+    hintEn: 'List saved sessions',
+  },
+  {
+    command: '/resume [id|last]',
+    aliases: ['/r'],
+    hintZh: '恢复会话；省略 id 或 last = 最近活跃',
+    hintEn: 'Resume session; omit id or last = most recently active',
+  },
+  {
+    command: '/new',
+    hintZh: '新建空会话',
+    hintEn: 'Start a new session',
+  },
+  {
+    command: '/new handoff',
+    autocomplete: false,
+    hintZh: '写交接并新建会话',
+    hintEn: 'Write handoff, new session, queue load',
+  },
+  {
+    command: '/handoff',
+    hintZh: '为当前会话写交接文件',
+    hintEn: 'Write handoff file for current session',
+  },
+  {
+    command: '/handoff load [id]',
+    autocomplete: false,
+    hintZh: '排队加载交接（下条任务注入）',
+    hintEn: 'Queue handoff for next task',
+  },
+  {
+    command: '/clear',
+    hintZh: '清空进行中上下文（保留任务摘要）',
+    hintEn: 'Clear in-flight context (keep task summaries)',
+  },
+  {
+    command: '/quit',
+    hintZh: '退出 TUI',
+    hintEn: 'Exit TUI',
+  },
+  {
+    command: '/shell on|off',
+    hintZh: '开关 shell（仅本会话）',
+    hintEn: 'Toggle run_shell (this session only)',
+  },
+  {
+    command: '/web on|off',
+    hintZh: '开关 web（仅本会话）',
+    hintEn: 'Toggle web_fetch (this session only)',
+  },
+  {
+    command: '/approve status',
+    hintZh: '查看授权与 prefs',
+    hintEn: 'Show grants and prefs file',
+  },
+  {
+    command: '/approve session shell|web',
+    autocomplete: false,
+    hintZh: '本会话授权 shell/web',
+    hintEn: 'Grant shell/web for this session',
+  },
+  {
+    command: '/approve always shell|web',
+    autocomplete: false,
+    hintZh: '持久授权写入 .tui-prefs.json',
+    hintEn: 'Persist always grant to prefs',
+  },
+  {
+    command: '/approve revoke always shell|web',
+    autocomplete: false,
+    hintZh: '撤销持久授权',
+    hintEn: 'Revoke persisted always grant',
+  },
+  {
+    command: '/skills',
+    aliases: ['/skill'],
+    hintZh: '列出 skills',
+    hintEn: 'List skills',
+  },
+  {
+    command: '/skills load <name>',
+    autocomplete: false,
+    hintZh: '加载指定 skill',
+    hintEn: 'Load a skill by name',
+  },
+  {
+    command: '/tools',
+    aliases: ['/tool'],
+    hintZh: '列出可用工具',
+    hintEn: 'List available tools',
+  },
+  {
+    command: '/workflow',
+    aliases: ['/wf'],
+    hintZh: '列出 workflow',
+    hintEn: 'List workflows',
+  },
+  {
+    command: '/workflow !<name>',
+    autocomplete: false,
+    hintZh: '武装 workflow（下条输入为任务）',
+    hintEn: 'Arm workflow for next line',
+  },
+  {
+    command: '/workflow run <name> <task>',
+    autocomplete: false,
+    hintZh: '带检查点运行 workflow',
+    hintEn: 'Run workflow with checkpoint',
+  },
+  {
+    command: '/workflow <name> [task]',
+    autocomplete: false,
+    hintZh: '武装或立即运行 workflow',
+    hintEn: 'Arm or run workflow',
+  },
+  {
+    command: '/cwd <path>',
+    hintZh: '切换工作目录',
+    hintEn: 'Change working directory',
+  },
+  {
+    command: '/stop',
+    hintZh: '中止当前运行',
+    hintEn: 'Abort current run',
+  },
+  {
+    command: '/spawns',
+    hintZh: '列出 spawn 预设',
+    hintEn: 'List spawn_agent presets',
+  },
+  {
+    command: '/help',
+    aliases: ['/h', '?'],
+    hintZh: '显示本帮助',
+    hintEn: 'Show this help',
+  },
+];
+
+function primaryCommandToken(entry: SlashHelpEntry): string {
+  return entry.command.split(/\s+/)[0]!.toLowerCase();
+}
+
+function buildCommandAliases(): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const entry of SLASH_HELP_ENTRIES) {
+    const primary = primaryCommandToken(entry);
+    for (const alias of entry.aliases ?? []) {
+      map[alias.toLowerCase()] = primary;
+    }
+  }
+  return map;
+}
+
+const COMMAND_ALIASES: Record<string, string> = buildCommandAliases();
+
+function formatBilingualHint(entry: SlashHelpEntry): string {
+  return `${entry.hintZh} | ${entry.hintEn}`;
+}
+
+function formatSlashHelpLines(entries: SlashHelpEntry[]): string[] {
+  const width = Math.max(...entries.map((e) => e.command.length), 16);
+  return entries.map(
+    (e) => `${e.command.padEnd(width)}  ${formatBilingualHint(e)}`,
+  );
+}
+
+export const SLASH_HELP_LINES = formatSlashHelpLines(SLASH_HELP_ENTRIES);
+
+export function slashAutocompleteItems(): Array<{ name: string; description: string }> {
+  return SLASH_HELP_ENTRIES.filter((e) => e.autocomplete !== false).map((e) => ({
+    name: e.autocompleteName ?? primaryCommandToken(e).slice(1),
+    description: formatBilingualHint(e),
+  }));
+}
+
 /** ASCII `/` plus common IME / keyboard variants (e.g. fullwidth ／). */
 const SLASH_LEADER = /^[\u002F\uFF0F\uFE68\u2215]/;
 
-const COMMAND_ALIASES: Record<string, string> = {
-  '/session': '/sessions',
-  '/skill': '/skills',
-  '/tool': '/tools',
-  '/wf': '/workflow',
-  '/h': '/help',
-  '?': '/help',
-  '/r': '/resume',
-};
-
-export const SLASH_HELP_LINES = [
-  '/sessions          list saved sessions',
-  '/resume [id|last]  resume session (omit id = most recent)',
-  '/new               new session',
-  '/new handoff       write handoff, new session, queue load',
-  '/handoff           write handoff file for current session',
-  '/handoff load [id] queue handoff for next task',
-  '/clear             clear in-flight context (keep task summaries)',
-  '/quit              exit TUI',
-  '/shell on|off      toggle run_shell (session only, not saved)',
-  '/web on|off        toggle web_fetch (session only, not saved)',
-  '/approve status    show prefs file + always grants',
-  '/approve session shell|web   grant for this session',
-  '/approve always shell|web    persist always to .tui-prefs.json',
-  '/approve revoke always shell|web',
-  '/skills            list skills',
-  '/skills load <n>   load skill',
-  '/tools             list tools',
-  '/workflow          list workflows',
-  '/workflow !<n>     arm workflow for next line',
-  '/workflow run <n> <task>  run with checkpoint',
-  '/workflow <n> [task]  arm or run workflow',
-  '/cwd <path>        change cwd',
-  '/stop              abort current run',
-  '/spawns            list spawn_agent presets',
-  '/help              this list',
-];
-
 /** Strip REPL prompt glyphs users sometimes paste with the command (e.g. `› /help`). */
 export function normalizeReplInput(line: string): string {
-  return line.trim().replace(/^[\u203A\u00BB\uFF1E>]+\s*/u, '').trim();
+  const stripped = line.trim().replace(/^[\u203A\u00BB\uFF1E>]+\s*/u, '').trim();
+  if (stripped === '?') return '/help';
+  return stripped;
 }
 
 export function isSlashCommand(line: string): boolean {

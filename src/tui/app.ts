@@ -269,9 +269,8 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
         console.log('(no sessions)');
       } else {
         for (const s of sessions) {
-          console.log(
-            `  ${s.session_id}  tasks=${s.task_count}  ${new Date(s.created_at).toISOString().slice(0, 16)}`,
-          );
+          const active = new Date(s.updated_at ?? s.created_at).toISOString().slice(0, 16);
+          console.log(`  ${s.session_id}  tasks=${s.task_count}  active=${active}`);
         }
       }
       showPrompt();
@@ -344,7 +343,7 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
         console.log('(no saved sessions)');
       } else {
         console.log(
-          `Resumed latest ${runtime.sessionLabel()} (${runtime.session!.tasks.length} tasks)`,
+          `Resumed active session ${runtime.sessionLabel()} (${runtime.session!.tasks.length} tasks)`,
         );
         printStatus(runtime, armedWorkflow);
       }

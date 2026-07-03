@@ -113,7 +113,7 @@ export type WorkflowConfirmFn = (
 export interface AgentRuntimeOptions {
   cwd: string;
   resumeSessionId?: string;
-  /** Resume most recent session when resumeSessionId omitted. */
+  /** Resume most recently active session when resumeSessionId omitted. */
   resumeLatest?: boolean;
   loadSkills?: string[];
   allowShell?: boolean;

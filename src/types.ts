@@ -134,6 +134,8 @@ export interface SessionFile {
   session_id: string;
   user_id: string;
   created_at: number;          // Unix timestamp (ms)
+  /** Last persist / activity; used for resume-last ordering. */
+  updated_at?: number;
   tasks: TaskSummaryDoc[];     // Completed task summaries
   current_messages: ChatMessage[];  // Messages for ongoing task
 }
@@ -143,6 +145,7 @@ export interface SessionMeta {
   session_id: string;
   user_id: string;
   created_at: number;
+  updated_at?: number;
   task_count: number;
   path: string;                // File path to session.json
 }
