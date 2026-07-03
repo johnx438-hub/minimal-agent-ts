@@ -28,6 +28,8 @@ describe('slash registry', () => {
     assert.equal(parseSlashLine('/mcp list')?.message, '__mcp_list__');
     assert.equal(parseSlashLine('/log')?.message, '__log__');
     assert.equal(parseSlashLine('/log session_x')?.message, '__log__:session_x');
+    assert.equal(parseSlashLine('/history')?.message, '__history__');
+    assert.equal(parseSlashLine('/history session_x')?.message, '__history__:session_x');
   });
 
   it('exposes autocomplete items with bilingual descriptions', () => {
@@ -47,6 +49,11 @@ describe('slash registry', () => {
     const log = SLASH_HELP_LINES.find((l) => l.includes('/log'));
     assert.ok(log);
     assert.match(log!, /审计当前会话/);
+
+    const history = SLASH_HELP_LINES.find((l) => l.includes('/history'));
+    assert.ok(history);
+    assert.match(history!, /对话时间线/);
+    assert.match(history!, /conversation timeline/);
     assert.equal(items.some((i) => i.name === 'session'), false);
   });
 });

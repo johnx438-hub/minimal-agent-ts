@@ -77,6 +77,17 @@ export interface SpawnPolicy {
   max_turns_cap?: number;
 }
 
+export interface TranscriptPolicy {
+  /** Write transcript sidecar on task complete (default true). */
+  enabled?: boolean;
+  /** Stop appending when file exceeds this size (default 16 MiB). */
+  max_bytes_per_session?: number;
+  /** Cap total assistant chars per task record (default 200k). */
+  max_assistant_chars_per_task?: number;
+  /** Include tool stub rows with action_id + preview (default true). */
+  include_tool_stubs?: boolean;
+}
+
 export interface AgentPluginConfig {
   builtin_tools?: string[];
   /** User-defined spawn presets (MD prompts under e.g. agents/). */
@@ -88,6 +99,7 @@ export interface AgentPluginConfig {
   pointerize_policy?: PointerizePolicy;
   recall_policy?: RecallPolicy;
   web_fetch_policy?: WebFetchPolicy;
+  transcript_policy?: TranscriptPolicy;
   /** Skill names to prepend into system prompt for this session. */
   loaded_skills?: string[];
 }

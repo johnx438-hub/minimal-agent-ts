@@ -12,6 +12,16 @@ import { piChalk, piOverlayBgHex, piSelectListOverlayTheme } from './themes.js';
 
 export type PickerFinish = (item: SelectItem | null) => void;
 
+export type PickerKeyContext = {
+  getSelectedItem: () => SelectItem | undefined;
+  finish: PickerFinish;
+};
+
+export type PickerKeyHandler = (
+  key: string,
+  ctx: PickerKeyContext,
+) => boolean | void | Promise<boolean | void>;
+
 function paintOverlayLine(line: string, width: number): string {
   const fitted = truncateToWidth(line, width, '', true);
   return piChalk.bgHex(piOverlayBgHex)(piChalk.white(fitted));
@@ -22,6 +32,7 @@ class SelectOverlayPanel implements Component {
   private readonly box: Box;
   private readonly list: SelectList;
   private readonly onInfo?: (item: SelectItem, finish: PickerFinish) => void | Promise<void>;
+  private readonly onKey?: PickerKeyHandler;
   private readonly finishPicker: PickerFinish;
 
   constructor(
@@ -29,16 +40,36 @@ class SelectOverlayPanel implements Component {
     list: SelectList,
     finishPicker: PickerFinish,
     onInfo?: (item: SelectItem, finish: PickerFinish) => void | Promise<void>,
+    onKey?: PickerKeyHandler,
   ) {
     this.list = list;
     this.finishPicker = finishPicker;
     this.onInfo = onInfo;
+    this.onKey = onKey;
     this.box = new Box(1, 1);
     this.box.addChild(new Text(title, 1, 1));
     this.box.addChild(list);
   }
 
   handleInput(data: string): void {
+    if (this.onKey) {
+      const handled = this.onKey(data, {
+        getSelectedItem: () => this.list.getSelectedItem() ?? undefined,
+        finish: this.finishPicker,
+      });
+      if (handled instanceof Promise) {
+        void handled.then((result) => {
+          if (result) return;
+          this.forwardToList(data);
+        });
+        return;
+      }
+      if (handled) return;
+    }
+    this.forwardToList(data);
+  }
+
+  private forwardToList(data: string): void {
     if (this.onInfo && data === 'i') {
       const item = this.list.getSelectedItem();
       if (item) void this.onInfo(item, this.finishPicker);
@@ -65,6 +96,7 @@ export function showSelectOverlay(
     cancelable?: boolean;
     abortSignal?: AbortSignal;
     onInfo?: (item: SelectItem, finish: PickerFinish) => void | Promise<void>;
+    onKey?: PickerKeyHandler;
   },
 ): Promise<SelectItem | null> {
   const cancelable = opts?.cancelable !== false;
@@ -98,7 +130,7 @@ export function showSelectOverlay(
       finish(null);
     };
 
-    const panel = new SelectOverlayPanel(title, list, finish, opts?.onInfo);
+    const panel = new SelectOverlayPanel(title, list, finish, opts?.onInfo, opts?.onKey);
     handle = tui.showOverlay(panel);
     handle.focus?.();
     tui.requestRender();

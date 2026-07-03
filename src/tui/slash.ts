@@ -77,6 +77,11 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
     hintEn: 'Audit task and tool actions in session',
   },
   {
+    command: '/history [session_id]',
+    hintZh: '浏览会话对话时间线（user/assistant）',
+    hintEn: 'Browse session conversation timeline',
+  },
+  {
     command: '/clear',
     hintZh: '清空进行中上下文（保留任务摘要）',
     hintEn: 'Clear in-flight context (keep task summaries)',
@@ -284,6 +289,14 @@ export function parseSlashLine(line: string): SlashResult | null {
       return {
         handled: true,
         message: id ? `__log__:${id}` : '__log__',
+      };
+    }
+
+    case '/history': {
+      const id = parts[1];
+      return {
+        handled: true,
+        message: id ? `__history__:${id}` : '__history__',
       };
     }
 

@@ -55,6 +55,7 @@ function mergeConfig(base: AgentPluginConfig, patch: Partial<AgentPluginConfig>)
     loaded_skills: patch.loaded_skills ?? base.loaded_skills,
     spawn_presets: patch.spawn_presets ?? base.spawn_presets,
     spawn_policy: { ...base.spawn_policy, ...patch.spawn_policy },
+    transcript_policy: { ...base.transcript_policy, ...patch.transcript_policy },
   };
 }
 

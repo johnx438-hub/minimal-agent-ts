@@ -32,7 +32,7 @@ import { scheduleToolCalls } from './tool-scheduler.js';
 import { executeTool, getToolDefinitions } from './tools.js';
 import { splitEditToolOutput } from './tools/edit-display.js';
 import { splitWriteToolOutput } from './tools/write-display.js';
-import { TaskTracker } from './task-tracker.js';
+import { TaskTracker, type TaskBlock } from './task-tracker.js';
 import type { AgentConfig, ChatMessage, TaskSummaryDoc, SessionFile, ToolCall } from './types.js';
 
 export interface RunAgentOptions {
@@ -46,7 +46,7 @@ export interface RunAgentOptions {
   /** Skip session history; only system + this user task (workflow steps). */
   isolated?: boolean;
   onStep?: (event: AgentStepEvent) => void;
-  onTaskComplete?: (summary: TaskSummaryDoc) => void;
+  onTaskComplete?: (summary: TaskSummaryDoc, taskBlock: TaskBlock) => void;
   signal?: AbortSignal;
 }
 
@@ -166,7 +166,7 @@ function finalizeSuccess(
         pending_tasks: agentFields.pending_tasks,
         current_work: agentFields.current_work || cleanText.slice(0, 500),
       };
-      onTaskComplete?.(summary);
+      onTaskComplete?.(summary, taskBlock);
     }
   }
 

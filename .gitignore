@@ -26,6 +26,17 @@ Thumbs.db
 npm-debug.log*
 .cache/
 
+# Local TUI prefs (test artifacts)
+.tui-prefs.json
+.tui-prefs-test.json
+.tui-prefs.json.bak
+
+# Local workspace / scratch (not repo content)
+/workspace/
+/web-articles/
+CONVERSATION_SUMMARY.md
+PROJECT_SUMMARY.md
+
 # Zvec / local index artifacts (if created outside .sessions)
 *.zvec
 agent_memory.zvec

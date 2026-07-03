@@ -1,6 +1,10 @@
 import type { SelectItem, TUI } from '@earendil-works/pi-tui';
 
-import { showSelectOverlay, type PickerFinish } from './select-overlay.js';
+import {
+  showSelectOverlay,
+  type PickerFinish,
+  type PickerKeyHandler,
+} from './select-overlay.js';
 
 export type { PickerFinish };
 
@@ -26,17 +30,20 @@ export interface PickerOverlayOptions {
   abortSignal?: AbortSignal;
   /** Called when user presses i on the highlighted row (session info, etc.). */
   onInfo?: (item: SelectItem, finish: PickerFinish) => void | Promise<void>;
+  /** Extra key handlers (e.g. h for history). Return true when handled. */
+  onKey?: PickerKeyHandler;
 }
 
 export function showPickerOverlay(
   tui: TUI,
   opts: PickerOverlayOptions,
 ): Promise<SelectItem | null> {
-  const { title, items, maxVisible, cancelable, abortSignal, onInfo } = opts;
+  const { title, items, maxVisible, cancelable, abortSignal, onInfo, onKey } = opts;
   return showSelectOverlay(tui, title, items, {
     maxVisible,
     cancelable,
     abortSignal,
     onInfo,
+    onKey,
   });
 }

@@ -2,6 +2,7 @@ import * as readline from 'node:readline';
 import { resolve } from 'node:path';
 
 import type { AgentRuntime } from '../runner.js';
+import { listHistoryLines, listHistoryTasks } from '../session-history.js';
 import { listLogLines, listLogTasks } from '../session-log.js';
 import { formatSessionPickerDescription } from '../session.js';
 import {
@@ -368,6 +369,39 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
           }
         }
         console.log('  (pi TUI: /log opens interactive browser)');
+      }
+      showPrompt();
+      return;
+    }
+
+    if (result.message === '__history__' || result.message?.startsWith('__history__:')) {
+      const sid = result.message.startsWith('__history__:')
+        ? result.message.slice('__history__:'.length)
+        : undefined;
+      const session = runtime.resolveHistorySession(sid);
+      if (!session) {
+        console.log(
+          sid
+            ? `Session not found: ${sid}`
+            : '(no active session — use pi TUI /history or /resume first)',
+        );
+      } else {
+        const tasks = listHistoryTasks(session);
+        console.log(`History for ${session.session_id}:`);
+        for (const t of tasks) {
+          console.log(`  ${t.label}`);
+          console.log(`    ${t.description}`);
+          const lines = listHistoryLines(session, t.taskId).filter(
+            (l) => l.kind === 'user' || l.kind === 'assistant',
+          );
+          for (const line of lines.slice(0, 6)) {
+            console.log(`      ${line.label}`);
+          }
+          if (lines.length > 6) {
+            console.log(`      … +${lines.length - 6} more messages`);
+          }
+        }
+        console.log('  (pi TUI: /history opens interactive browser)');
       }
       showPrompt();
       return;

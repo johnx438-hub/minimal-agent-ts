@@ -1,29 +1,22 @@
 import type { TUI } from '@earendil-works/pi-tui';
 
-import { loadAction } from '../../action-store.js';
 import {
-  buildActionDetailLines,
-  formatActionDetailTitle,
-  listLogLines,
-  listLogTasks,
-  type LogLineEntry,
-} from '../../session-log.js';
-import type { ActionBlock, SessionFile } from '../../types.js';
+  listHistoryLines,
+  listHistoryTasks,
+  type HistoryLineEntry,
+} from '../../session-history.js';
+import type { SessionFile } from '../../types.js';
 import { showPaginatedTextOverlay } from './paginated-text-overlay.js';
 import { buildSelectItems, showPickerOverlay } from './picker.js';
+import { showActionDetailOverlay } from './log-overlay.js';
 
-function actionDetailBody(block: ActionBlock): string {
-  if (block.result_text?.trim()) return block.result_text;
-  return buildActionDetailLines(block).join('\n');
-}
-
-function lineItems(entries: LogLineEntry[]) {
+function lineItems(entries: HistoryLineEntry[]) {
   if (entries.length === 0) {
     return buildSelectItems([
       {
         value: '__empty__',
-        label: '(no log entries for this task)',
-        description: 'Actions may not be in cold storage yet',
+        label: '(no messages for this task)',
+        description: 'Transcript may not exist for legacy tasks',
       },
     ]);
   }
@@ -36,41 +29,32 @@ function lineItems(entries: LogLineEntry[]) {
   );
 }
 
-export async function showActionDetailOverlay(
+async function showMessageDetailOverlay(
   tui: TUI,
-  actionId: string,
+  entry: HistoryLineEntry,
 ): Promise<void> {
-  const block = loadAction(actionId);
-  if (!block) {
-    await showPickerOverlay(tui, {
-      title: `Action not found: ${actionId}\nEsc back`,
-      items: buildSelectItems([
-        { value: 'missing', label: '(action file missing)', description: actionId },
-      ]),
-    });
-    return;
-  }
-
+  const body = entry.body ?? entry.description;
+  const label = entry.kind === 'user' ? 'User message' : 'Assistant message';
   await showPaginatedTextOverlay(tui, {
-    title: formatActionDetailTitle(block),
-    body: actionDetailBody(block),
+    title: label,
+    body,
   });
 }
 
-async function showTaskLogOverlay(
+async function showTaskHistoryOverlay(
   tui: TUI,
   session: SessionFile,
   taskId: string,
   taskLabel: string,
 ): Promise<void> {
-  const entries = listLogLines(session, taskId);
+  const entries = listHistoryLines(session, taskId);
 
   for (;;) {
     const picked = await showPickerOverlay(tui, {
       title: [
-        `Log · ${taskLabel}`,
+        `History · ${taskLabel}`,
         session.session_id,
-        'Enter action detail · Esc back',
+        'Enter message/action · Esc back',
       ].join('\n'),
       items: lineItems(entries),
       maxVisible: Math.min(Math.max(entries.length, 1), 12),
@@ -79,23 +63,30 @@ async function showTaskLogOverlay(
     if (!picked) return;
 
     const entry = entries.find((e) => e.value === picked.value);
-    if (entry?.actionId) {
+    if (!entry || entry.kind === 'section') continue;
+
+    if (entry.kind === 'tool' && entry.actionId) {
       await showActionDetailOverlay(tui, entry.actionId);
       continue;
     }
-    if (entry?.kind === 'section') continue;
+
+    if ((entry.kind === 'user' || entry.kind === 'assistant') && entry.body) {
+      await showMessageDetailOverlay(tui, entry);
+      continue;
+    }
+
     return;
   }
 }
 
-export async function showLogBrowser(
+export async function showHistoryBrowser(
   tui: TUI,
   session: SessionFile,
 ): Promise<void> {
-  const tasks = listLogTasks(session);
+  const tasks = listHistoryTasks(session);
   if (tasks.length === 0) {
     await showPickerOverlay(tui, {
-      title: `Log · ${session.session_id}\n(no tasks or in-flight context)`,
+      title: `History · ${session.session_id}\n(no tasks or messages)`,
       items: buildSelectItems([
         { value: 'empty', label: '(empty session)', description: 'Run a task first' },
       ]),
@@ -113,7 +104,7 @@ export async function showLogBrowser(
 
   const picked = await showPickerOverlay(tui, {
     title: [
-      `Log · ${session.session_id}`,
+      `History · ${session.session_id}`,
       'Pick a task · Enter drill-down · Esc cancel',
     ].join('\n'),
     items: taskItems,
@@ -123,7 +114,7 @@ export async function showLogBrowser(
   if (!picked) return;
 
   const task = tasks.find((t) => t.taskId === picked.value);
-  await showTaskLogOverlay(
+  await showTaskHistoryOverlay(
     tui,
     session,
     picked.value,

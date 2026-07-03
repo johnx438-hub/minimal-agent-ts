@@ -1,6 +1,7 @@
 import type { TUI } from '@earendil-works/pi-tui';
 
-import type { SessionOverview } from '../../types.js';
+import type { SessionFile, SessionOverview } from '../../types.js';
+import { showHistoryBrowser } from './history-overlay.js';
 import { showPickerOverlay } from './picker.js';
 
 function clip(text: string, max = 64): string {
@@ -21,6 +22,7 @@ export type SessionDetailAction = 'back' | 'resume';
 export async function showSessionDetailOverlay(
   tui: TUI,
   overview: SessionOverview,
+  session?: SessionFile | null,
 ): Promise<SessionDetailAction> {
   const active = new Date(overview.updated_at ?? overview.created_at)
     .toISOString()
@@ -33,7 +35,7 @@ export async function showSessionDetailOverlay(
     `Session ${overview.session_id}`,
     `active=${active}  tasks=${overview.task_count}`,
     `In-flight: ${clip(inFlight, 56)}`,
-    'Enter resume · Esc back',
+    'Enter resume · h history · Esc back',
   ].join('\n');
 
   const taskItems = overview.tasks.map((t) => {
@@ -58,7 +60,11 @@ export async function showSessionDetailOverlay(
     title,
     items: taskItems,
     maxVisible: Math.min(taskItems.length, 8),
-    onInfo: undefined,
+    onKey: async (key) => {
+      if (key !== 'h' || !session) return false;
+      await showHistoryBrowser(tui, session);
+      return true;
+    },
   });
 
   if (picked) return 'resume';

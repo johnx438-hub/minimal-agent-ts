@@ -38,6 +38,7 @@ import {
   runPiFirstRunConfirm,
 } from './pi/prompts.js';
 import { buildSelectItems, showPickerOverlay } from './pi/picker.js';
+import { showHistoryBrowser } from './pi/history-overlay.js';
 import { showLogBrowser } from './pi/log-overlay.js';
 import { showSessionDetailOverlay } from './pi/session-detail.js';
 import { piEditorTheme } from './pi/themes.js';
@@ -307,6 +308,24 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
       return;
     }
 
+    if (result.message === '__history__' || result.message?.startsWith('__history__:')) {
+      const sid = result.message.startsWith('__history__:')
+        ? result.message.slice('__history__:'.length)
+        : undefined;
+      const session = runtime.resolveHistorySession(sid);
+      if (!session) {
+        say(
+          sid
+            ? `Session not found: ${sid}`
+            : '(no active session — /resume or run a task first)',
+        );
+      } else {
+        await showHistoryBrowser(tui, session);
+      }
+      resumeEditor();
+      return;
+    }
+
     if (result.message === '__sessions__') {
       const sessions = runtime.listSessions().slice(0, 20);
       if (sessions.length === 0) {
@@ -337,7 +356,8 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
             say(`Session not found: ${item.value}`);
             return;
           }
-          const action = await showSessionDetailOverlay(tui, overview);
+          const fullSession = runtime.resolveHistorySession(item.value);
+          const action = await showSessionDetailOverlay(tui, overview, fullSession);
           if (action === 'resume') finish(item);
         },
       });

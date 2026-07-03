@@ -2,7 +2,8 @@ import { saveSessionThrottled } from '../session.js';
 import { runAgent } from '../agent.js';
 import type { AgentStepEvent } from '../events.js';
 
-import type { AgentConfig, SessionFile } from '../types.js';
+import type { TaskBlock } from '../task-tracker.js';
+import type { AgentConfig, SessionFile, TaskSummaryDoc } from '../types.js';
 import { loadWorkflowDefinition } from './load-workflow.js';
 import { resolveWorkflowRole } from './load-role.js';
 import { evaluateWorkflowWhen, renderWorkflowTemplate } from './template.js';
@@ -35,6 +36,7 @@ export interface RunWorkflowOptions {
     round?: number;
     input: string;
   }) => void;
+  onTaskComplete?: (summary: TaskSummaryDoc, taskBlock: TaskBlock) => void;
 }
 
 function isLoopItem(item: WorkflowFlowItem): item is { loop: WorkflowLoop } {
@@ -147,8 +149,12 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
       isolated,
       signal: config.abortSignal,
       onStep,
-      onTaskComplete(taskSummary) {
-        session.tasks.push(taskSummary);
+      onTaskComplete(taskSummary, taskBlock) {
+        if (opts.onTaskComplete) {
+          opts.onTaskComplete(taskSummary, taskBlock);
+        } else {
+          session.tasks.push(taskSummary);
+        }
       },
     });
 
