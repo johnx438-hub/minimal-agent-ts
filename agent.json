@@ -57,7 +57,8 @@
     "default_timeout_ms": 15000,
     "cloak_timeout_ms": 90000,
     "max_chars": 80000,
-    "cloak_fetch_enabled": false
+    "cloak_fetch_enabled": true,
+    "cloak_fetch_script": "skills/cloak-fetch/cloak_fetch.py"
   },
   "mcp_policy": {
     "allow": ["*"],

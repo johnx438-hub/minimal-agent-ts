@@ -565,13 +565,28 @@ export async function runWebFetchTool(
     if (err instanceof WebFetchResponseTooLargeError) {
       return `error: ${err.message}`;
     }
+    // User-initiated abort — do not retry
+    if (config.abortSignal?.aborted) {
+      return 'error: fetch aborted';
+    }
+    // Network-level failure (timeout, connection error, etc.) — try L2 cloakFetch
+    if (policy.cloak_fetch_enabled) {
+      try {
+        const cloakOut = await runCloakFetch(url, policy, config.abortSignal);
+        if (!cloakOut.startsWith('error:')) {
+          const titleMatch = cloakOut.match(/^#\s+(.+)/m);
+          const title = titleMatch?.[1]?.trim() ?? url;
+          return deliverMarkdownResult(url, title, cloakOut, 'cloak', policy, config);
+        }
+        return `error: L1 fetch failed, L2 cloak_fetch also failed: ${cloakOut}`;
+      } catch {
+        // cloakFetch itself threw — fall through to original error below
+      }
+    }
     if (
       (err instanceof DOMException && err.name === 'AbortError') ||
       (err instanceof Error && err.name === 'AbortError')
     ) {
-      if (config.abortSignal?.aborted) {
-        return 'error: fetch aborted';
-      }
       return `error: fetch timed out after ${timeoutMs}ms`;
     }
     const msg = err instanceof Error ? err.message : String(err);
