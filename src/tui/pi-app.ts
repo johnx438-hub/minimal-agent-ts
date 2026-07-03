@@ -37,6 +37,7 @@ import {
   createPiWorkflowConfirm,
   runPiFirstRunConfirm,
 } from './pi/prompts.js';
+import { showSelectOverlay } from './pi/select-overlay.js';
 import { piEditorTheme } from './pi/themes.js';
 
 const SLASH_AUTOCOMPLETE = slashAutocompleteItems();
@@ -287,15 +288,43 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
 
     if (result.message === '__sessions__') {
       const sessions = runtime.listSessions().slice(0, 20);
-      if (sessions.length === 0) say('(no sessions)');
-      else {
-        for (const s of sessions) {
-          const active = new Date(s.updated_at ?? s.created_at).toISOString().slice(0, 16);
-          say(
-            `  ${s.session_id}  tasks=${s.task_count}  active=${active}`,
-            true,
-          );
-        }
+      if (sessions.length === 0) {
+        say('(no sessions)');
+        resumeEditor();
+        return;
+      }
+
+      const currentId = runtime.sessionLabel();
+      const items = sessions.map((s) => {
+        const active = new Date(s.updated_at ?? s.created_at).toISOString().slice(0, 16);
+        const current = s.session_id === currentId ? ' (current)' : '';
+        return {
+          value: s.session_id,
+          label: `${s.session_id}${current}`,
+          description: `${s.last_user_preview ?? '(no user message)'} · tasks=${s.task_count} · active=${active}`,
+        };
+      });
+
+      const picked = await showSelectOverlay(
+        tui,
+        'Sessions — Enter to resume, Esc to cancel',
+        items,
+        { maxVisible: Math.min(items.length, 10) },
+      );
+      if (!picked) {
+        resumeEditor();
+        return;
+      }
+      if (!runtime.resumeSession(picked.value)) {
+        say(`Session not found: ${picked.value}`);
+      } else {
+        armedWorkflow = null;
+        runtime.armWorkflow(null);
+        fatigueTracker.reset();
+        say(
+          `Resumed ${picked.value} (${runtime.session!.tasks.length} tasks)`,
+        );
+        printStatus();
       }
       resumeEditor();
       return;
@@ -508,6 +537,32 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
 
     if (result.message === '__tools__') {
       for (const t of runtime.listToolNames()) say(`  • ${t}`, true);
+      resumeEditor();
+      return;
+    }
+
+    if (result.message === '__mcp_list__') {
+      const tools = runtime.listMcpTools();
+      if (tools.length === 0) {
+        say('(no MCP tools — add mcp_servers to agent.json)');
+      } else {
+        const byServer = new Map<string, typeof tools>();
+        for (const t of tools) {
+          const list = byServer.get(t.serverName) ?? [];
+          list.push(t);
+          byServer.set(t.serverName, list);
+        }
+        for (const [server, serverTools] of byServer) {
+          say(`  [${server}]`, true);
+          for (const t of serverTools) {
+            const desc = t.description.length > 72
+              ? `${t.description.slice(0, 71)}…`
+              : t.description;
+            say(`    • ${t.apiName}  (${t.toolName})`, true);
+            if (desc) say(`      ${desc}`, true);
+          }
+        }
+      }
       resumeEditor();
       return;
     }

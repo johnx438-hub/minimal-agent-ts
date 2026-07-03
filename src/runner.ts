@@ -415,6 +415,16 @@ export class AgentRuntime {
     }));
   }
 
+  listMcpTools(): Array<{
+    apiName: string;
+    serverName: string;
+    toolName: string;
+    description: string;
+  }> {
+    if (!toolRegistry.isInitialized()) return [];
+    return toolRegistry.listMcpTools();
+  }
+
   listSkills(): Array<{ name: string; description: string }> {
     const dirs = this.pluginConfig.skills_dirs ?? [];
     const skills = discoverSkills(dirs);

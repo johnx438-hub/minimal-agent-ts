@@ -116,6 +116,20 @@ export class ToolRegistry {
     return [...this.skills.keys()];
   }
 
+  listMcpTools(): Array<{
+    apiName: string;
+    serverName: string;
+    toolName: string;
+    description: string;
+  }> {
+    return this.mcpBindings.map((b) => ({
+      apiName: b.apiName,
+      serverName: b.serverName,
+      toolName: b.toolName,
+      description: b.description,
+    }));
+  }
+
   getSkillSystemExtension(): string {
     const loaded = this.pluginConfig.loaded_skills ?? [];
     const selected = loaded

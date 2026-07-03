@@ -40,8 +40,8 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
   {
     command: '/sessions',
     aliases: ['/session'],
-    hintZh: '列出已保存会话',
-    hintEn: 'List saved sessions',
+    hintZh: '选择并恢复已保存会话',
+    hintEn: 'Pick and resume a saved session',
   },
   {
     command: '/resume [id|last]',
@@ -131,6 +131,11 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
     aliases: ['/tool'],
     hintZh: '列出可用工具',
     hintEn: 'List available tools',
+  },
+  {
+    command: '/mcp list',
+    hintZh: '列出已连接的 MCP 工具',
+    hintEn: 'List connected MCP tools',
   },
   {
     command: '/workflow',
@@ -352,6 +357,14 @@ export function parseSlashLine(line: string): SlashResult | null {
 
     case '/tools':
       return { handled: true, message: '__tools__' };
+
+    case '/mcp': {
+      const sub = parts[1]?.toLowerCase();
+      if (!sub || sub === 'list') {
+        return { handled: true, message: '__mcp_list__' };
+      }
+      return { handled: true, message: 'Usage: /mcp list' };
+    }
 
     case '/spawns':
       return { handled: true, message: '__spawns__' };

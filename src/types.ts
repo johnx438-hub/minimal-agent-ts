@@ -148,4 +148,6 @@ export interface SessionMeta {
   updated_at?: number;
   task_count: number;
   path: string;                // File path to session.json
+  /** Last user message preview for session pickers. */
+  last_user_preview?: string;
 }

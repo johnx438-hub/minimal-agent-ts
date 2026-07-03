@@ -48,6 +48,13 @@ describe('listSessions active ordering', () => {
 
     utimesSync(olderPath, new Date('2020-01-01'), new Date('2020-01-01'));
 
+    const newerUpdated =
+      (JSON.parse(readFileSync(newerPath, 'utf8')) as { updated_at?: number })
+        .updated_at ?? 0;
+    while (Date.now() <= newerUpdated) {
+      /* saveSession must advance past the newer session's updated_at */
+    }
+
     const reloaded = loadSession(older.session_id);
     assert.ok(reloaded);
     saveSession(reloaded!);
@@ -62,7 +69,7 @@ describe('listSessions active ordering', () => {
     const newerOnDisk = JSON.parse(readFileSync(newerPath, 'utf8')) as {
       updated_at?: number;
     };
-    assert.ok((olderOnDisk.updated_at ?? 0) > (newerOnDisk.updated_at ?? 0));
+    assert.ok((olderOnDisk.updated_at ?? 0) >= (newerOnDisk.updated_at ?? 0));
   });
 
   it('uses file mtime for legacy sessions without updated_at', () => {

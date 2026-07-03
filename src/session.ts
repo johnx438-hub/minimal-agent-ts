@@ -118,6 +118,36 @@ export function saveSession(session: SessionFile): void {
   lastSaveAtBySession.set(session.session_id, session.updated_at);
 }
 
+const SESSION_PREVIEW_MAX_CHARS = 72;
+
+/** One-line preview of the most recent user message in a session. */
+export function lastUserMessagePreview(
+  session: Pick<SessionFile, 'current_messages' | 'tasks'>,
+): string {
+  for (let i = session.current_messages.length - 1; i >= 0; i--) {
+    const msg = session.current_messages[i];
+    if (msg?.role === 'user') {
+      const text = typeof msg.content === 'string' ? msg.content.trim() : '';
+      if (text) return clipSessionPreview(text);
+    }
+  }
+
+  const lastTask = session.tasks[session.tasks.length - 1];
+  if (lastTask) {
+    const lastMsg = lastTask.user_messages[lastTask.user_messages.length - 1];
+    if (lastMsg?.trim()) return clipSessionPreview(lastMsg.trim());
+    if (lastTask.user_intent?.trim()) return clipSessionPreview(lastTask.user_intent.trim());
+  }
+
+  return '(no user message)';
+}
+
+function clipSessionPreview(text: string): string {
+  const oneLine = text.replace(/\s+/g, ' ').trim();
+  if (oneLine.length <= SESSION_PREVIEW_MAX_CHARS) return oneLine;
+  return `${oneLine.slice(0, SESSION_PREVIEW_MAX_CHARS - 1)}…`;
+}
+
 /** Sort key for resume-last: prefer updated_at, then file mtime, then created_at. */
 export function sessionActiveAt(
   session: Pick<SessionFile, 'created_at' | 'updated_at'>,
@@ -163,6 +193,7 @@ export function listSessions(userId?: string): SessionMeta[] {
         updated_at,
         task_count: session.tasks.length,
         path,
+        last_user_preview: lastUserMessagePreview(session),
       });
     } catch {
       continue;

@@ -270,7 +270,11 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
       } else {
         for (const s of sessions) {
           const active = new Date(s.updated_at ?? s.created_at).toISOString().slice(0, 16);
-          console.log(`  ${s.session_id}  tasks=${s.task_count}  active=${active}`);
+          const preview = s.last_user_preview ?? '(no user message)';
+          console.log(
+            `  ${s.session_id}  tasks=${s.task_count}  active=${active}`,
+          );
+          console.log(`    ${preview}`);
         }
       }
       showPrompt();
@@ -483,6 +487,32 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
     if (result.message === '__tools__') {
       for (const t of runtime.listToolNames()) {
         console.log(`  • ${t}`);
+      }
+      showPrompt();
+      return;
+    }
+
+    if (result.message === '__mcp_list__') {
+      const tools = runtime.listMcpTools();
+      if (tools.length === 0) {
+        console.log('(no MCP tools — add mcp_servers to agent.json)');
+      } else {
+        const byServer = new Map<string, typeof tools>();
+        for (const t of tools) {
+          const list = byServer.get(t.serverName) ?? [];
+          list.push(t);
+          byServer.set(t.serverName, list);
+        }
+        for (const [server, serverTools] of byServer) {
+          console.log(`  [${server}]`);
+          for (const t of serverTools) {
+            const desc = t.description.length > 72
+              ? `${t.description.slice(0, 71)}…`
+              : t.description;
+            console.log(`    • ${t.apiName}  (${t.toolName})`);
+            if (desc) console.log(`      ${desc}`);
+          }
+        }
       }
       showPrompt();
       return;
