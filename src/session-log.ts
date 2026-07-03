@@ -2,17 +2,17 @@ import { listActions, loadAction } from './action-store.js';
 import { buildGenericPreview, DEFAULT_PREVIEW_POLICY } from './action-preview.js';
 import type { ActionBlock, SessionFile, TaskSummaryDoc } from './types.js';
 
-/** Sentinel task id for in-flight context in history browser. */
-export const HISTORY_IN_FLIGHT_TASK_ID = '__in_flight__';
+/** Sentinel task id for in-flight context in log browser. */
+export const LOG_IN_FLIGHT_TASK_ID = '__in_flight__';
 
-export interface HistoryTaskEntry {
+export interface LogTaskEntry {
   taskId: string;
   label: string;
   description: string;
   kind: 'completed' | 'in_flight';
 }
 
-export interface HistoryLineEntry {
+export interface LogLineEntry {
   value: string;
   label: string;
   description: string;
@@ -53,13 +53,13 @@ function formatActionDescription(block: ActionBlock): string {
   return clip(preview.preview_lines.join(' '), 80);
 }
 
-export function listHistoryTasks(session: SessionFile): HistoryTaskEntry[] {
-  const entries: HistoryTaskEntry[] = [];
+export function listLogTasks(session: SessionFile): LogTaskEntry[] {
+  const entries: LogTaskEntry[] = [];
 
   if (session.current_messages.length > 0) {
     const preview = session.current_messages.find((m) => m.role === 'user')?.content;
     entries.push({
-      taskId: HISTORY_IN_FLIGHT_TASK_ID,
+      taskId: LOG_IN_FLIGHT_TASK_ID,
       label: 'in-flight (current task)',
       description: clip(typeof preview === 'string' ? preview : '(no user message)', 72),
       kind: 'in_flight',
@@ -84,8 +84,8 @@ export function listHistoryTasks(session: SessionFile): HistoryTaskEntry[] {
 function linesForCompletedTask(
   session: SessionFile,
   task: TaskSummaryDoc,
-): HistoryLineEntry[] {
-  const lines: HistoryLineEntry[] = [];
+): LogLineEntry[] {
+  const lines: LogLineEntry[] = [];
 
   if (task.user_messages.length > 0) {
     lines.push({
@@ -145,8 +145,8 @@ function linesForCompletedTask(
   return lines;
 }
 
-function linesForInFlightTask(session: SessionFile): HistoryLineEntry[] {
-  const lines: HistoryLineEntry[] = [];
+function linesForInFlightTask(session: SessionFile): LogLineEntry[] {
+  const lines: LogLineEntry[] = [];
   let userIdx = 0;
   let assistantIdx = 0;
 
@@ -201,11 +201,11 @@ function linesForInFlightTask(session: SessionFile): HistoryLineEntry[] {
   return lines;
 }
 
-export function listHistoryLines(
+export function listLogLines(
   session: SessionFile,
   taskId: string,
-): HistoryLineEntry[] {
-  if (taskId === HISTORY_IN_FLIGHT_TASK_ID) {
+): LogLineEntry[] {
+  if (taskId === LOG_IN_FLIGHT_TASK_ID) {
     return linesForInFlightTask(session);
   }
 

@@ -6,10 +6,10 @@ import { describe, it } from 'node:test';
 
 import { saveAction } from '../src/action-store.js';
 import {
-  HISTORY_IN_FLIGHT_TASK_ID,
-  listHistoryLines,
-  listHistoryTasks,
-} from '../src/session-history.js';
+  LOG_IN_FLIGHT_TASK_ID,
+  listLogLines,
+  listLogTasks,
+} from '../src/session-log.js';
 import type { ActionBlock, SessionFile } from '../src/types.js';
 import { setWorkspaceRoot } from '../src/workspace.js';
 
@@ -44,17 +44,17 @@ function sampleSession(): SessionFile {
   };
 }
 
-describe('listHistoryTasks', () => {
+describe('listLogTasks', () => {
   it('lists in-flight first then completed tasks newest-first', () => {
-    const tasks = listHistoryTasks(sampleSession());
-    assert.equal(tasks[0]?.taskId, HISTORY_IN_FLIGHT_TASK_ID);
+    const tasks = listLogTasks(sampleSession());
+    assert.equal(tasks[0]?.taskId, LOG_IN_FLIGHT_TASK_ID);
     assert.equal(tasks[1]?.taskId, 'task_001');
   });
 });
 
-describe('listHistoryLines', () => {
+describe('listLogLines', () => {
   it('includes user messages and actions for completed tasks', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ma-hist-'));
+    const dir = mkdtempSync(join(tmpdir(), 'ma-log-'));
     setWorkspaceRoot(dir);
     mkdirSync(join(dir, '.sessions', 'actions'), { recursive: true });
 
@@ -78,13 +78,13 @@ describe('listHistoryLines', () => {
     saveAction(block);
 
     const session = sampleSession();
-    const lines = listHistoryLines(session, 'task_001');
+    const lines = listLogLines(session, 'task_001');
     assert.ok(lines.some((l) => l.kind === 'user' && l.label.includes('fix bug')));
     assert.ok(lines.some((l) => l.kind === 'action' && l.actionId === 'action_hist_1'));
   });
 
   it('resolves in-flight tool messages to actions', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ma-hist-flight-'));
+    const dir = mkdtempSync(join(tmpdir(), 'ma-log-flight-'));
     setWorkspaceRoot(dir);
     mkdirSync(join(dir, '.sessions', 'actions'), { recursive: true });
 
@@ -105,7 +105,7 @@ describe('listHistoryLines', () => {
       token_cost: 2,
     });
 
-    const lines = listHistoryLines(sampleSession(), HISTORY_IN_FLIGHT_TASK_ID);
+    const lines = listLogLines(sampleSession(), LOG_IN_FLIGHT_TASK_ID);
     assert.ok(lines.some((l) => l.kind === 'user' && l.label.includes('continue work')));
     assert.ok(lines.some((l) => l.actionId === 'action_001_1'));
   });

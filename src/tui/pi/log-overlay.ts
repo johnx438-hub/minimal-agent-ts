@@ -4,19 +4,19 @@ import { loadAction } from '../../action-store.js';
 import {
   buildActionDetailLines,
   formatActionDetailTitle,
-  listHistoryLines,
-  listHistoryTasks,
-  type HistoryLineEntry,
-} from '../../session-history.js';
+  listLogLines,
+  listLogTasks,
+  type LogLineEntry,
+} from '../../session-log.js';
 import type { SessionFile } from '../../types.js';
 import { buildSelectItems, showPickerOverlay } from './picker.js';
 
-function lineItems(entries: HistoryLineEntry[]) {
+function lineItems(entries: LogLineEntry[]) {
   if (entries.length === 0) {
     return buildSelectItems([
       {
         value: '__empty__',
-        label: '(no history for this task)',
+        label: '(no log entries for this task)',
         description: 'Actions may not be in cold storage yet',
       },
     ]);
@@ -61,18 +61,18 @@ async function showActionDetailOverlay(
   });
 }
 
-async function showTaskHistoryOverlay(
+async function showTaskLogOverlay(
   tui: TUI,
   session: SessionFile,
   taskId: string,
   taskLabel: string,
 ): Promise<void> {
-  const entries = listHistoryLines(session, taskId);
+  const entries = listLogLines(session, taskId);
 
   for (;;) {
     const picked = await showPickerOverlay(tui, {
       title: [
-        `History · ${taskLabel}`,
+        `Log · ${taskLabel}`,
         session.session_id,
         'Enter action detail · Esc back',
       ].join('\n'),
@@ -92,14 +92,14 @@ async function showTaskHistoryOverlay(
   }
 }
 
-export async function showHistoryBrowser(
+export async function showLogBrowser(
   tui: TUI,
   session: SessionFile,
 ): Promise<void> {
-  const tasks = listHistoryTasks(session);
+  const tasks = listLogTasks(session);
   if (tasks.length === 0) {
     await showPickerOverlay(tui, {
-      title: `History · ${session.session_id}\n(no tasks or in-flight context)`,
+      title: `Log · ${session.session_id}\n(no tasks or in-flight context)`,
       items: buildSelectItems([
         { value: 'empty', label: '(empty session)', description: 'Run a task first' },
       ]),
@@ -117,7 +117,7 @@ export async function showHistoryBrowser(
 
   const picked = await showPickerOverlay(tui, {
     title: [
-      `History · ${session.session_id}`,
+      `Log · ${session.session_id}`,
       'Pick a task · Enter drill-down · Esc cancel',
     ].join('\n'),
     items: taskItems,
@@ -127,7 +127,7 @@ export async function showHistoryBrowser(
   if (!picked) return;
 
   const task = tasks.find((t) => t.taskId === picked.value);
-  await showTaskHistoryOverlay(
+  await showTaskLogOverlay(
     tui,
     session,
     picked.value,

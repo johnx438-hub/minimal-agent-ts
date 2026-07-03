@@ -72,9 +72,9 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
     hintEn: 'Queue handoff for next task',
   },
   {
-    command: '/history [session_id]',
-    hintZh: '浏览当前会话任务与工具历史',
-    hintEn: 'Browse task and tool history in session',
+    command: '/log [session_id]',
+    hintZh: '审计当前会话任务与工具调用',
+    hintEn: 'Audit task and tool actions in session',
   },
   {
     command: '/clear',
@@ -279,11 +279,11 @@ export function parseSlashLine(line: string): SlashResult | null {
     case '/clear':
       return { handled: true, clearContext: true };
 
-    case '/history': {
+    case '/log': {
       const id = parts[1];
       return {
         handled: true,
-        message: id ? `__history__:${id}` : '__history__',
+        message: id ? `__log__:${id}` : '__log__',
       };
     }
 

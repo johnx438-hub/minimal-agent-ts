@@ -404,8 +404,8 @@ export class AgentRuntime {
     return buildSessionOverview(session);
   }
 
-  /** Session for /history; defaults to active session. */
-  resolveHistorySession(sessionId?: string): SessionFile | null {
+  /** Session for /log; defaults to active session. */
+  resolveLogSession(sessionId?: string): SessionFile | null {
     if (sessionId) return loadSession(sessionId);
     return this.session;
   }

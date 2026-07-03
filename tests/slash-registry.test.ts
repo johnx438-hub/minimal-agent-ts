@@ -26,8 +26,8 @@ describe('slash registry', () => {
     assert.equal(parseSlashLine('?')?.message, '__help__');
     assert.equal(parseSlashLine('/mcp')?.message, '__mcp_list__');
     assert.equal(parseSlashLine('/mcp list')?.message, '__mcp_list__');
-    assert.equal(parseSlashLine('/history')?.message, '__history__');
-    assert.equal(parseSlashLine('/history session_x')?.message, '__history__:session_x');
+    assert.equal(parseSlashLine('/log')?.message, '__log__');
+    assert.equal(parseSlashLine('/log session_x')?.message, '__log__:session_x');
   });
 
   it('exposes autocomplete items with bilingual descriptions', () => {
@@ -44,9 +44,9 @@ describe('slash registry', () => {
     assert.ok(workflow);
     assert.match(workflow!.description, /选择并武装 workflow/);
 
-    const history = SLASH_HELP_LINES.find((l) => l.includes('/history'));
-    assert.ok(history);
-    assert.match(history!, /浏览当前会话/);
+    const log = SLASH_HELP_LINES.find((l) => l.includes('/log'));
+    assert.ok(log);
+    assert.match(log!, /审计当前会话/);
     assert.equal(items.some((i) => i.name === 'session'), false);
   });
 });
