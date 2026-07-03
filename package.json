@@ -8,7 +8,9 @@
     "start": "tsx src/main.ts",
     "tui": "tsx src/tui/main.ts",
     "typecheck": "tsc --noEmit",
-    "test": "NODE_ENV=test node --import tsx --test tests/**/*.test.ts"
+    "test": "NODE_ENV=test node --import tsx --test tests/**/*.test.ts",
+    "p0:summary": "tsx src/p0-summary.ts",
+    "p0:compare": "tsx src/p0-compare.ts"
   },
   "devDependencies": {
     "@types/dotenv-safe": "^9.1.0",
