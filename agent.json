@@ -14,7 +14,7 @@
     "code_review"
   ],
   "spawn_policy": {
-    "max_parallel": 2,
+    "max_parallel": 3,
     "max_turns_default": 15,
     "max_turns_cap": 30
   },
