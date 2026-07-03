@@ -33,7 +33,14 @@ describe('slash registry', () => {
     const sessions = items.find((i) => i.name === 'sessions');
     assert.ok(sessions);
     assert.match(sessions!.description, /选择并恢复已保存会话/);
-    assert.match(sessions!.description, /Pick and resume a saved session/);
+
+    const skills = items.find((i) => i.name === 'skills');
+    assert.ok(skills);
+    assert.match(skills!.description, /选择并加载 skill/);
+
+    const workflow = items.find((i) => i.name === 'workflow');
+    assert.ok(workflow);
+    assert.match(workflow!.description, /选择并武装 workflow/);
     assert.equal(items.some((i) => i.name === 'session'), false);
   });
 });

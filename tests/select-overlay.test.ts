@@ -33,4 +33,25 @@ describe('SelectOverlayPanel input forwarding', () => {
 
     assert.equal(selected, 'b');
   });
+
+  it('invokes onInfo when i is pressed', () => {
+    const list = new SelectList(
+      [{ value: 'x', label: 'Examine' }],
+      5,
+      piSelectListTheme,
+    );
+    let infoValue: string | null = null;
+    const panel = {
+      handleInput(data: string) {
+        if (data === 'i') {
+          const item = list.getSelectedItem();
+          if (item) infoValue = item.value;
+          return;
+        }
+        list.handleInput(data);
+      },
+    };
+    panel.handleInput('i');
+    assert.equal(infoValue, 'x');
+  });
 });

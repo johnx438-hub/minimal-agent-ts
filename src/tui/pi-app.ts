@@ -37,8 +37,10 @@ import {
   createPiWorkflowConfirm,
   runPiFirstRunConfirm,
 } from './pi/prompts.js';
-import { showSelectOverlay } from './pi/select-overlay.js';
+import { buildSelectItems, showPickerOverlay } from './pi/picker.js';
+import { showSessionDetailOverlay } from './pi/session-detail.js';
 import { piEditorTheme } from './pi/themes.js';
+import { formatSessionPickerDescription } from '../session.js';
 
 const SLASH_AUTOCOMPLETE = slashAutocompleteItems();
 
@@ -295,22 +297,31 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
       }
 
       const currentId = runtime.sessionLabel();
-      const items = sessions.map((s) => {
-        const active = new Date(s.updated_at ?? s.created_at).toISOString().slice(0, 16);
-        const current = s.session_id === currentId ? ' (current)' : '';
-        return {
-          value: s.session_id,
-          label: `${s.session_id}${current}`,
-          description: `${s.last_user_preview ?? '(no user message)'} · tasks=${s.task_count} · active=${active}`,
-        };
-      });
-
-      const picked = await showSelectOverlay(
-        tui,
-        'Sessions — Enter to resume, Esc to cancel',
-        items,
-        { maxVisible: Math.min(items.length, 10) },
+      const items = buildSelectItems(
+        sessions.map((s) => {
+          const current = s.session_id === currentId ? ' (current)' : '';
+          return {
+            value: s.session_id,
+            label: `${s.session_id}${current}`,
+            description: formatSessionPickerDescription(s),
+          };
+        }),
       );
+
+      const picked = await showPickerOverlay(tui, {
+        title: 'Sessions — Enter resume · i info · Esc cancel',
+        items,
+        maxVisible: Math.min(items.length, 10),
+        onInfo: async (item, finish) => {
+          const overview = runtime.getSessionOverview(item.value);
+          if (!overview) {
+            say(`Session not found: ${item.value}`);
+            return;
+          }
+          const action = await showSessionDetailOverlay(tui, overview);
+          if (action === 'resume') finish(item);
+        },
+      });
       if (!picked) {
         resumeEditor();
         return;
@@ -517,11 +528,29 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
 
     if (result.message === '__skills__') {
       const skills = runtime.listSkills();
-      if (skills.length === 0) say('(no skills)');
-      else {
-        for (const s of skills) {
-          say(`  ${s.name}: ${s.description.slice(0, 72)}`, true);
-        }
+      if (skills.length === 0) {
+        say('(no skills)');
+        resumeEditor();
+        return;
+      }
+
+      const loaded = new Set(runtime.getLoadedSkills());
+      const items = buildSelectItems(
+        skills.map((s) => ({
+          value: s.name,
+          label: loaded.has(s.name) ? `${s.name} (loaded)` : s.name,
+          description: s.description.slice(0, 72),
+        })),
+      );
+
+      const picked = await showPickerOverlay(tui, {
+        title: 'Skills — Enter to load · Esc cancel',
+        items,
+        maxVisible: Math.min(items.length, 10),
+      });
+      if (picked) {
+        runtime.loadSkill(picked.value);
+        say(`Loaded skill: ${picked.value} (next task)`);
       }
       resumeEditor();
       return;
@@ -590,9 +619,47 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     }
 
     if (result.message === '__workflow_list__') {
-      const wfs = runtime.listWorkflows();
-      if (wfs.length === 0) say('(no workflows)');
-      else for (const w of wfs) say(`  • ${w}`, true);
+      const workflows = runtime.listWorkflowMeta();
+      if (workflows.length === 0) {
+        say('(no workflows)');
+        resumeEditor();
+        return;
+      }
+
+      const armed = runtime.getArmedWorkflow();
+      const armedName = armed
+        ? workflows.find((w) => runtime.resolveWorkflowPath(w.name) === armed)?.name
+        : undefined;
+
+      const items = buildSelectItems(
+        workflows.map((w) => {
+          const roles =
+            w.roles.length > 0 ? `roles: ${w.roles.join(', ')}` : 'roles: (none)';
+          const share = w.shareSession ? ' · shared session' : '';
+          const current = armedName === w.name ? ' (armed)' : '';
+          return {
+            value: w.name,
+            label: `${w.name}${current}`,
+            description: `${roles}${share}`,
+          };
+        }),
+      );
+
+      const picked = await showPickerOverlay(tui, {
+        title: 'Workflows — Enter to arm · Esc cancel',
+        items,
+        maxVisible: Math.min(items.length, 10),
+      });
+      if (picked) {
+        const path = runtime.resolveWorkflowPath(picked.value);
+        if (!path) {
+          say(`Workflow not found: ${picked.value}`);
+        } else {
+          runtime.armWorkflow(path);
+          armedWorkflow = picked.value;
+          say(`Armed workflow: ${picked.value} — next line is the task`);
+        }
+      }
       resumeEditor();
       return;
     }

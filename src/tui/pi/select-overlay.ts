@@ -10,6 +10,8 @@ import {
 
 import { piChalk, piOverlayBgHex, piSelectListOverlayTheme } from './themes.js';
 
+export type PickerFinish = (item: SelectItem | null) => void;
+
 function paintOverlayLine(line: string, width: number): string {
   const fitted = truncateToWidth(line, width, '', true);
   return piChalk.bgHex(piOverlayBgHex)(piChalk.white(fitted));
@@ -19,15 +21,29 @@ function paintOverlayLine(line: string, width: number): string {
 class SelectOverlayPanel implements Component {
   private readonly box: Box;
   private readonly list: SelectList;
+  private readonly onInfo?: (item: SelectItem, finish: PickerFinish) => void | Promise<void>;
+  private readonly finishPicker: PickerFinish;
 
-  constructor(title: string, list: SelectList) {
+  constructor(
+    title: string,
+    list: SelectList,
+    finishPicker: PickerFinish,
+    onInfo?: (item: SelectItem, finish: PickerFinish) => void | Promise<void>,
+  ) {
     this.list = list;
+    this.finishPicker = finishPicker;
+    this.onInfo = onInfo;
     this.box = new Box(1, 1);
     this.box.addChild(new Text(title, 1, 1));
     this.box.addChild(list);
   }
 
   handleInput(data: string): void {
+    if (this.onInfo && data === 'i') {
+      const item = this.list.getSelectedItem();
+      if (item) void this.onInfo(item, this.finishPicker);
+      return;
+    }
     this.list.handleInput(data);
   }
 
@@ -44,7 +60,12 @@ export function showSelectOverlay(
   tui: TUI,
   title: string,
   items: SelectItem[],
-  opts?: { maxVisible?: number; cancelable?: boolean; abortSignal?: AbortSignal },
+  opts?: {
+    maxVisible?: number;
+    cancelable?: boolean;
+    abortSignal?: AbortSignal;
+    onInfo?: (item: SelectItem, finish: PickerFinish) => void | Promise<void>;
+  },
 ): Promise<SelectItem | null> {
   const cancelable = opts?.cancelable !== false;
   const maxVisible = opts?.maxVisible ?? Math.min(items.length, 8);
@@ -77,7 +98,7 @@ export function showSelectOverlay(
       finish(null);
     };
 
-    const panel = new SelectOverlayPanel(title, list);
+    const panel = new SelectOverlayPanel(title, list, finish, opts?.onInfo);
     handle = tui.showOverlay(panel);
     handle.focus?.();
     tui.requestRender();

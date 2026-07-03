@@ -150,4 +150,24 @@ export interface SessionMeta {
   path: string;                // File path to session.json
   /** Last user message preview for session pickers. */
   last_user_preview?: string;
+  /** Latest completed task user_intent preview. */
+  last_task_intent?: string;
+  /** Whether current_messages has in-flight context. */
+  has_in_flight?: boolean;
+}
+
+/** Read-only session summary for TUI detail overlay. */
+export interface SessionOverview {
+  session_id: string;
+  created_at: number;
+  updated_at?: number;
+  task_count: number;
+  in_flight_preview: string;
+  has_in_flight: boolean;
+  tasks: Array<{
+    task_id: string;
+    user_intent: string;
+    turn_range: [number, number];
+    files_touched: string[];
+  }>;
 }

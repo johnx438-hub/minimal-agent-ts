@@ -21,6 +21,7 @@ import {
 } from './tools/registry.js';
 import { PermissionGate } from './permission-gate.js';
 import {
+  buildSessionOverview,
   createSession,
   getLatestSession,
   listSessions,
@@ -35,13 +36,14 @@ import {
   type WorkflowCheckpointInfo,
 } from './workflow-checkpoint.js';
 import type { AgentPluginConfig } from './plugins/types.js';
-import type { AgentConfig, SessionFile, SessionMeta } from './types.js';
+import type { AgentConfig, SessionFile, SessionMeta, SessionOverview } from './types.js';
 import {
   formatHandoffInjection,
   getHandoffPath,
   readHandoffFile,
   writeHandoffFile,
 } from './handoff.js';
+import { listWorkflowMetaForCwd } from './workflow/catalog.js';
 import { runWorkflow } from './workflow/runner.js';
 import { resetZvecCollection } from './action-index.js';
 import { setWorkspaceRoot } from './workspace.js';
@@ -367,6 +369,10 @@ export class AgentRuntime {
     }
   }
 
+  getLoadedSkills(): string[] {
+    return [...(this.pluginConfig.loaded_skills ?? [])];
+  }
+
   async setCwd(path: string): Promise<void> {
     const resolved = resolve(path);
     setWorkspaceRoot(resolved);
@@ -385,11 +391,17 @@ export class AgentRuntime {
   }
 
   listWorkflows(): string[] {
-    const dir = resolve(this.config.cwd, 'workflows');
-    if (!existsSync(dir)) return [];
-    return readdirSync(dir)
-      .filter((f) => f.endsWith('.json'))
-      .map((f) => basename(f, '.json'));
+    return this.listWorkflowMeta().map((w) => w.name);
+  }
+
+  listWorkflowMeta() {
+    return listWorkflowMetaForCwd(this.config.cwd);
+  }
+
+  getSessionOverview(sessionId: string): SessionOverview | null {
+    const session = loadSession(sessionId);
+    if (!session) return null;
+    return buildSessionOverview(session);
   }
 
   resolveWorkflowPath(nameOrPath: string): string | null {

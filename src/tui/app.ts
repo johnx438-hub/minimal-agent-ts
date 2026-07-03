@@ -2,6 +2,7 @@ import * as readline from 'node:readline';
 import { resolve } from 'node:path';
 
 import type { AgentRuntime } from '../runner.js';
+import { formatSessionPickerDescription } from '../session.js';
 import {
   defaultPrefs,
   formatApproveStatus,
@@ -269,12 +270,8 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
         console.log('(no sessions)');
       } else {
         for (const s of sessions) {
-          const active = new Date(s.updated_at ?? s.created_at).toISOString().slice(0, 16);
-          const preview = s.last_user_preview ?? '(no user message)';
-          console.log(
-            `  ${s.session_id}  tasks=${s.task_count}  active=${active}`,
-          );
-          console.log(`    ${preview}`);
+          console.log(`  ${s.session_id}`);
+          console.log(`    ${formatSessionPickerDescription(s)}`);
         }
       }
       showPrompt();
@@ -471,6 +468,7 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
         for (const s of skills) {
           console.log(`  ${s.name}: ${s.description.slice(0, 72)}`);
         }
+        console.log('  (pi TUI: /skills opens picker; or /skills load <name>)');
       }
       showPrompt();
       return;
@@ -541,9 +539,17 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
     }
 
     if (result.message === '__workflow_list__') {
-      const wfs = runtime.listWorkflows();
-      if (wfs.length === 0) console.log('(no workflows)');
-      else for (const w of wfs) console.log(`  • ${w}`);
+      const workflows = runtime.listWorkflowMeta();
+      if (workflows.length === 0) {
+        console.log('(no workflows)');
+      } else {
+        for (const w of workflows) {
+          const roles =
+            w.roles.length > 0 ? `roles: ${w.roles.join(', ')}` : 'roles: (none)';
+          console.log(`  • ${w.name}  (${roles})`);
+        }
+        console.log('  (pi TUI: /workflow opens picker; or /workflow !<name>)');
+      }
       showPrompt();
       return;
     }

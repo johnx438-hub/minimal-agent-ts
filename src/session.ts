@@ -9,7 +9,7 @@ import {
 import { resolve } from 'node:path';
 
 import { releaseAllCompactedContent } from './context-policy.js';
-import type { SessionFile, SessionMeta } from './types.js';
+import type { SessionFile, SessionMeta, SessionOverview } from './types.js';
 import { ensureSessionsDir, sessionPath, sessionsDir } from './workspace.js';
 
 const DEFAULT_SAVE_MIN_INTERVAL_MS = 30_000;
@@ -142,10 +142,52 @@ export function lastUserMessagePreview(
   return '(no user message)';
 }
 
-function clipSessionPreview(text: string): string {
+function clipSessionPreview(text: string, max = SESSION_PREVIEW_MAX_CHARS): string {
   const oneLine = text.replace(/\s+/g, ' ').trim();
-  if (oneLine.length <= SESSION_PREVIEW_MAX_CHARS) return oneLine;
-  return `${oneLine.slice(0, SESSION_PREVIEW_MAX_CHARS - 1)}…`;
+  if (oneLine.length <= max) return oneLine;
+  return `${oneLine.slice(0, max - 1)}…`;
+}
+
+const TASK_INTENT_PREVIEW_MAX_CHARS = 48;
+
+/** Latest completed task user_intent, clipped for list descriptions. */
+export function lastTaskIntentPreview(
+  session: Pick<SessionFile, 'tasks'>,
+): string | undefined {
+  const intent = session.tasks[session.tasks.length - 1]?.user_intent?.trim();
+  if (!intent) return undefined;
+  return clipSessionPreview(intent, TASK_INTENT_PREVIEW_MAX_CHARS);
+}
+
+export function formatSessionPickerDescription(meta: SessionMeta): string {
+  const active = new Date(meta.updated_at ?? meta.created_at).toISOString().slice(0, 16);
+  const preview = meta.last_user_preview ?? '(no user message)';
+  const intent = meta.last_task_intent
+    ? `intent: ${meta.last_task_intent}`
+    : 'intent: (none)';
+  return `${preview} · tasks=${meta.task_count} · active=${active} · ${intent}`;
+}
+
+/** Build read-only overview for session detail overlay (newest tasks first). */
+export function buildSessionOverview(session: SessionFile): SessionOverview {
+  const inFlight = lastUserMessagePreview(session);
+  const hasInFlight = session.current_messages.length > 0;
+  const tasks = [...session.tasks].reverse().slice(0, 10).map((t) => ({
+    task_id: t.task_id,
+    user_intent: t.user_intent,
+    turn_range: t.turn_range,
+    files_touched: t.files_touched,
+  }));
+
+  return {
+    session_id: session.session_id,
+    created_at: session.created_at,
+    updated_at: session.updated_at,
+    task_count: session.tasks.length,
+    in_flight_preview: hasInFlight ? inFlight : '(no in-flight task)',
+    has_in_flight: hasInFlight,
+    tasks,
+  };
 }
 
 /** Sort key for resume-last: prefer updated_at, then file mtime, then created_at. */
@@ -194,6 +236,8 @@ export function listSessions(userId?: string): SessionMeta[] {
         task_count: session.tasks.length,
         path,
         last_user_preview: lastUserMessagePreview(session),
+        last_task_intent: lastTaskIntentPreview(session),
+        has_in_flight: session.current_messages.length > 0,
       });
     } catch {
       continue;

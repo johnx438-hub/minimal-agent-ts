@@ -117,8 +117,8 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
   {
     command: '/skills',
     aliases: ['/skill'],
-    hintZh: '列出 skills',
-    hintEn: 'List skills',
+    hintZh: '选择并加载 skill',
+    hintEn: 'Pick and load a skill',
   },
   {
     command: '/skills load <name>',
@@ -140,8 +140,8 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
   {
     command: '/workflow',
     aliases: ['/wf'],
-    hintZh: '列出 workflow',
-    hintEn: 'List workflows',
+    hintZh: '选择并武装 workflow',
+    hintEn: 'Pick and arm a workflow',
   },
   {
     command: '/workflow !<name>',
