@@ -1,6 +1,38 @@
-import { Box, SelectList, Text, type SelectItem, type TUI } from '@earendil-works/pi-tui';
+import {
+  Box,
+  SelectList,
+  Text,
+  type Component,
+  type SelectItem,
+  type TUI,
+} from '@earendil-works/pi-tui';
 
 import { piChalk, piSelectListTheme } from './themes.js';
+
+/** Box wrapper that forwards keyboard input to an embedded SelectList. */
+class SelectOverlayPanel implements Component {
+  private readonly box: Box;
+  private readonly list: SelectList;
+
+  constructor(title: string, list: SelectList, bgFn: (s: string) => string) {
+    this.list = list;
+    this.box = new Box(1, 1, bgFn);
+    this.box.addChild(new Text(title, 1, 1));
+    this.box.addChild(list);
+  }
+
+  handleInput(data: string): void {
+    this.list.handleInput(data);
+  }
+
+  invalidate(): void {
+    this.box.invalidate();
+  }
+
+  render(width: number): string[] {
+    return this.box.render(width);
+  }
+}
 
 export function showSelectOverlay(
   tui: TUI,
@@ -14,7 +46,7 @@ export function showSelectOverlay(
 
   return new Promise((resolve) => {
     let settled = false;
-    let handle: { hide: () => void } | null = null;
+    let handle: { hide: () => void; focus?: () => void } | null = null;
 
     const finish = (item: SelectItem | null): void => {
       if (settled) return;
@@ -31,8 +63,6 @@ export function showSelectOverlay(
     }
     abortSignal?.addEventListener('abort', onAbort, { once: true });
 
-    const panel = new Box(1, 1, (s) => piChalk.bgHex('#1e1e2e')(piChalk.white(s)));
-    panel.addChild(new Text(title, 1, 1));
     const list = new SelectList(items, maxVisible, piSelectListTheme);
 
     list.onSelect = (item) => finish(item);
@@ -41,8 +71,13 @@ export function showSelectOverlay(
       finish(null);
     };
 
-    panel.addChild(list);
+    const panel = new SelectOverlayPanel(
+      title,
+      list,
+      (s) => piChalk.bgHex('#1e1e2e')(piChalk.white(s)),
+    );
     handle = tui.showOverlay(panel);
+    handle.focus?.();
     tui.requestRender();
   });
 }
