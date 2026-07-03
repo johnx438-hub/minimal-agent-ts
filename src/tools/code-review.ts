@@ -59,9 +59,9 @@ function formatCombinedReport(
   parts.push('---');
   parts.push(`Total: ${total} issue${total !== 1 ? 's' : ''}`);
   parts.push('Full reports saved to:');
-  parts.push('- `/workspace/code-review-bug.md`');
-  parts.push('- `/workspace/code-review-security.md`');
-  parts.push('- `/workspace/code-review-quality.md`');
+  parts.push('- `workspace/code-review-bug.md`');
+  parts.push('- `workspace/code-review-security.md`');
+  parts.push('- `workspace/code-review-quality.md`');
 
   return parts.join('\n');
 }
