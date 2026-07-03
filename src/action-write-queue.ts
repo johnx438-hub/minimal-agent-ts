@@ -153,7 +153,10 @@ export class ActionWriteQueue {
       try {
         await writeActionFilesAsync(batch);
       } catch {
-        this.requeueBatchOnFailure(batch);
+        // Background drain may retry; explicit flush() must not requeue or loop forever.
+        if (!this.forceFlush) {
+          this.requeueBatchOnFailure(batch);
+        }
         return;
       }
       const flushMs = performance.now() - t0;
@@ -244,7 +247,9 @@ function envInt(name: string, fallback: number): number {
 
 function chainActionFlushListener(listener?: ActionFlushListener): ActionFlushListener {
   return (info) => {
-    void import('./action-io-metrics.js').then((m) => m.recordActionFlush(info));
+    void import('./action-io-metrics.js')
+      .then((m) => m.recordActionFlush(info))
+      .catch(() => {});
     listener?.(info);
   };
 }

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
@@ -167,6 +167,35 @@ describe('ActionWriteQueue', () => {
     assert.ok(existsSync(join(dir, '.sessions', 'actions', 'batch_1.json')));
     assert.ok(existsSync(join(dir, '.sessions', 'actions', 'batch_2.json')));
     assert.ok(existsSync(join(dir, '.sessions', 'actions', 'batch_3.json')));
+
+    queue.dispose();
+    resetActionWriteQueueForTests();
+  });
+
+  it('flush returns without spinning when writes fail under force flush', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ma-action-fail-'));
+    setWorkspaceRoot(dir);
+    mkdirSync(join(dir, '.sessions'), { recursive: true });
+    writeFileSync(join(dir, '.sessions', 'actions'), 'blocked');
+
+    const queue = new ActionWriteQueue({
+      sync: false,
+      drainIntervalMs: 60_000,
+      maxBatch: 4,
+      pauseDuringSpawn: false,
+    });
+    queue.enqueue(sampleBlock('fail_1'));
+
+    const result = await Promise.race([
+      queue.flush(),
+      sleep(500).then(() => 'timeout' as const),
+    ]);
+
+    assert.notEqual(result, 'timeout');
+    if (result !== 'timeout') {
+      assert.equal(result.pending, 0);
+      assert.equal(result.count, 0);
+    }
 
     queue.dispose();
     resetActionWriteQueueForTests();
