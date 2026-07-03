@@ -41,22 +41,22 @@
       "name": "code-review-bug",
       "description": "Review code for bugs, logic errors, null checks, edge cases",
       "prompt_file": "agents/code-review-bug.md",
-      "tools": ["read_file"],
-      "max_turns": 6
+      "tools": ["read_file", "grep_search", "write_file"],
+      "max_turns": 12
     },
     {
       "name": "code-review-security",
       "description": "Review code for security vulnerabilities, secrets, injection risks",
       "prompt_file": "agents/code-review-security.md",
-      "tools": ["read_file"],
-      "max_turns": 6
+      "tools": ["read_file", "grep_search", "write_file"],
+      "max_turns": 12
     },
     {
       "name": "code-review-quality",
       "description": "Review code for readability, consistency, and best practices",
       "prompt_file": "agents/code-review-quality.md",
-      "tools": ["read_file"],
-      "max_turns": 6
+      "tools": ["read_file", "grep_search", "write_file"],
+      "max_turns": 12
     }
   ],
   "skills_dirs": ["./skills"],

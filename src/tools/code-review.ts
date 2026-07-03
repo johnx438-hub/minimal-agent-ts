@@ -34,39 +34,34 @@ export const CODE_REVIEW_DEFINITIONS: ToolDefinition[] = [
   },
 ];
 
-function dedupIssues(
+function formatCombinedReport(
   sections: { agent: string; text: string }[],
+  scope: string,
 ): string {
-  // Simple dedup: keep per-agent sections, just add a header.
-  // Per-line + per-category dedup would need NLP, skip for V1.
-  const parts: string[] = ['# Code Review Report\n'];
+  const parts: string[] = [`# Code Review: ${scope}\n`];
 
   let total = 0;
   for (const s of sections) {
-    const lines = s.text.trim().split('\n').filter((l) => l.trim());
-    const issueCount = lines.filter(
-      (l) => l.startsWith('🔴') || l.startsWith('🟠') || l.startsWith('🔵'),
-    ).length;
-    total += issueCount;
+    const line = s.text.trim();
+    const emoji =
+      s.agent === 'code-review-bug' ? '🐛' :
+      s.agent === 'code-review-security' ? '🔐' : '📋';
 
-    const agentLabel =
-      s.agent === 'code-review-bug'
-        ? '🐛 Bug Detection'
-        : s.agent === 'code-review-security'
-          ? '🔐 Security'
-          : '📋 Code Quality';
+    // Count issues from the one-line summary if it contains "Found N"
+    const match = line.match(/Found (\d+)/);
+    const count = match ? parseInt(match[1], 10) : 0;
+    total += count;
 
-    parts.push(`## ${agentLabel} (${issueCount} issue${issueCount !== 1 ? 's' : ''})`);
-    parts.push('');
-    parts.push(s.text.trim());
+    parts.push(`${emoji} **${line}**`);
     parts.push('');
   }
 
   parts.push('---');
   parts.push(`Total: ${total} issue${total !== 1 ? 's' : ''}`);
-  parts.push(
-    'Reviewed by: code-review-bug, code-review-security, code-review-quality',
-  );
+  parts.push('Full reports saved to:');
+  parts.push('- `/workspace/code-review-bug.md`');
+  parts.push('- `/workspace/code-review-security.md`');
+  parts.push('- `/workspace/code-review-quality.md`');
 
   return parts.join('\n');
 }
@@ -194,5 +189,5 @@ export async function runCodeReviewTool(
   );
 
   // 3. Format report
-  return dedupIssues(results);
+  return formatCombinedReport(results, scope);
 }
