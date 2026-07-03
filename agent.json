@@ -39,7 +39,7 @@
     },
     {
       "name": "code-review-bug",
-      "description": "Review code for bugs, logic errors, null checks, edge cases",
+      "description": "Fast diff-first bug pass — logic/async/error-handling in changed hunks (≤6 tool calls)",
       "prompt_file": "agents/code-review-bug.md",
       "tools": ["read_file", "grep_search", "write_file"],
       "max_turns": 12
