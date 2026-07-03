@@ -2,21 +2,27 @@ import {
   Box,
   SelectList,
   Text,
+  truncateToWidth,
   type Component,
   type SelectItem,
   type TUI,
 } from '@earendil-works/pi-tui';
 
-import { piChalk, piSelectListTheme } from './themes.js';
+import { piChalk, piOverlayBgHex, piSelectListOverlayTheme } from './themes.js';
+
+function paintOverlayLine(line: string, width: number): string {
+  const fitted = truncateToWidth(line, width, '', true);
+  return piChalk.bgHex(piOverlayBgHex)(piChalk.white(fitted));
+}
 
 /** Box wrapper that forwards keyboard input to an embedded SelectList. */
 class SelectOverlayPanel implements Component {
   private readonly box: Box;
   private readonly list: SelectList;
 
-  constructor(title: string, list: SelectList, bgFn: (s: string) => string) {
+  constructor(title: string, list: SelectList) {
     this.list = list;
-    this.box = new Box(1, 1, bgFn);
+    this.box = new Box(1, 1);
     this.box.addChild(new Text(title, 1, 1));
     this.box.addChild(list);
   }
@@ -30,7 +36,7 @@ class SelectOverlayPanel implements Component {
   }
 
   render(width: number): string[] {
-    return this.box.render(width);
+    return this.box.render(width).map((line) => paintOverlayLine(line, width));
   }
 }
 
@@ -63,7 +69,7 @@ export function showSelectOverlay(
     }
     abortSignal?.addEventListener('abort', onAbort, { once: true });
 
-    const list = new SelectList(items, maxVisible, piSelectListTheme);
+    const list = new SelectList(items, maxVisible, piSelectListOverlayTheme);
 
     list.onSelect = (item) => finish(item);
     list.onCancel = () => {
@@ -71,11 +77,7 @@ export function showSelectOverlay(
       finish(null);
     };
 
-    const panel = new SelectOverlayPanel(
-      title,
-      list,
-      (s) => piChalk.bgHex('#1e1e2e')(piChalk.white(s)),
-    );
+    const panel = new SelectOverlayPanel(title, list);
     handle = tui.showOverlay(panel);
     handle.focus?.();
     tui.requestRender();

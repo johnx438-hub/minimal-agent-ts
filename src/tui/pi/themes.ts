@@ -11,6 +11,26 @@ export const piSelectListTheme: SelectListTheme = {
   noMatch: (text: string) => chalk.dim(text),
 };
 
+/** Overlay panel background — keep in sync with select-overlay.ts */
+export const piOverlayBgHex = '#1e1e2e';
+
+function overlayBg(text: string): string {
+  return chalk.bgHex(piOverlayBgHex)(chalk.white(text));
+}
+
+function overlayStyle(styler: (text: string) => string): (text: string) => string {
+  return (text: string) => overlayBg(styler(text));
+}
+
+/** SelectList theme with per-span background (avoids SGR reset gaps in overlays). */
+export const piSelectListOverlayTheme: SelectListTheme = {
+  selectedPrefix: overlayStyle((text) => chalk.blue(text)),
+  selectedText: overlayStyle((text) => chalk.bold(text)),
+  description: overlayStyle((text) => chalk.dim(text)),
+  scrollInfo: overlayStyle((text) => chalk.dim(text)),
+  noMatch: overlayStyle((text) => chalk.dim(text)),
+};
+
 function highlightDiffLine(line: string): string {
   if (line.startsWith('@@')) return chalk.cyan(line);
   if (line.startsWith('+++')) return chalk.green.bold(line);
