@@ -1,5 +1,11 @@
-import { listActions, loadAction } from './action-store.js';
+import { listActions, listSpawnActions, loadAction } from './action-store.js';
 import { buildGenericPreview, DEFAULT_PREVIEW_POLICY } from './action-preview.js';
+import {
+  countSpawnActions,
+  listSpawnRunRecords,
+  parseSpawnLogTaskId,
+  spawnLogTaskId,
+} from './spawn/session.js';
 import type { ActionBlock, SessionFile, TaskSummaryDoc } from './types.js';
 
 /** Sentinel task id for in-flight context in log browser. */
@@ -9,7 +15,7 @@ export interface LogTaskEntry {
   taskId: string;
   label: string;
   description: string;
-  kind: 'completed' | 'in_flight';
+  kind: 'completed' | 'in_flight' | 'spawn';
 }
 
 export interface LogLineEntry {
@@ -63,6 +69,17 @@ export function listLogTasks(session: SessionFile): LogTaskEntry[] {
       label: 'in-flight (current task)',
       description: clip(typeof preview === 'string' ? preview : '(no user message)', 72),
       kind: 'in_flight',
+    });
+  }
+
+  for (const run of listSpawnRunRecords(session.session_id)) {
+    const actionCount = countSpawnActions(session.session_id, run.spawn_session_id);
+    const status = run.ok ? 'ok' : 'failed';
+    entries.push({
+      taskId: spawnLogTaskId(run.spawn_session_id),
+      label: `spawn · ${run.preset}  [${status}]`,
+      description: `${clip(run.task, 48)} · ${actionCount} action(s)`,
+      kind: 'spawn',
     });
   }
 
@@ -201,12 +218,63 @@ function linesForInFlightTask(session: SessionFile): LogLineEntry[] {
   return lines;
 }
 
+function linesForSpawnRun(parentSessionId: string, spawnSessionId: string): LogLineEntry[] {
+  const lines: LogLineEntry[] = [];
+  const run = listSpawnRunRecords(parentSessionId).find(
+    (entry) => entry.spawn_session_id === spawnSessionId,
+  );
+
+  if (run) {
+    lines.push({
+      value: '__section_spawn__',
+      label: '— spawn —',
+      description: `${run.preset} · ${run.ok ? 'ok' : 'failed'}`,
+      kind: 'section',
+    });
+    lines.push({
+      value: 'spawn:task',
+      label: `[task] ${clip(run.task, 56)}`,
+      description: clip(run.task, 80),
+      kind: 'user',
+    });
+  }
+
+  const actions = listSpawnActions(parentSessionId, spawnSessionId).sort(
+    (a, b) => a.turn_number - b.turn_number || a.timestamp - b.timestamp,
+  );
+
+  if (actions.length > 0) {
+    lines.push({
+      value: '__section_actions__',
+      label: '— actions —',
+      description: `${actions.length} tool invocation(s)`,
+      kind: 'section',
+    });
+    for (const block of actions) {
+      lines.push({
+        value: `action:${block.action_id}`,
+        label: formatActionLabel(block),
+        description: formatActionDescription(block),
+        kind: 'action',
+        actionId: block.action_id,
+      });
+    }
+  }
+
+  return lines;
+}
+
 export function listLogLines(
   session: SessionFile,
   taskId: string,
 ): LogLineEntry[] {
   if (taskId === LOG_IN_FLIGHT_TASK_ID) {
     return linesForInFlightTask(session);
+  }
+
+  const spawnSessionId = parseSpawnLogTaskId(taskId);
+  if (spawnSessionId) {
+    return linesForSpawnRun(session.session_id, spawnSessionId);
   }
 
   const task = session.tasks.find((t) => t.task_id === taskId);

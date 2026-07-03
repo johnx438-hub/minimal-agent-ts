@@ -47,6 +47,8 @@ export interface ActionBlock {
   /** Frozen card preview (computed at save time). */
   preview_summary?: string;
   preview_lines?: string[];
+  /** Parent session for spawn cold storage under actions/spawn/<parent>/ */
+  spawn_parent_session_id?: string;
 }
 
 /** Tool definition sent to the API. */
@@ -91,6 +93,8 @@ export interface AgentConfig {
   spawnPolicy?: SpawnPolicy;
   /** Spawn lifecycle hooks for TUI / --json-events (main agent only). */
   spawnLifecycle?: (event: SpawnLifecycleEvent) => void;
+  /** Parent session id when running as a spawn sub-agent (cold storage path). */
+  spawnParentSessionId?: string;
 }
 
 export type SpawnLifecycleEvent =

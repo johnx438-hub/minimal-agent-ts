@@ -4,6 +4,7 @@ import { isCapabilityEnabled } from '../permission-gate.js';
 import type { AgentConfig } from '../types.js';
 import type { SpawnLifecycleEvent } from '../types.js';
 import { getSpawnSemaphore } from './semaphore.js';
+import { appendSpawnRunRecord, buildSpawnSessionId } from './session.js';
 import type { ResolvedSpawnPreset } from './types.js';
 
 export const MAX_SPAWN_DEPTH = 2;
@@ -86,6 +87,27 @@ export async function runSpawnAgent(opts: RunSpawnOptions): Promise<string> {
   }
 }
 
+function recordSpawnRun(opts: {
+  parentSessionId: string;
+  spawnSessionId: string;
+  preset: string;
+  task: string;
+  startedAt: number;
+  ok: boolean;
+  detail?: string;
+}): void {
+  appendSpawnRunRecord({
+    spawn_session_id: opts.spawnSessionId,
+    parent_session_id: opts.parentSessionId,
+    preset: opts.preset,
+    task: opts.task,
+    started_at: opts.startedAt,
+    ended_at: Date.now(),
+    ok: opts.ok,
+    detail: opts.detail,
+  });
+}
+
 async function runSpawnAgentInner(opts: {
   preset: ResolvedSpawnPreset;
   task: string;
@@ -93,10 +115,15 @@ async function runSpawnAgentInner(opts: {
   depth: number;
 }): Promise<string> {
   const { preset, task, parentConfig, depth } = opts;
+  const parentSessionId = parentConfig.sessionId;
+  const spawnSessionId = parentSessionId ? buildSpawnSessionId(parentSessionId) : undefined;
+  const startedAt = Date.now();
+  const coldStorage = Boolean(parentSessionId && spawnSessionId);
 
   const childConfig: AgentConfig = {
     ...parentConfig,
-    sessionId: undefined,
+    sessionId: spawnSessionId,
+    spawnParentSessionId: coldStorage ? parentSessionId : undefined,
     maxTurns: preset.maxTurns,
     toolAllowlist: preset.tools.length > 0 ? preset.tools : undefined,
     spawnDepth: depth + 1,
@@ -118,6 +145,7 @@ async function runSpawnAgentInner(opts: {
     const result = await runAgent({
       prompt: task,
       config: childConfig,
+      sessionId: spawnSessionId,
       isolated: true,
       stream: process.env.STREAM !== '0',
       systemPrompt: preset.systemPrompt,
@@ -126,6 +154,17 @@ async function runSpawnAgentInner(opts: {
     });
 
     if (result.text === '[aborted]') {
+      if (coldStorage) {
+        recordSpawnRun({
+          parentSessionId: parentSessionId!,
+          spawnSessionId: spawnSessionId!,
+          preset: preset.name,
+          task,
+          startedAt,
+          ok: false,
+          detail: 'aborted',
+        });
+      }
       emitSpawnLifecycle(parentConfig, {
         phase: 'end',
         preset: preset.name,
@@ -135,10 +174,31 @@ async function runSpawnAgentInner(opts: {
       return '[aborted]';
     }
 
+    if (coldStorage) {
+      recordSpawnRun({
+        parentSessionId: parentSessionId!,
+        spawnSessionId: spawnSessionId!,
+        preset: preset.name,
+        task,
+        startedAt,
+        ok: true,
+      });
+    }
     emitSpawnLifecycle(parentConfig, { phase: 'end', preset: preset.name, ok: true });
     return result.text || '(empty reply from sub-agent)';
   } catch (err) {
     if (isAbortError(err)) {
+      if (coldStorage) {
+        recordSpawnRun({
+          parentSessionId: parentSessionId!,
+          spawnSessionId: spawnSessionId!,
+          preset: preset.name,
+          task,
+          startedAt,
+          ok: false,
+          detail: 'aborted',
+        });
+      }
       emitSpawnLifecycle(parentConfig, {
         phase: 'end',
         preset: preset.name,
@@ -148,6 +208,17 @@ async function runSpawnAgentInner(opts: {
       return '[aborted]';
     }
     const msg = err instanceof Error ? err.message : String(err);
+    if (coldStorage) {
+      recordSpawnRun({
+        parentSessionId: parentSessionId!,
+        spawnSessionId: spawnSessionId!,
+        preset: preset.name,
+        task,
+        startedAt,
+        ok: false,
+        detail: msg,
+      });
+    }
     emitSpawnLifecycle(parentConfig, {
       phase: 'end',
       preset: preset.name,

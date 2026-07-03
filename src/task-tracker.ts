@@ -23,7 +23,11 @@ export class TaskTracker {
   private currentTask: TaskBlock | null = null;
   private completedTasks: TaskBlock[] = [];
 
-  constructor(sessionId: string, initialTaskCount = 0) {
+  constructor(
+    sessionId: string,
+    initialTaskCount = 0,
+    private readonly spawnParentSessionId?: string,
+  ) {
     this.sessionId = sessionId;
     this.taskCounter = initialTaskCount;
   }
@@ -88,6 +92,7 @@ export class TaskTracker {
       tool_name: toolName,
       args_json: argsJson,
       result_text: resultText,
+      spawn_parent_session_id: this.spawnParentSessionId,
     });
   }
 
