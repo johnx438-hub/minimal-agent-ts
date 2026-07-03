@@ -72,7 +72,10 @@ async function gitDiff(scope: string, cwd: string, extraArgs: string[] = []): Pr
   if (scope === 'staged') {
     args.push('--cached');
   } else if (scope && scope !== 'unstaged') {
-    // scope is a ref like HEAD~3, a file path, etc.
+    // Reject refs that look like git options to prevent argument injection
+    if (scope.startsWith('-') && scope !== '--cached') {
+      throw new Error(`invalid scope: "${scope}" looks like a git option. Use a ref name or file path.`);
+    }
     args.push(scope);
   }
 
@@ -91,8 +94,9 @@ async function gitDiff(scope: string, cwd: string, extraArgs: string[] = []): Pr
     child.on('close', (code) => {
       const out = Buffer.concat(chunks).toString('utf8').trim();
       // git diff exits 0 for changes, 1 for no changes, >1 for error
-      if (code !== null && code > 1) {
-        reject(new Error(`git diff exited ${code}`));
+      // null means killed (timeout / signal)
+      if (code === null || code > 1) {
+        reject(new Error(`git diff exited ${code ?? 'via signal'}`));
       } else {
         resolve(out);
       }
@@ -143,6 +147,8 @@ export async function runCodeReviewTool(
   try {
     if (scope.endsWith('.ts') || scope.startsWith('src/') || scope.startsWith('agents/')) {
       diff = await gitDiff(scope, config.cwd, ['--']);
+    } else if (scope.startsWith('-') && scope !== '--cached') {
+      return `error: invalid scope "${scope}" — refs cannot start with '-'. Use file paths like "src/..." or refs like "HEAD~3".`;
     } else {
       diff = await gitDiff(scope, config.cwd);
     }
