@@ -7,7 +7,13 @@ export interface LoopGuardConfig {
   mode: LoopGuardMode;
   /** Absolute safety ceiling when maxTurns is 0 (unlimited). */
   hardCeiling: number;
+  /** Looser repeat detection for review/telemetry regression runs. */
+  regressionMode?: boolean;
 }
+
+const REVIEW_DELEGATION_TOOLS = new Set(['code_review', 'spawn_agent']);
+
+const REGRESSION_PATH_MARKERS = ['workspace/p0-telemetry', 'workspace/code-review-'];
 
 export interface ToolTurnRecord {
   name: string;
@@ -92,9 +98,59 @@ function normalizeArgs(toolName: string, args: Record<string, unknown>): Record<
       if (args.query !== undefined) out.query = String(args.query);
       return out;
     }
+    case 'code_review': {
+      const out: Record<string, unknown> = {};
+      if (args.scope !== undefined) out.scope = String(args.scope);
+      if (args.focus !== undefined) out.focus = String(args.focus);
+      return out;
+    }
+    case 'spawn_agent': {
+      const out: Record<string, unknown> = {};
+      if (args.preset !== undefined) out.preset = String(args.preset);
+      if (args.task !== undefined) {
+        const task = String(args.task).trim();
+        out.task = task.length > 120 ? `${task.slice(0, 120)}…` : task;
+      }
+      return out;
+    }
     default:
       return args;
   }
+}
+
+export function isRegressionTaskPrompt(prompt: string): boolean {
+  const trimmed = prompt.trim();
+  if (/^\[regression\]/i.test(trimmed)) return true;
+  if (/^regression\s*:/i.test(trimmed)) return true;
+  return process.env.LOOP_GUARD_REGRESSION === '1';
+}
+
+function isRegressionArtifactPath(path: string): boolean {
+  const normalized = path.replace(/\\/g, '/').replace(/^\//, '');
+  return REGRESSION_PATH_MARKERS.some((marker) => normalized.includes(marker));
+}
+
+function isReviewDelegationTurn(records: ToolTurnRecord[]): boolean {
+  return records.length > 0 && records.every((r) => REVIEW_DELEGATION_TOOLS.has(r.name));
+}
+
+function isRegressionSupportTurn(
+  records: ToolTurnRecord[],
+  regressionMode: boolean,
+): boolean {
+  if (!regressionMode || records.length === 0) return false;
+  return records.every((r) => {
+    if (REVIEW_DELEGATION_TOOLS.has(r.name)) return true;
+    if (r.name === 'read_file' || r.name === 'list_files') {
+      try {
+        const args = JSON.parse(r.argsJson) as Record<string, unknown>;
+        return isRegressionArtifactPath(String(args.path ?? ''));
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  });
 }
 
 export function toolFingerprint(toolName: string, argsJson: string): string {
@@ -187,8 +243,35 @@ export class LoopGuard {
     this.forcedSummaryActive = false;
   }
 
+  private repeatHardThreshold(): number {
+    return this.config.regressionMode ? 5 : 3;
+  }
+
+  private repeatSoftThreshold(): number {
+    return this.config.regressionMode ? 4 : 2;
+  }
+
+  private noteTurnEntries(entries: Map<string, string>): void {
+    for (const [fp, resultHash] of entries) {
+      this.seenFingerprints.add(fp);
+      this.seenResults.set(fp, resultHash);
+    }
+    this.lastTurnEntries = entries;
+  }
+
   afterToolTurn(turn: number, records: ToolTurnRecord[]): LoopGuardDecision {
     const entries = turnEntries(records);
+
+    if (
+      isReviewDelegationTurn(records) ||
+      isRegressionSupportTurn(records, Boolean(this.config.regressionMode))
+    ) {
+      this.noteTurnEntries(entries);
+      this.repeatStreak = 0;
+      this.softNudgeSent = false;
+      return { action: 'continue' };
+    }
+
     const progress =
       isWriteProgress(records) ||
       hasExplorationProgress(entries, this.seenFingerprints, this.seenResults);
@@ -216,11 +299,14 @@ export class LoopGuard {
       return { action: 'continue' };
     }
 
-    if (this.repeatStreak >= 3 || (this.softNudgeSent && this.repeatStreak >= 2)) {
+    const hardAt = this.repeatHardThreshold();
+    const softAt = this.repeatSoftThreshold();
+
+    if (this.repeatStreak >= hardAt || (this.softNudgeSent && this.repeatStreak >= softAt)) {
       return this.hardLoopDecision();
     }
 
-    if (this.repeatStreak >= 2 && !this.softNudgeSent) {
+    if (this.repeatStreak >= softAt && !this.softNudgeSent) {
       this.softNudgeSent = true;
       if (this.config.mode === 'terminate') {
         return this.hardLoopDecision();

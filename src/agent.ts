@@ -15,6 +15,7 @@ import {
   invokeLlmTurn,
 } from './stream-draft.js';
 import {
+  isRegressionTaskPrompt,
   LoopGuard,
   resolveTurnCeiling,
   type LoopGuardConfig,
@@ -188,7 +189,12 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
   const previewPolicy = config.previewPolicy ?? DEFAULT_PREVIEW_POLICY;
 
-  const loopGuardConfig = config.loopGuard ?? DEFAULT_LOOP_GUARD;
+  const loopGuardConfig: LoopGuardConfig = {
+    ...DEFAULT_LOOP_GUARD,
+    ...config.loopGuard,
+    regressionMode:
+      config.loopGuard?.regressionMode ?? isRegressionTaskPrompt(opts.prompt),
+  };
   const loopGuard = new LoopGuard(loopGuardConfig);
   const turnCeiling = resolveTurnCeiling(config.maxTurns, loopGuardConfig.hardCeiling);
 
