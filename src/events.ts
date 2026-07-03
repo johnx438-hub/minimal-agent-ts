@@ -56,7 +56,14 @@ export type AgentStepEvent =
       action: 'soft_nudge' | 'forced_summary' | 'terminate';
       reason?: string;
     }
-  | { type: 'final'; turn: number; text: string };
+  | { type: 'final'; turn: number; text: string }
+  | {
+      type: 'turn_io';
+      turn: number;
+      actions_saved: number;
+      action_save_ms: number;
+      queue_depth: number;
+    };
 
 /** Agent step events plus runtime lifecycle events (TUI / --json-events). */
 export type RuntimeEvent =
@@ -111,7 +118,9 @@ export type RuntimeEvent =
       round?: number;
     }
   | { type: 'spawn_start'; preset: string }
-  | { type: 'spawn_end'; preset: string; ok: boolean; detail?: string };
+  | { type: 'spawn_end'; preset: string; ok: boolean; detail?: string }
+  | { type: 'action_flush'; flush_ms: number; count: number; pending: number }
+  | { type: 'index_flush'; flush_ms: number; count: number; pending: number };
 
 export function formatLlmRetrySummary(event: {
   attempt: number;

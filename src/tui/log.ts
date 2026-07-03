@@ -1,3 +1,8 @@
+import {
+  formatActionFlushSummary,
+  formatIndexFlushSummary,
+  isActionIoMetricsEnabled,
+} from '../action-io-metrics.js';
 import type { AgentStepEvent } from '../events.js';
 import type { RuntimeEvent } from '../events.js';
 import { printStepEvent } from '../runner.js';
@@ -16,6 +21,7 @@ function isAgentStep(event: RuntimeEvent): event is AgentStepEvent {
     event.type === 'compression' ||
     event.type === 'draft_discarded' ||
     event.type === 'loop_guard' ||
+    event.type === 'turn_io' ||
     event.type === 'final'
   );
 }
@@ -124,5 +130,17 @@ export function printRuntimeEvent(event: RuntimeEvent): void {
     case 'spawn_end':
       console.log(event.ok ? `\nspawn ✓ ${event.preset}` : `\nspawn ✗ ${event.preset}: ${event.detail ?? 'failed'}`);
       break;
+
+    case 'action_flush':
+      if (isActionIoMetricsEnabled()) {
+        console.log(`  💾 ${formatActionFlushSummary(event)}`);
+      }
+      return;
+
+    case 'index_flush':
+      if (isActionIoMetricsEnabled()) {
+        console.log(`  🔍 ${formatIndexFlushSummary(event)}`);
+      }
+      return;
   }
 }

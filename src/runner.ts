@@ -36,7 +36,14 @@ import {
   type WorkflowCheckpointInfo,
 } from './workflow-checkpoint.js';
 import type { AgentPluginConfig } from './plugins/types.js';
-import type { AgentConfig, SessionFile, SessionMeta, SessionOverview } from './types.js';
+import type {
+  AgentConfig,
+  SessionFile,
+  SessionMeta,
+  SessionOverview,
+  SpawnLifecycleEvent,
+  TaskSummaryDoc,
+} from './types.js';
 import {
   formatHandoffInjection,
   getHandoffPath,
@@ -46,8 +53,20 @@ import {
 import { listWorkflowMetaForCwd } from './workflow/catalog.js';
 import { runWorkflow } from './workflow/runner.js';
 import { resetZvecCollection } from './action-index.js';
+import { appendTaskTranscript } from './session-transcript.js';
+import { flushTranscriptWrites } from './session-transcript-queue.js';
+import {
+  configureActionWriteQueue,
+  flushActionWrites,
+  setActiveActionSessionId,
+} from './action-write-queue.js';
+import {
+  configureActionIndexQueue,
+  flushActionIndex,
+} from './action-index-queue.js';
+import { formatTurnIoSummary, isActionIoMetricsEnabled } from './action-io-metrics.js';
+import type { TaskBlock } from './task-tracker.js';
 import { setWorkspaceRoot } from './workspace.js';
-import type { SpawnLifecycleEvent } from './types.js';
 
 function env(name: string, fallback?: string): string | undefined {
   const v = process.env[name]?.trim();
@@ -161,6 +180,28 @@ export class AgentRuntime {
     this.jsonEvents = opts.jsonEvents ?? false;
     this.useStream = env('STREAM', '1') !== '0';
     this.permissionGate.setLifecycle((event) => this.emit(event));
+
+    configureActionWriteQueue({
+      onFlush: (info) => {
+        this.emit({
+          type: 'action_flush',
+          flush_ms: info.flush_ms,
+          count: info.count,
+          pending: info.pending,
+        });
+      },
+    });
+
+    configureActionIndexQueue({
+      onFlush: (info) => {
+        this.emit({
+          type: 'index_flush',
+          flush_ms: info.flush_ms,
+          count: info.count,
+          pending: info.pending,
+        });
+      },
+    });
 
     const deferSession = opts.deferSession === true;
 
@@ -410,6 +451,25 @@ export class AgentRuntime {
     return this.session;
   }
 
+  /** Alias for /history — same resolution as /log. */
+  resolveHistorySession(sessionId?: string): SessionFile | null {
+    return this.resolveLogSession(sessionId);
+  }
+
+  private handleTaskComplete(
+    session: SessionFile,
+    summary: TaskSummaryDoc,
+    taskBlock: TaskBlock,
+  ): void {
+    session.tasks.push(summary);
+    appendTaskTranscript(
+      session.session_id,
+      taskBlock,
+      this.pluginConfig.transcript_policy,
+    );
+    this.sessionDirty = true;
+  }
+
   resolveWorkflowPath(nameOrPath: string): string | null {
     let path = nameOrPath;
     if (!path.includes('/') && !path.endsWith('.json')) {
@@ -513,6 +573,7 @@ export class AgentRuntime {
       session_id: session.session_id,
       cwd: this.config.cwd,
     });
+    setActiveActionSessionId(session.session_id);
 
     try {
       this.emit(workflowConfirmStartEvent(checkpoint));
@@ -578,6 +639,9 @@ export class AgentRuntime {
         session,
         stream: this.useStream,
         onStep: this.onStep,
+        onTaskComplete: (taskSummary, taskBlock) => {
+          this.handleTaskComplete(session, taskSummary, taskBlock);
+        },
         onWorkflowStep: (info) => {
           this.emit({
             type: 'workflow_step',
@@ -616,6 +680,9 @@ export class AgentRuntime {
       this.emit({ type: 'run_end', reason: 'error', message });
       throw err;
     } finally {
+      await flushActionWrites().catch(() => undefined);
+      await flushActionIndex().catch(() => undefined);
+      await flushTranscriptWrites().catch(() => undefined);
       this.running = false;
     }
   }
@@ -631,6 +698,7 @@ export class AgentRuntime {
       session_id: session.session_id,
       cwd: this.config.cwd,
     });
+    setActiveActionSessionId(session.session_id);
 
     const runConfig = this.buildRunConfig(signal);
 
@@ -643,9 +711,8 @@ export class AgentRuntime {
         stream: this.useStream,
         signal,
         onStep: this.onStep,
-        onTaskComplete: (taskSummary) => {
-          session.tasks.push(taskSummary);
-          this.sessionDirty = true;
+        onTaskComplete: (taskSummary, taskBlock) => {
+          this.handleTaskComplete(session, taskSummary, taskBlock);
         },
       });
 
@@ -667,11 +734,18 @@ export class AgentRuntime {
       this.emit({ type: 'run_end', reason: 'error', message });
       throw err;
     } finally {
+      await flushActionWrites().catch(() => undefined);
+      await flushActionIndex().catch(() => undefined);
+      await flushTranscriptWrites().catch(() => undefined);
       this.running = false;
     }
   }
 
   async shutdown(): Promise<void> {
+    await flushActionWrites().catch(() => undefined);
+    await flushActionIndex().catch(() => undefined);
+    await flushTranscriptWrites().catch(() => undefined);
+    setActiveActionSessionId(undefined);
     await toolRegistry.shutdown();
   }
 
@@ -737,6 +811,11 @@ export function printStepEvent(event: AgentStepEvent): void {
       break;
     case 'tool_call':
       console.log(`  → ${event.name}#${event.call_id}(${event.args})`);
+      break;
+    case 'turn_io':
+      if (isActionIoMetricsEnabled()) {
+        console.log(`  💾 ${formatTurnIoSummary(event)}`);
+      }
       break;
     case 'tool_result': {
       const preview = event.preview ?? event.output;

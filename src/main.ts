@@ -1,6 +1,11 @@
 import { resolve } from 'node:path';
 import 'dotenv/config';
 
+import {
+  formatActionFlushSummary,
+  formatIndexFlushSummary,
+  isActionIoMetricsEnabled,
+} from './action-io-metrics.js';
 import type { RuntimeEvent } from './events.js';
 import { AgentRuntime, printStepEvent } from './runner.js';
 import { formatWorkflowCheckpoint } from './workflow-checkpoint.js';
@@ -209,6 +214,18 @@ function onRuntimeEvent(event: RuntimeEvent, jsonEvents: boolean): void {
         ? `\nspawn ✓ ${event.preset}`
         : `\nspawn ✗ ${event.preset}: ${event.detail ?? 'failed'}`,
     );
+    return;
+  }
+  if (event.type === 'action_flush') {
+    if (isActionIoMetricsEnabled()) {
+      console.log(`  💾 ${formatActionFlushSummary(event)}`);
+    }
+    return;
+  }
+  if (event.type === 'index_flush') {
+    if (isActionIoMetricsEnabled()) {
+      console.log(`  🔍 ${formatIndexFlushSummary(event)}`);
+    }
     return;
   }
   if (

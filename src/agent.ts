@@ -1,6 +1,8 @@
 import { indexActionAsync, scheduleIndexSync } from './action-index.js';
 
+import { beginTurnIo, buildTurnIoEvent } from './action-io-metrics.js';
 import { saveAction } from './action-store.js';
+import { flushActionWritesSync } from './action-write-queue.js';
 import {
   assembleApiMessages,
   maybeCompactPointerCards,
@@ -194,7 +196,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
   const messages = [...initial];
 
   const tracker = sessionId
-    ? new TaskTracker(sessionId, session?.tasks.length ?? 0)
+    ? new TaskTracker(sessionId, session?.tasks.length ?? 0, config.spawnParentSessionId)
     : null;
   if (tracker) {
     tracker.onUserMessage(userTask, 1);
@@ -219,6 +221,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
     }
 
     onStep?.({ type: 'turn_start', turn });
+    beginTurnIo(turn);
 
     if (loopGuard.shouldForceSummaryTurn()) {
       loopGuard.activateForcedSummary();
@@ -463,6 +466,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         messages.push(toolMsg);
       }
 
+      const turnIo = buildTurnIoEvent(turn);
+      if (turnIo) onStep?.(turnIo);
+
       const loopDecision = loopGuard.afterToolTurn(turn, turnRecords);
       if (loopDecision.action === 'soft_nudge' && loopDecision.message) {
         messages.push({ role: 'user', content: loopDecision.message });
@@ -509,6 +515,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
   }
   } catch (err) {
     if (isAbortError(err)) {
+      flushActionWritesSync();
       const text = '[aborted]';
       const lastTurn =
         [...messages].reverse().find((m) => m.turn !== undefined)?.turn ?? 1;

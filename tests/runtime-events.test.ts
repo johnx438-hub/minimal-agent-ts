@@ -132,6 +132,40 @@ describe('emitJsonEvent lifecycle', () => {
     assert.equal(envelope.event.call_id, 'call_edit_9');
   });
 
+  it('serializes turn_io and action_flush metrics', () => {
+    const turnIo = serializeRuntimeEvent({
+      type: 'turn_io',
+      turn: 2,
+      actions_saved: 3,
+      action_save_ms: 0.12,
+      queue_depth: 1,
+    });
+    const parsedTurn = parseJsonEventLine(turnIo);
+    assert.equal(parsedTurn.event.type, 'turn_io');
+    assert.equal(
+      (parsedTurn.event as { actions_saved: number }).actions_saved,
+      3,
+    );
+
+    const flush = serializeRuntimeEvent({
+      type: 'action_flush',
+      flush_ms: 4.5,
+      count: 2,
+      pending: 0,
+    });
+    const parsedFlush = parseJsonEventLine(flush);
+    assert.equal(parsedFlush.event.type, 'action_flush');
+
+    const indexFlush = serializeRuntimeEvent({
+      type: 'index_flush',
+      flush_ms: 12.3,
+      count: 1,
+      pending: 2,
+    });
+    const parsedIndex = parseJsonEventLine(indexFlush);
+    assert.equal(parsedIndex.event.type, 'index_flush');
+  });
+
   it('serializes run_stopping for --json-events consumers', () => {
     const chunks: string[] = [];
     const original = process.stdout.write.bind(process.stdout);

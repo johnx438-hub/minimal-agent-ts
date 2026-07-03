@@ -8,7 +8,7 @@
     "start": "tsx src/main.ts",
     "tui": "tsx src/tui/main.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tests/**/*.test.ts"
+    "test": "NODE_ENV=test node --import tsx --test tests/**/*.test.ts"
   },
   "devDependencies": {
     "@types/dotenv-safe": "^9.1.0",

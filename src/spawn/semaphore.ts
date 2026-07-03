@@ -16,6 +16,10 @@ export class SpawnSemaphore {
 
   constructor(private readonly max: number) {}
 
+  get runningCount(): number {
+    return this.running;
+  }
+
   async acquire(signal?: AbortSignal): Promise<() => void> {
     throwIfAborted(signal);
 
@@ -74,4 +78,8 @@ export function getSpawnSemaphore(): SpawnSemaphore {
 
 export function resetSpawnSemaphoreForTests(): void {
   globalSemaphore = null;
+}
+
+export function isSpawnActive(): boolean {
+  return getSpawnSemaphore().runningCount > 0;
 }

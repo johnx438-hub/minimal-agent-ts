@@ -1,16 +1,29 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import { resolveActionFilePath } from './action-paths.js';
+export { actionFilePathForBlock, ensureSpawnActionsDir } from './action-paths.js';
+import { recordActionSave } from './action-io-metrics.js';
+import { getActionWriteQueue } from './action-write-queue.js';
 import type { ActionBlock } from './types.js';
-import { actionsDir, ensureSessionsDir } from './workspace.js';
+import { actionsDir, spawnActionsDir } from './workspace.js';
 
 export function getActionsDir(): string {
   return actionsDir();
 }
 
+function loadActionFromPath(path: string): ActionBlock | null {
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as ActionBlock;
+  } catch {
+    return null;
+  }
+}
+
 export function getActionPath(actionId: string): string {
-  return resolve(actionsDir(), `${actionId}.json`);
+  return resolveActionFilePath(actionId);
 }
 
 export function hashResult(text: string): string {
@@ -37,6 +50,7 @@ export function buildActionBlock(input: {
   args_json: string;
   result_text: string;
   pointerized?: boolean;
+  spawn_parent_session_id?: string;
 }): ActionBlock {
   const lines = input.result_text.split('\n');
   return {
@@ -54,47 +68,54 @@ export function buildActionBlock(input: {
     files_touched: extractPathsFromArgs(input.args_json),
     timestamp: Date.now(),
     token_cost: Math.ceil(input.result_text.split(/\s+/).filter(Boolean).length * 1.3),
+    spawn_parent_session_id: input.spawn_parent_session_id,
   };
 }
 
 export function saveAction(block: ActionBlock): void {
-  ensureSessionsDir();
-  const dir = actionsDir();
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-  writeFileSync(getActionPath(block.action_id), JSON.stringify(block, null, 2), 'utf8');
+  const durationMs = getActionWriteQueue().enqueue(block);
+  recordActionSave(durationMs);
 }
 
 export function loadAction(actionId: string): ActionBlock | null {
-  const path = getActionPath(actionId);
-  if (!existsSync(path)) {
-    return null;
-  }
-  try {
-    return JSON.parse(readFileSync(path, 'utf8')) as ActionBlock;
-  } catch {
-    return null;
-  }
+  return loadActionFromPath(getActionPath(actionId));
 }
 
-/** List actions from cold storage, newest first. */
-export function listActions(sessionId?: string, taskId?: string): ActionBlock[] {
-  const dir = actionsDir();
-  if (!existsSync(dir)) {
-    return [];
-  }
+function collectActionFiles(dir: string): ActionBlock[] {
+  if (!existsSync(dir)) return [];
 
   const blocks: ActionBlock[] = [];
   for (const entry of readdirSync(dir)) {
     if (!entry.endsWith('.json')) continue;
-    const block = loadAction(entry.replace(/\.json$/, ''));
-    if (!block) continue;
-    if (sessionId && block.session_id !== sessionId) continue;
-    if (taskId && block.task_id !== taskId) continue;
-    blocks.push(block);
+    const block = loadActionFromPath(resolve(dir, entry));
+    if (block) blocks.push(block);
   }
-
-  blocks.sort((a, b) => b.timestamp - a.timestamp);
   return blocks;
+}
+
+/** List spawn actions for a parent session, newest first. */
+export function listSpawnActions(
+  parentSessionId: string,
+  spawnSessionId?: string,
+): ActionBlock[] {
+  const blocks = collectActionFiles(spawnActionsDir(parentSessionId));
+  const filtered = spawnSessionId
+    ? blocks.filter((b) => b.session_id === spawnSessionId)
+    : blocks;
+  filtered.sort((a, b) => b.timestamp - a.timestamp);
+  return filtered;
+}
+
+/** List actions from cold storage, newest first. */
+export function listActions(sessionId?: string, taskId?: string): ActionBlock[] {
+  const blocks = collectActionFiles(actionsDir());
+
+  const filtered = blocks.filter((block) => {
+    if (sessionId && block.session_id !== sessionId) return false;
+    if (taskId && block.task_id !== taskId) return false;
+    return true;
+  });
+
+  filtered.sort((a, b) => b.timestamp - a.timestamp);
+  return filtered;
 }
