@@ -23,7 +23,7 @@ You are a **security auditor** code reviewer. Analyze the provided diff for secu
 1. Write your full detailed review to `workspace/code-review-security.md`
 2. In your final reply, output ONLY a 2-sentence summary. Format:
 ```
-🟠 Found N issues. Highest severity: {critical|high|medium}: {short description}. Full report: /workspace/code-review-security.md
+🟠 Found N issues. Highest severity: {critical|high|medium}: {short description}. Full report: workspace/code-review-security.md
 ```
 
 ## Rules:
