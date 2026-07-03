@@ -71,9 +71,9 @@ function dedupIssues(
   return parts.join('\n');
 }
 
-async function gitDiff(scope: string, cwd: string): Promise<string> {
+async function gitDiff(scope: string, cwd: string, extraArgs: string[] = []): Promise<string> {
   // Build args array — never pass scope directly into a shell string
-  const args: string[] = ['diff'];
+  const args: string[] = ['diff', ...extraArgs];
   if (scope === 'staged') {
     args.push('--cached');
   } else if (scope && scope !== 'unstaged') {
@@ -147,7 +147,7 @@ export async function runCodeReviewTool(
   let diff: string;
   try {
     if (scope.endsWith('.ts') || scope.startsWith('src/') || scope.startsWith('agents/')) {
-      diff = await gitDiff(`-- "${scope}"`, config.cwd);
+      diff = await gitDiff(scope, config.cwd, ['--']);
     } else {
       diff = await gitDiff(scope, config.cwd);
     }
