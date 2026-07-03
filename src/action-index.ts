@@ -141,7 +141,9 @@ export async function upsertActionIndex(block: ActionBlock): Promise<void> {
 
 export function indexActionAsync(block: ActionBlock): void {
   if (!isZvecEnabled()) return;
-  void import('./action-index-queue.js').then((m) => m.enqueueActionIndex(block));
+  void import('./action-index-queue.js')
+    .then((m) => m.enqueueActionIndex(block))
+    .catch(() => {});
 }
 
 function buildFilter(sessionId?: string, taskId?: string): string | undefined {

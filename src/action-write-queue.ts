@@ -65,13 +65,17 @@ export class ActionWriteQueue {
     return this.foreground.size + this.background.size;
   }
 
+  get isSyncMode(): boolean {
+    return this.sync;
+  }
+
   setActiveSessionId(sessionId: string | undefined): void {
     this.activeSessionId = sessionId;
   }
 
   enqueue(block: ActionBlock): number {
-    const t0 = performance.now();
     if (this.sync) {
+      const t0 = performance.now();
       writeActionFileSync(block);
       return performance.now() - t0;
     }
@@ -82,7 +86,8 @@ export class ActionWriteQueue {
         : this.foreground;
     lane.set(block.action_id, block);
     this.ensureDrainWorker();
-    return performance.now() - t0;
+    // Async enqueue time is not meaningful for P0 IO metrics.
+    return -1;
   }
 
   private shouldPauseDrain(): boolean {
@@ -93,8 +98,14 @@ export class ActionWriteQueue {
     if (this.sync || this.drainTimer) return;
     this.drainTimer = setInterval(() => {
       if (this.shouldPauseDrain() || this.depth === 0 || this.flushing) return;
-      void this.flushOneBatch();
+      void this.flushOneBatch().catch(() => {});
     }, this.drainIntervalMs);
+  }
+
+  private requeueBatchOnFailure(batch: ActionBlock[]): void {
+    for (const block of batch) {
+      this.foreground.set(block.action_id, block);
+    }
   }
 
   private stopDrainWorker(): void {
@@ -139,7 +150,12 @@ export class ActionWriteQueue {
 
     this.flushing = (async () => {
       const t0 = performance.now();
-      await writeActionFilesAsync(batch);
+      try {
+        await writeActionFilesAsync(batch);
+      } catch {
+        this.requeueBatchOnFailure(batch);
+        return;
+      }
       const flushMs = performance.now() - t0;
       info = {
         flush_ms: Math.round(flushMs * 100) / 100,
@@ -170,9 +186,11 @@ export class ActionWriteQueue {
     try {
       while (this.depth > 0) {
         const info = await this.flushOneBatch();
-        if (!info || info.count === 0) break;
-        totalCount += info.count;
-        totalMs += info.flush_ms;
+        if (!info) break;
+        if (info.count > 0) {
+          totalCount += info.count;
+          totalMs += info.flush_ms;
+        }
       }
     } finally {
       this.forceFlush = false;
@@ -224,6 +242,18 @@ function envInt(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+function chainActionFlushListener(listener?: ActionFlushListener): ActionFlushListener {
+  return (info) => {
+    void import('./action-io-metrics.js').then((m) => m.recordActionFlush(info));
+    listener?.(info);
+  };
+}
+
+export function isActionWriteQueueSync(): boolean {
+  if (globalQueue) return globalQueue.isSyncMode;
+  return process.env.ACTION_WRITE_SYNC === '1' || process.env.NODE_ENV === 'test';
+}
+
 export function configureActionWriteQueue(opts?: ActionWriteQueueOptions): void {
   if (globalQueue) {
     globalQueue.dispose();
@@ -238,7 +268,7 @@ export function configureActionWriteQueue(opts?: ActionWriteQueueOptions): void 
     maxBatch: opts?.maxBatch ?? envInt('ACTION_WRITE_MAX_BATCH', DEFAULT_MAX_BATCH),
     sync,
     pauseDuringSpawn: opts?.pauseDuringSpawn ?? true,
-    onFlush: opts?.onFlush,
+    onFlush: chainActionFlushListener(opts?.onFlush),
   });
 }
 

@@ -144,4 +144,31 @@ describe('ActionWriteQueue', () => {
     queue.dispose();
     resetActionWriteQueueForTests();
   });
+
+  it('flush drains all items across single-item batches', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ma-action-batches-'));
+    setWorkspaceRoot(dir);
+
+    const queue = new ActionWriteQueue({
+      sync: false,
+      drainIntervalMs: 60_000,
+      maxBatch: 1,
+      pauseDuringSpawn: false,
+    });
+
+    queue.enqueue(sampleBlock('batch_1'));
+    queue.enqueue(sampleBlock('batch_2'));
+    queue.enqueue(sampleBlock('batch_3'));
+
+    const info = await queue.flush();
+
+    assert.equal(info.count, 3);
+    assert.equal(info.pending, 0);
+    assert.ok(existsSync(join(dir, '.sessions', 'actions', 'batch_1.json')));
+    assert.ok(existsSync(join(dir, '.sessions', 'actions', 'batch_2.json')));
+    assert.ok(existsSync(join(dir, '.sessions', 'actions', 'batch_3.json')));
+
+    queue.dispose();
+    resetActionWriteQueueForTests();
+  });
 });

@@ -31,6 +31,8 @@ export class ActionIndexQueue {
   private readonly pending: ActionBlock[] = [];
   private worker: Promise<void> | null = null;
   private forceFlush = false;
+  private flushAccumMs = 0;
+  private flushAccumCount = 0;
 
   constructor(opts?: ActionIndexQueueOptions) {
     this.pausePollMs = opts?.pausePollMs ?? DEFAULT_PAUSE_POLL_MS;
@@ -84,8 +86,13 @@ export class ActionIndexQueue {
         /* indexing is best-effort */
       }
       const flushMs = performance.now() - t0;
+      const roundedMs = Math.round(flushMs * 100) / 100;
+      if (this.forceFlush) {
+        this.flushAccumMs += roundedMs;
+        this.flushAccumCount += 1;
+      }
       this.onFlush?.({
-        flush_ms: Math.round(flushMs * 100) / 100,
+        flush_ms: roundedMs,
         count: 1,
         pending: this.pending.length,
       });
@@ -93,6 +100,8 @@ export class ActionIndexQueue {
   }
 
   async flush(): Promise<IndexFlushInfo> {
+    this.flushAccumMs = 0;
+    this.flushAccumCount = 0;
     this.forceFlush = true;
     try {
       while (this.pending.length > 0 || this.worker) {
@@ -104,7 +113,11 @@ export class ActionIndexQueue {
     } finally {
       this.forceFlush = false;
     }
-    return { flush_ms: 0, count: 0, pending: 0 };
+    return {
+      flush_ms: Math.round(this.flushAccumMs * 100) / 100,
+      count: this.flushAccumCount,
+      pending: 0,
+    };
   }
 }
 

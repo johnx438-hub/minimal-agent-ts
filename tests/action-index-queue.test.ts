@@ -52,9 +52,11 @@ describe('ActionIndexQueue', () => {
     queue.enqueue(sampleBlock('a1'));
     queue.enqueue(sampleBlock('a2'));
 
-    await queue.flush();
+    const info = await queue.flush();
 
     assert.deepEqual(order, ['a1', 'a2']);
+    assert.equal(info.count, 2);
+    assert.ok(info.flush_ms >= 0);
     resetActionIndexQueueForTests();
   });
 
