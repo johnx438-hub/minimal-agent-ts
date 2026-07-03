@@ -10,7 +10,8 @@
     "invoke_skill",
     "run_shell",
     "web_fetch",
-    "spawn_agent"
+    "spawn_agent",
+    "code_review"
   ],
   "spawn_policy": {
     "max_parallel": 2,
@@ -35,6 +36,27 @@
       "description": "Fetch HN post URLs and return a short digest",
       "prompt_file": "agents/hackernews-digest.md",
       "tools": ["web_fetch", "read_file"]
+    },
+    {
+      "name": "code-review-bug",
+      "description": "Review code for bugs, logic errors, null checks, edge cases",
+      "prompt_file": "agents/code-review-bug.md",
+      "tools": ["read_file"],
+      "max_turns": 6
+    },
+    {
+      "name": "code-review-security",
+      "description": "Review code for security vulnerabilities, secrets, injection risks",
+      "prompt_file": "agents/code-review-security.md",
+      "tools": ["read_file"],
+      "max_turns": 6
+    },
+    {
+      "name": "code-review-quality",
+      "description": "Review code for readability, consistency, and best practices",
+      "prompt_file": "agents/code-review-quality.md",
+      "tools": ["read_file"],
+      "max_turns": 6
     }
   ],
   "skills_dirs": ["./skills"],

@@ -9,6 +9,7 @@ import {
   discoverSkills,
 } from '../plugins/skills.js';
 import type { AgentPluginConfig, McpToolBinding, SkillDefinition } from '../plugins/types.js';
+import { CODE_REVIEW_DEFINITIONS, runCodeReviewTool } from './code-review.js';
 import { EDIT_FILE_DEFINITIONS, runEditFileTool } from './edit-file.js';
 import { EXPLORE_DEFINITIONS, runExploreTool } from './explore.js';
 import { READ_WRITE_DEFINITIONS, runReadWriteTool } from './read-write.js';
@@ -38,6 +39,7 @@ const ALL_BUILTIN: Record<string, { defs: ToolDefinition[]; handler: BuiltinHand
   run_shell: { defs: SHELL_DEFINITIONS, handler: runShellTool },
   invoke_skill: { defs: SKILLS_TOOL_DEFINITIONS, handler: async () => null },
   web_fetch: { defs: WEB_FETCH_DEFINITIONS, handler: runWebFetchTool },
+  code_review: { defs: CODE_REVIEW_DEFINITIONS, handler: runCodeReviewTool },
 };
 
 export class ToolRegistry {
