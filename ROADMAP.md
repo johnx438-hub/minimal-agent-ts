@@ -2,10 +2,10 @@
 
 > **定位**: 一页纸规划，避免 TUI / 性能 / Rust 三线并行。  
 > **前提**: Phase 1–2、4–6 已实现；Phase 3 跨 session 由 **MemFileCli** 外置（见 `SPEC_CONTEXT_MANAGEMENT.md` §Phase 3、`MemFileCli-skill`）。  
-> **当前重点**: session **内**上下文压测；**主/子 Agent 均打满并发时 turn 延迟明显变慢**（见轨 B §同步 IO）。  
-> **工程审查**: `workspace/CODE_REVIEW_REPORT.md`（2026-07-01）— 下文 **§工程健康度** 为勘误后的优先级，以本表为准。
+> **当前重点**: 轨 B **P0 填表复测**（异步 IO 已落地，待量化 spawn `max_parallel=3` + `code_review` 后台场景）；轨 E 后台 spawn **基础版已闭环**。  
+> **工程审查**: `workspace/CODE_REVIEW_REPORT.md`（2026-07-01）为历史快照；以本文件 + `npm test` 为准。
 
-**推荐顺序**: **B（观测 + 同步 IO 减负）→ 视数据选 A 或 C**，不要 A+C 同时开工。
+**推荐顺序**: **B（P0 观测填表）→ 视数据选 C**；轨 A / 轨 E 增强按需排期，不要 B+C 同时开工。
 
 ---
 
@@ -13,10 +13,11 @@
 
 | 轨 | 目标 | 触发条件 | 不做 | 优先级 |
 |----|------|----------|------|--------|
-| **A** | 嫁接 OpenCode / pi 的 TUI 呈现层 | 极简 TUI 不够用，或需要演示级 UI | fork 整仓、重写 agent 内核 | P2 |
-| **B** | TS 运行时内存 / **turn 延迟** / 同步 IO | 压测拐点或 spawn 满并发卡顿（已观测） | 无 profiling 就改架构 | **P0（观测）+ P1（IO）** |
-| **C** | Rust 内核 fork（CPU 热点） | B 做完仍撞墙，且热点已定位 |  preemptive 全量重写 `runAgent` | P3 |
-| **D** | OhMy 式 spawn 预设子 Agent | ✅ **已实现**（基础版） | Meta-Planner 动态 flow、嵌套 spawn | — |
+| **A** | 嫁接 pi-tui 呈现层 | ✅ **基础版已实现**（`npm run tui`）；演示级 polish 按需 | fork 整仓、重写 agent 内核 | P2（增强） |
+| **B** | TS 运行时内存 / **turn 延迟** / IO | 异步 IO 已落地；**P0 表待填** | 无 profiling 就改架构 | **P0（观测）** |
+| **C** | Rust 内核 fork（CPU 热点） | B 填表后仍撞墙，且热点已定位 | preemptive 全量重写 `runAgent` | P3 |
+| **D** | `spawn_agent` 同步预设子 Agent | ✅ **已实现**（基础版） | Meta-Planner 动态 flow、嵌套 spawn | — |
+| **E** | `spawn_background` + `code_review` 后台 job | ✅ **已实现**（Phase 1a–1d） | TUI jobs 面板、跨机调度 | P2（增强） |
 
 ---
 
@@ -36,25 +37,25 @@
 
 ### 勘误：测试现状（报告 §四「无测试」已过时）
 
-| 项 | 2026-07-01 报告 | 当前（2026-07） |
-|----|-----------------|-----------------|
-| 测试文件 | 0 | **27** |
-| 用例数 | — | **118+**（`npm test`） |
-| 已覆盖 | — | compression、pointer-compact、tool-scheduler、llm-retry、permission-gate、spawn-abort、web-fetch、session-*、TUI overlay 等 |
+| 项 | 2026-07-01 报告 | 当前（2026-07-04） |
+|----|-----------------|---------------------|
+| 测试文件 | 0 | **38** |
+| 用例数 | — | **170**（`npm test`） |
+| 已覆盖 | — | compression、pointer-compact、tool-scheduler、llm-retry、permission-gate、spawn-*、**spawn-background**、**spawn-job-cancel**、**code-review-background**、**loop-guard**、**action-write/index queue**、**p0-telemetry**、web-fetch、session-*、TUI overlay 等 |
 
 **仍缺专门单测**（补洞即可，非从零建仓）：
 
 - `pointerize.ts` — `POINTER_RULES` / `shouldPointerize` 阈值（`pointer-compact` 未覆盖）
-- `action-store.ts` — 写入/读取/列表（仅 `session-log` 间接用到）
+- `action-store.ts` — 写入/读取/列表（`action-write-queue` / `session-log` 间接覆盖）
 - `assembleApiMessages` / prune — 2–3 条边界回归
 
 ### 优先级表（合并审查 + 实测）
 
 | 优先级 | 事项 | 触发 / 依据 | 工作量 |
 |:------:|------|-------------|:------:|
-| **P0** | 轨 B **观测**：turn 墙钟、并行 tool 批、`saveAction` 次数 | 主+子 **max_parallel 满负载** 时 turn 明显变慢（**已观测**） | 半天 |
-| **P1** | **同步 IO 异步化**（见轨 B §同步 IO 规划） | P0 数据确认 `writeFileSync` 占 turn 尾延迟 | 1–2 天 |
-| **P1** | 测试补洞：pointerize 规则 + action-store + prune 边界 | 动 IO/压缩前的安全带 | 0.5–1 天 |
+| **P0** | 轨 B **观测填表**：turn P50/P95、`turn_io`、`spawn_background` 场景 | 异步 IO 已落地；**待复测** `max_parallel=3` + 后台 `code_review` | 半天 |
+| **P1** | ✅ **同步 IO 异步化**（B-IO-1～3、Index 队列） | `ActionWriteQueue`、`TranscriptWriteQueue`、`ActionIndexQueue` 已合入 | — |
+| **P1** | 测试补洞：pointerize 规则 + action-store + prune 边界 | 动压缩策略前的安全带 | 0.5–1 天 |
 | **P2** | `ToolRegistry` → Provider 拆分 | 新工具类型激增前 | 1–2 天 |
 | **P2** | `token_cost` 更准（tiktoken 或 CJK 友好近似） | 仅当要做预算 UI / 报表 | 半天 |
 | **P3** | `spawn/runner.ts` 静态 import 防护注释 + lint | 防误改破环 | 10 分钟 |
@@ -75,7 +76,7 @@
 
 | 项 | 路径 |
 |----|------|
-| 预设 MD | `agents/*.md`（示例：`web-researcher`、`skeleton-reader`） |
+| 预设 MD | `agents/*.md`（含 `code-review-bug/security/quality` 等） |
 | 配置 | `agent.json` → `spawn_presets` + `builtin_tools` 含 `spawn_agent` |
 | 加载 | `src/spawn/load-preset.ts` |
 | 执行 | `src/spawn/runner.ts` → isolated `runAgent` |
@@ -92,11 +93,41 @@
 
 - [ ] slash `/spawns` 列表预设
 - [ ] `{{recall(...)}}` workflow 模板
-- [ ] 子 Agent action 可选写入主 session recall
+- [x] 子 Agent action 独立冷存路径（`actions/spawn/<parent>/`，见 `spawn-cold-storage` 测试）
 
 ---
 
-## 轨 A：TUI 嫁接（pi / OpenCode）
+## 轨 E：后台 Spawn 与 `code_review`（✅ Phase 1a–1d 已实现）
+
+### 目标
+
+主 Agent 启动长时间子任务后**立即返回** `job_id`，不阻塞 ReAct 循环；`code_review` 支持 `background: true` 并发三审查预设。
+
+### 实现
+
+| Phase | 内容 | 路径 |
+|-------|------|------|
+| 1a | Job 磁盘状态机 | `src/spawn/job-registry.ts`, `job-store.ts`, `job-paths.ts` |
+| 1b | `spawn_background` 工具 + CLI | `src/tools/spawn-background.ts`, `src/spawn-cli.ts` |
+| 1c | `cancel.requested` 跨进程取消 | `src/spawn/job-cancel.ts` |
+| 1d | `code_review({ background: true })` | `src/tools/code-review.ts` |
+
+运行时输出：`workspace/jobs/<job_id>/`（`meta.json`、`events.jsonl`、`report.md`）— 本地，不进 git。
+
+### 后续可选（非 P0）
+
+- [ ] TUI jobs 面板（`/jobs` 或 spawn 状态条）
+- [ ] P0 遥测按 `job_id` 分桶（`P0_TELEMETRY=1` 骨架已有）
+- [ ] `code_review` diff 截断策略调优（当前 40K chars）
+
+### 已合入但未单列的事项
+
+- [x] `code_review` 同步路径（`Promise.all` 三 preset）
+- [x] loop guard：review/spawn 豁免、强制总结 session 回滚（`loop-guard.ts` + `runner.ts`）
+
+---
+
+## 轨 A：TUI 嫁接（pi / OpenCode）（✅ 基础版已实现）
 
 ### 目标
 
@@ -109,7 +140,7 @@
 | `AgentRuntime` | `src/runner.ts` | session、shell/web、workflow、abort |
 | `RuntimeEvent` | `src/events.ts` | 生命周期 + `AgentStepEvent` |
 | NDJSON | `npm start -- --json-events` | 第三方 UI / PoC 无需改内核 |
-| TUI 极简版 | `src/tui/` | pi 式滚动 REPL + slash + 终稿 markdown |
+| TUI（pi-tui） | `src/tui/`、`npm run tui` | pi 式 REPL + slash + overlay + tool presenter |
 
 ### 路线选择
 
@@ -119,11 +150,11 @@
 | **OpenCode** | TUI 层 / 交互思路 | 中–高 | 适合参考，不宜整仓 fork |
 | **自研** | 继续增强 `src/tui/log.ts` | 低 | 当前方案；演示感弱但实验诚实 |
 
-### 触发条件（满足任一再启动 A）
+### 触发条件（**增强**项，基础版已可用）
 
-- [ ] 极简 TUI 无法满足日常演示 / 给他人用
-- [ ] `--json-events` PoC 验证事件字段够用
-- [ ] session 内压测结论稳定，愿为 UI 分心
+- [ ] 现有 TUI 无法满足日常演示 / 给他人用（workflow 分栏、jobs 面板等）
+- [x] `--json-events` 事件字段可供第三方 UI 消费
+- [ ] session 内压测结论稳定，愿为 UI polish 分心
 
 ### 验收
 
@@ -148,14 +179,14 @@
 ### 已观测症状（2026-07）
 
 - 单 Agent ~38+ turn 仍相对稳定（内存 / 压缩未明显拐点）。
-- **主 Agent + 子 Agent（`spawn_policy.max_parallel: 2`）均满并发** 时，**单 turn 墙钟明显变长** — 怀疑同步 IO 与并行 tool 批叠加阻塞事件循环（待 P0 量化）。
+- **主 Agent + 子 Agent（`spawn_policy.max_parallel: 2→3`）均满并发** 时，**单 turn 墙钟明显变长** — 同步 IO 已队列化，**待 P0 复测**是否仍有拐点。
 
 ### 同步 IO 热点（审查 + 代码路径）
 
 | 调用点 | 模块 | 时机 | 放大因子 |
 |--------|------|------|----------|
-| `saveAction()` | `action-store.ts` | **每个** tool 完成，`writeFileSync` | × 并行 tool 数（`tool-scheduler`） |
-| `appendTaskTranscript()` | `session-transcript.ts` | 每个 task 完成，`appendFileSync` | × workflow 多角色 |
+| `saveAction()` → 队列 | `action-write-queue.ts` | 每个 tool 完成 **enqueue**；后台批量 `writeFile` | × 并行 tool 数（已异步，非 sync） |
+| `appendTaskTranscript()` → 队列 | `session-transcript-queue.ts` | 每个 task 完成 **enqueue**；后台 append | × workflow 多角色 |
 | `saveSession()` | `session.ts` | run 结束 / 节流保存 | 整棵 `session.json` 序列化 |
 | `indexActionAsync()` | `action-index.ts` | 每 action（已异步） | CPU/RSS，与 IO 争抢 |
 
@@ -171,14 +202,15 @@
 
 **设计原则**：与 `saveSessionThrottled` 对称 — **热路径只入队，后台 flush**；abort 时 `force` 刷盘；不改变 ActionStore 文件格式。
 
-| 步骤 | 内容 | 文件 | 验收 |
+| 步骤 | 内容 | 文件 | 状态 |
 |:----:|------|------|------|
-| **B-IO-1** | `ActionWriteQueue`：`enqueue(block)` + 定时/批量 `writeFile`（`fs.promises`） | 新 `src/action-write-queue.ts`，`agent.ts` 改调队列 | 同任务复测 turn P95 下降；abort 后 action 文件仍存在 |
-| **B-IO-2** | 队列 **按 session 合并 flush**（如 50ms 或 ≤8 条一批） | 同上 | 满并发 spawn 场景 turn 延迟改善 |
-| **B-IO-3** | `appendTaskTranscript` 改异步 append + 可选内存队列 | `session-transcript.ts` | task 完成后 1s 内落盘；`max_bytes` 逻辑不变 |
-| **B-IO-4** | ✅ 轻量指标：`turn_io` + `action_flush` 事件；`ACTION_IO_METRICS=1` 人类 log | `action-io-metrics.ts`, `events.ts`, `agent.ts` | P0 表可填数 |
-| **B-IO-1** | ✅ `ActionWriteQueue` 异步批量写盘；run/spawn 结束 `flush`；abort `flushSync` | `action-write-queue.ts`, `action-store.ts` | 满并发 spawn 复测 turn P95 |
-| **B-IO-5**（可选） | spawn 子 Agent action 写入 **独立子目录** 或延迟索引，减轻主 session 队列竞争 | `spawn/runner.ts` | 子 Agent 冷存不拖主 turn |
+| **B-IO-1** | `ActionWriteQueue` 异步批量写盘；run/spawn 结束 `flush`；abort `flushSync` | `action-write-queue.ts`, `action-store.ts` | ✅ |
+| **B-IO-2** | 队列按 session 合并 flush（批量 drain） | `action-write-queue.ts` | ✅ |
+| **B-IO-3** | `TranscriptWriteQueue` 异步 append | `session-transcript-queue.ts` | ✅ |
+| **B-IO-4** | `turn_io` + `action_flush` 指标；`ACTION_IO_METRICS=1` | `action-io-metrics.ts`, `events.ts` | ✅ |
+| **B-IO-5** | spawn action 写入 `actions/spawn/<parent>/` | `action-paths.ts`, `spawn/runner.ts` | ✅ |
+| **B-IO-6** | `ActionIndexQueue` 串行索引 + spawn 暂停 | `action-index-queue.ts` | ✅ |
+| **B-IO-7** | P0 遥测 `runs.jsonl` + `summary.tsv`（可选） | `p0-telemetry.ts`, `p0-summary.ts` | ✅ 骨架 |
 
 **明确不做（本阶段）**：
 
@@ -190,7 +222,7 @@
 
 | 区域 | 模块 | 典型症状 |
 |------|------|----------|
-| **同步 action 写盘** | `action-store.ts` | 满并发 spawn + parallel tool → **turn 变慢（已观测）** |
+| action 写盘队列积压 | `action-write-queue.ts` | 满并发时队列深度 / flush 延迟（**待 P0 量化**） |
 | Session 整树序列化 | `session.ts`、`saveSession` | turn 越多 save 越慢、RSS 阶梯上升 |
 | Embedding 推理 | `embedding.ts`、`@xenova/transformers` | 索引时 CPU/RSS 尖峰 |
 | 混合检索 | `action-index.ts`、zvec | recall / 索引写入卡顿 |
@@ -225,11 +257,10 @@ node --heapsnapshot-near-heap-limit=3 $(which tsx) src/tui/main.ts
 
 - [x] 主/子 Agent 满并发时 turn 延迟可感知变差
 
-**启动 P1 异步 IO 实作**（满足任一）：
+**P1 异步 IO 实作**：
 
-- [ ] P0 表显示 `saveAction` 次/turn 与 turn P95 强相关
-- [ ] 单 turn 内 sync write 累计 > **Y ms**（自定，如 20ms）
-- [ ] 异步 IO 方案 B-IO-1 PoC 在 spawn 压测场景 P95 改善 ≥30%
+- [x] B-IO-1～6 已合入（见上表）
+- [ ] P0 复测确认 turn P95 较 2026-07 主观卡顿有改善（填压测表）
 
 **其他 B 项**（非 IO）：
 
@@ -317,3 +348,4 @@ minimal-agent-ts-ds-cache/   # 已有：前缀缓存叙事 fork（独立）
 | 2026-06-30 | 初版：轨 A/B/C、触发条件、压测表、对接面 |
 | 2026-07-03 | 合并 `CODE_REVIEW_REPORT.md` 勘误优先级；轨 B 增同步 IO 规划与 spawn 满并发 turn 延迟观测 |
 | 2026-07-03 | B-IO-4 + B-IO-1：`turn_io`/`action_flush` 指标 + `ActionWriteQueue` 异步写盘 |
+| 2026-07-04 | 勘误：轨 A/E 基础版、B-IO-2～7、`code_review`、loop guard；测试 170；公开 GitHub |
