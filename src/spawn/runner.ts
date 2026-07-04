@@ -13,6 +13,10 @@ export interface RunSpawnOptions {
   preset: ResolvedSpawnPreset;
   task: string;
   parentConfig: AgentConfig;
+  /** Fixed virtual session id (background jobs reuse one id per job). */
+  spawnSessionId?: string;
+  /** Extra step sink; merged with parentConfig.nestedStepSink when both set. */
+  jobOnStep?: (event: AgentStepEvent) => void;
 }
 
 function presetNeedsShell(preset: ResolvedSpawnPreset): boolean {
@@ -70,7 +74,14 @@ export async function runSpawnAgent(opts: RunSpawnOptions): Promise<string> {
     if (parentConfig.abortSignal?.aborted) {
       return '[aborted]';
     }
-    return await runSpawnAgentInner({ preset, task: trimmed, parentConfig, depth });
+    return await runSpawnAgentInner({
+      preset,
+      task: trimmed,
+      parentConfig,
+      depth,
+      spawnSessionId: opts.spawnSessionId,
+      jobOnStep: opts.jobOnStep,
+    });
   } catch (err) {
     if (isAbortError(err)) {
       emitSpawnLifecycle(parentConfig, {
@@ -113,10 +124,14 @@ async function runSpawnAgentInner(opts: {
   task: string;
   parentConfig: AgentConfig;
   depth: number;
+  spawnSessionId?: string;
+  jobOnStep?: (event: AgentStepEvent) => void;
 }): Promise<string> {
-  const { preset, task, parentConfig, depth } = opts;
+  const { preset, task, parentConfig, depth, spawnSessionId: fixedSpawnSessionId, jobOnStep } =
+    opts;
   const parentSessionId = parentConfig.sessionId;
-  const spawnSessionId = parentSessionId ? buildSpawnSessionId(parentSessionId) : undefined;
+  const spawnSessionId =
+    fixedSpawnSessionId ?? (parentSessionId ? buildSpawnSessionId(parentSessionId) : undefined);
   const startedAt = Date.now();
   const coldStorage = Boolean(parentSessionId && spawnSessionId);
 
@@ -131,11 +146,13 @@ async function runSpawnAgentInner(opts: {
   };
 
   const sink = parentConfig.nestedStepSink;
-  const onStep = sink
-    ? (event: AgentStepEvent) => {
-        sink(event);
-      }
-    : undefined;
+  const onStep =
+    sink || jobOnStep
+      ? (event: AgentStepEvent) => {
+          sink?.(event);
+          jobOnStep?.(event);
+        }
+      : undefined;
 
   emitSpawnLifecycle(parentConfig, { phase: 'start', preset: preset.name });
 
