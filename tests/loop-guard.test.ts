@@ -75,6 +75,27 @@ describe('loop guard regression exemptions', () => {
     assert.equal(guard.afterToolTurn(6, [row]).action, 'forced_summary');
   });
 
+  it('does not accumulate state when loop guard is disabled', () => {
+    const guard = new LoopGuard({ enabled: false, mode: 'off', hardCeiling: 200 });
+    const row = record('read_file', { path: 'src/agent.ts' }, 'same body');
+    const internal = guard as unknown as {
+      seenFingerprints: Set<string>;
+      seenResults: Map<string, string>;
+      emptyStreak: number;
+      lastTurnEntries: Map<string, string> | null;
+    };
+
+    for (let i = 0; i < 50; i++) {
+      assert.equal(guard.afterToolTurn(i + 1, [row]).action, 'continue');
+      assert.equal(guard.afterEmptyResponse().action, 'continue');
+    }
+
+    assert.equal(internal.seenFingerprints.size, 0);
+    assert.equal(internal.seenResults.size, 0);
+    assert.equal(internal.emptyStreak, 0);
+    assert.equal(internal.lastTurnEntries, null);
+  });
+
   it('fingerprints code_review by scope and focus', () => {
     const a = toolFingerprint('code_review', JSON.stringify({ scope: 'HEAD~2' }));
     const b = toolFingerprint('code_review', JSON.stringify({ scope: 'HEAD~3' }));

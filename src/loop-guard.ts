@@ -263,6 +263,10 @@ export class LoopGuard {
   }
 
   afterToolTurn(turn: number, records: ToolTurnRecord[]): LoopGuardDecision {
+    if (!this.isEnabled()) {
+      return { action: 'continue' };
+    }
+
     const entries = turnEntries(records);
 
     if (
@@ -298,10 +302,6 @@ export class LoopGuard {
 
     this.lastTurnEntries = entries;
 
-    if (!this.isEnabled()) {
-      return { action: 'continue' };
-    }
-
     const hardAt = this.repeatHardThreshold();
     const softAt = this.repeatSoftThreshold();
 
@@ -321,10 +321,10 @@ export class LoopGuard {
   }
 
   afterEmptyResponse(): LoopGuardDecision {
-    this.emptyStreak++;
     if (!this.isEnabled()) {
       return { action: 'continue' };
     }
+    this.emptyStreak++;
     if (this.emptyStreak >= 3) {
       return this.hardLoopDecision('empty responses');
     }
