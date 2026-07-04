@@ -22,6 +22,14 @@ export const DEFAULT_REVIEW_PRESETS = [
   'code-review-quality',
 ] as const;
 
+/** Max chars of git diff embedded in review task prompts before truncation. */
+export const CODE_REVIEW_DIFF_MAX_CHARS = 40_000;
+
+const VALID_REVIEW_AGENT_NAMES = new Set([
+  ...Object.values(FOCUS_MAP),
+  ...DEFAULT_REVIEW_PRESETS,
+]);
+
 export const CODE_REVIEW_DEFINITIONS: ToolDefinition[] = [
   {
     type: 'function',
@@ -73,8 +81,7 @@ export function resolveRequestedReviewAgents(focus: string): string[] {
 }
 
 export function validateReviewAgents(requestedAgents: string[]): string | null {
-  const validNames = new Set([...Object.values(FOCUS_MAP), ...DEFAULT_REVIEW_PRESETS]);
-  const invalidFocus = requestedAgents.filter((a) => !validNames.has(a));
+  const invalidFocus = requestedAgents.filter((a) => !VALID_REVIEW_AGENT_NAMES.has(a));
   if (invalidFocus.length === 0) return null;
   return `error: invalid focus values: ${invalidFocus.join(', ')}. Valid: bug, security, quality (or full preset names).`;
 }
@@ -197,8 +204,9 @@ async function resolveGitDiff(
 function buildDiffContextMessage(diff: string, scope: string): string {
   const header = `Review the following git diff (scope: ${scope}) for issues.`;
   const truncated =
-    diff.length > 40_000
-      ? diff.slice(0, 40_000) + '\n...(diff truncated at 40K chars)'
+    diff.length > CODE_REVIEW_DIFF_MAX_CHARS
+      ? diff.slice(0, CODE_REVIEW_DIFF_MAX_CHARS) +
+        `\n...(diff truncated at ${CODE_REVIEW_DIFF_MAX_CHARS / 1000}K chars)`
       : diff;
   return `${header}\n\n\`\`\`diff\n${truncated}\n\`\`\``;
 }
@@ -222,13 +230,12 @@ export function startBackgroundCodeReviewJobs(opts: {
   const jobs: Array<{ agent: string; jobId: string }> = [];
 
   for (const preset of opts.reviewPresets) {
+    const reportPath = reportPathForReviewAgent(preset.name);
     const handle = registry.start({
       preset,
       task: opts.diffMessage,
       parentConfig: opts.config,
-      outputPaths: reportPathForReviewAgent(preset.name)
-        ? [reportPathForReviewAgent(preset.name)!]
-        : undefined,
+      outputPaths: reportPath ? [reportPath] : undefined,
     });
     jobs.push({ agent: preset.name, jobId: handle.jobId });
   }
