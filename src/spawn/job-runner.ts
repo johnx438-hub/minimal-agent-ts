@@ -46,7 +46,7 @@ export function setSpawnRunnerForTests(fn: SpawnRunnerFn | null): void {
   spawnRunnerOverride = fn;
 }
 
-function resolveSpawnRunner(): SpawnRunnerFn {
+export function resolveSpawnRunner(): SpawnRunnerFn {
   return spawnRunnerOverride ?? runSpawnAgent;
 }
 

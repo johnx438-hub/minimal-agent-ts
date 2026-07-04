@@ -1,5 +1,26 @@
 import { spawn } from 'node:child_process';
 import type { AgentConfig, ToolDefinition } from '../types.js';
+import { getJobRegistry } from '../spawn/job-registry.js';
+import { relativeJobFile } from '../spawn/job-paths.js';
+import type { ResolvedSpawnPreset } from '../spawn/types.js';
+
+export const REVIEW_REPORT_PATHS: Record<string, string> = {
+  'code-review-bug': 'workspace/code-review-bug.md',
+  'code-review-security': 'workspace/code-review-security.md',
+  'code-review-quality': 'workspace/code-review-quality.md',
+};
+
+export const FOCUS_MAP: Record<string, string> = {
+  bug: 'code-review-bug',
+  security: 'code-review-security',
+  quality: 'code-review-quality',
+};
+
+export const DEFAULT_REVIEW_PRESETS = [
+  'code-review-bug',
+  'code-review-security',
+  'code-review-quality',
+] as const;
 
 export const CODE_REVIEW_DEFINITIONS: ToolDefinition[] = [
   {
@@ -8,7 +29,8 @@ export const CODE_REVIEW_DEFINITIONS: ToolDefinition[] = [
       name: 'code_review',
       description:
         'Review code changes using concurrent sub-agents (bug, security, quality).' +
-        ' Use scope="unstaged" for working tree, "HEAD~N" for recent commits, or a file path for single file.',
+        ' Use scope="unstaged" for working tree, "HEAD~N" for recent commits, or a file path for single file.' +
+        ' Set background=true to start non-blocking jobs (returns job_ids immediately).',
       parameters: {
         type: 'object',
         properties: {
@@ -27,12 +49,39 @@ export const CODE_REVIEW_DEFINITIONS: ToolDefinition[] = [
             description:
               'Optional comma-separated list of review dimensions: "bug,security,quality". Default: all three.',
           },
+          background: {
+            type: 'boolean',
+            description:
+              'When true, start review agents as background jobs and return immediately with job_ids (default false).',
+          },
         },
         required: [],
       },
     },
   },
 ];
+
+export function resolveRequestedReviewAgents(focus: string): string[] {
+  if (!focus.trim()) return [...DEFAULT_REVIEW_PRESETS];
+  return focus
+    .split(',')
+    .map((s) => {
+      const trimmed = s.trim();
+      return FOCUS_MAP[trimmed] ?? trimmed;
+    })
+    .filter(Boolean);
+}
+
+export function validateReviewAgents(requestedAgents: string[]): string | null {
+  const validNames = new Set([...Object.values(FOCUS_MAP), ...DEFAULT_REVIEW_PRESETS]);
+  const invalidFocus = requestedAgents.filter((a) => !validNames.has(a));
+  if (invalidFocus.length === 0) return null;
+  return `error: invalid focus values: ${invalidFocus.join(', ')}. Valid: bug, security, quality (or full preset names).`;
+}
+
+export function reportPathForReviewAgent(agent: string): string | undefined {
+  return REVIEW_REPORT_PATHS[agent];
+}
 
 function formatCombinedReport(
   sections: { agent: string; text: string }[],
@@ -47,7 +96,6 @@ function formatCombinedReport(
       s.agent === 'code-review-bug' ? '🐛' :
       s.agent === 'code-review-security' ? '🔐' : '📋';
 
-    // Count issues from the one-line summary if it contains "Found N"
     const match = line.match(/Found (\d+)/);
     const count = match ? parseInt(match[1], 10) : 0;
     total += count;
@@ -59,20 +107,48 @@ function formatCombinedReport(
   parts.push('---');
   parts.push(`Total: ${total} issue${total !== 1 ? 's' : ''}`);
   parts.push('Full reports saved to:');
-  parts.push('- `workspace/code-review-bug.md`');
-  parts.push('- `workspace/code-review-security.md`');
-  parts.push('- `workspace/code-review-quality.md`');
+  for (const agent of DEFAULT_REVIEW_PRESETS) {
+    const path = REVIEW_REPORT_PATHS[agent];
+    if (path) parts.push(`- \`${path}\``);
+  }
 
   return parts.join('\n');
 }
 
+export function formatBackgroundReviewStarted(
+  scope: string,
+  jobs: Array<{ agent: string; jobId: string }>,
+): string {
+  const lines = [
+    `code_review: started ${jobs.length} background job(s) (scope: ${scope})`,
+    '',
+    'AGENT                 JOB_ID                   STATUS',
+  ];
+
+  for (const { agent, jobId } of jobs) {
+    lines.push(
+      `${agent.padEnd(22)} ${jobId.padEnd(24)} ${relativeJobFile(jobId, 'meta.json')}`,
+    );
+  }
+
+  lines.push('');
+  lines.push('Check: npm run spawn:list');
+  lines.push('Status: npm run spawn:status -- <job_id>');
+  lines.push('Kill:  npm run spawn:kill -- <job_id>');
+  lines.push('Reports when done:');
+  for (const { agent } of jobs) {
+    const path = reportPathForReviewAgent(agent);
+    if (path) lines.push(`- ${path} (${agent})`);
+  }
+
+  return lines.join('\n');
+}
+
 async function gitDiff(scope: string, cwd: string, extraArgs: string[] = []): Promise<string> {
-  // Build args array — never pass scope directly into a shell string
   const args: string[] = ['diff', ...extraArgs];
   if (scope === 'staged') {
     args.push('--cached');
   } else if (scope && scope !== 'unstaged') {
-    // Reject refs that look like git options to prevent argument injection
     if (scope.startsWith('-') && scope !== '--cached') {
       throw new Error(`invalid scope: "${scope}" looks like a git option. Use a ref name or file path.`);
     }
@@ -83,7 +159,7 @@ async function gitDiff(scope: string, cwd: string, extraArgs: string[] = []): Pr
     const child = spawn('git', args, { cwd, timeout: 10_000, windowsHide: true });
     const chunks: Buffer[] = [];
     child.stdout.on('data', (d: Buffer) => chunks.push(d));
-    child.stderr.resume(); // ignore stderr (git diff outputs to stdout only)
+    child.stderr.resume();
     child.on('error', (err: NodeJS.ErrnoException) => {
       if (err.code === 'ENOENT') {
         reject(new Error('git not found — is git installed?'));
@@ -93,8 +169,6 @@ async function gitDiff(scope: string, cwd: string, extraArgs: string[] = []): Pr
     });
     child.on('close', (code) => {
       const out = Buffer.concat(chunks).toString('utf8').trim();
-      // git diff exits 0 for changes, 1 for no changes, >1 for error
-      // null means killed (timeout / signal)
       if (code === null || code > 1) {
         reject(new Error(`git diff exited ${code ?? 'via signal'}`));
       } else {
@@ -102,6 +176,22 @@ async function gitDiff(scope: string, cwd: string, extraArgs: string[] = []): Pr
       }
     });
   });
+}
+
+type GitDiffFn = (scope: string, cwd: string, extraArgs?: string[]) => Promise<string>;
+
+let gitDiffOverride: GitDiffFn | null = null;
+
+export function setGitDiffForTests(fn: GitDiffFn | null): void {
+  gitDiffOverride = fn;
+}
+
+async function resolveGitDiff(
+  scope: string,
+  cwd: string,
+  extraArgs: string[] = [],
+): Promise<string> {
+  return (gitDiffOverride ?? gitDiff)(scope, cwd, extraArgs);
 }
 
 function buildDiffContextMessage(diff: string, scope: string): string {
@@ -113,6 +203,66 @@ function buildDiffContextMessage(diff: string, scope: string): string {
   return `${header}\n\n\`\`\`diff\n${truncated}\n\`\`\``;
 }
 
+async function loadReviewPresets(cwd: string, requestedAgents: string[]): Promise<ResolvedSpawnPreset[]> {
+  const { loadSpawnPresets } = await import('../spawn/load-preset.js');
+  const { loadAgentPluginConfig } = await import('../plugins/config-loader.js');
+  const pluginConfig = loadAgentPluginConfig(cwd);
+  const spawnConfigs = pluginConfig.spawn_presets ?? [];
+  const spawnPolicy = pluginConfig.spawn_policy;
+  const allPresets = loadSpawnPresets(cwd, spawnConfigs, spawnPolicy);
+  return allPresets.filter((p) => requestedAgents.includes(p.name));
+}
+
+export function startBackgroundCodeReviewJobs(opts: {
+  reviewPresets: ResolvedSpawnPreset[];
+  diffMessage: string;
+  config: AgentConfig;
+}): Array<{ agent: string; jobId: string }> {
+  const registry = getJobRegistry();
+  const jobs: Array<{ agent: string; jobId: string }> = [];
+
+  for (const preset of opts.reviewPresets) {
+    const handle = registry.start({
+      preset,
+      task: opts.diffMessage,
+      parentConfig: opts.config,
+      outputPaths: reportPathForReviewAgent(preset.name)
+        ? [reportPathForReviewAgent(preset.name)!]
+        : undefined,
+    });
+    jobs.push({ agent: preset.name, jobId: handle.jobId });
+  }
+
+  return jobs;
+}
+
+export async function runSyncCodeReview(opts: {
+  reviewPresets: ResolvedSpawnPreset[];
+  diffMessage: string;
+  config: AgentConfig;
+  scope: string;
+}): Promise<string> {
+  const { resolveSpawnRunner } = await import('../spawn/job-runner.js');
+
+  const results = await Promise.all(
+    opts.reviewPresets.map(async (preset) => {
+      try {
+        const result = await resolveSpawnRunner()({
+          preset,
+          task: opts.diffMessage,
+          parentConfig: opts.config,
+        });
+        return { agent: preset.name, text: result };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { agent: preset.name, text: `error: ${msg}` };
+      }
+    }),
+  );
+
+  return formatCombinedReport(results, opts.scope);
+}
+
 export async function runCodeReviewTool(
   _toolName: string,
   args: Record<string, unknown>,
@@ -120,37 +270,20 @@ export async function runCodeReviewTool(
 ): Promise<string | null> {
   const scope = (args.scope as string)?.trim() || 'unstaged';
   const focus = (args.focus as string)?.trim() || '';
+  const background = args.background === true;
 
-  const FOCUS_MAP: Record<string, string> = {
-    bug: 'code-review-bug',
-    security: 'code-review-security',
-    quality: 'code-review-quality',
-  };
+  const requestedAgents = resolveRequestedReviewAgents(focus);
+  const focusError = validateReviewAgents(requestedAgents);
+  if (focusError) return focusError;
 
-  // Accept both short labels (bug) and full preset names (code-review-bug)
-  const defaultPresets = ['code-review-bug', 'code-review-security', 'code-review-quality'];
-  const requestedAgents = focus
-    ? focus.split(',').map((s) => {
-        const trimmed = s.trim();
-        return FOCUS_MAP[trimmed] ?? trimmed;
-      }).filter(Boolean)
-    : defaultPresets;
-
-  const validNames = new Set([...Object.values(FOCUS_MAP), ...defaultPresets]);
-  const invalidFocus = requestedAgents.filter((a) => !validNames.has(a));
-  if (invalidFocus.length > 0) {
-    return `error: invalid focus values: ${invalidFocus.join(', ')}. Valid: bug, security, quality (or full preset names).`;
-  }
-
-  // 1. Get diff
   let diff: string;
   try {
     if (scope.endsWith('.ts') || scope.startsWith('src/') || scope.startsWith('agents/')) {
-      diff = await gitDiff(scope, config.cwd, ['--']);
+      diff = await resolveGitDiff(scope, config.cwd, ['--']);
     } else if (scope.startsWith('-') && scope !== '--cached') {
       return `error: invalid scope "${scope}" — refs cannot start with '-'. Use file paths like "src/..." or refs like "HEAD~3".`;
     } else {
-      diff = await gitDiff(scope, config.cwd);
+      diff = await resolveGitDiff(scope, config.cwd);
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -162,38 +295,25 @@ export async function runCodeReviewTool(
   }
 
   const diffMessage = buildDiffContextMessage(diff, scope);
-
-  // 2. Concurrent spawn review agents
-  const { runSpawnAgent } = await import('../spawn/runner.js');
-  const { loadSpawnPresets } = await import('../spawn/load-preset.js');
-
-  const { loadAgentPluginConfig } = await import('../plugins/config-loader.js');
-  const pluginConfig = loadAgentPluginConfig(config.cwd);
-  const spawnConfigs = pluginConfig.spawn_presets ?? [];
-  const spawnPolicy = pluginConfig.spawn_policy;
-  const allPresets = loadSpawnPresets(config.cwd, spawnConfigs, spawnPolicy);
-  const reviewPresets = allPresets.filter((p) => requestedAgents.includes(p.name));
+  const reviewPresets = await loadReviewPresets(config.cwd, requestedAgents);
 
   if (reviewPresets.length === 0) {
     return 'error: no code review agent presets configured. Add code-review-bug, code-review-security, code-review-quality to spawn_presets in agent.json.';
   }
 
-  const results = await Promise.all(
-    reviewPresets.map(async (preset) => {
-      try {
-        const result = await runSpawnAgent({
-          preset,
-          task: diffMessage,
-          parentConfig: config,
-        });
-        return { agent: preset.name, text: result };
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { agent: preset.name, text: `error: ${msg}` };
-      }
-    }),
-  );
+  if (background) {
+    const jobs = startBackgroundCodeReviewJobs({
+      reviewPresets,
+      diffMessage,
+      config,
+    });
+    return formatBackgroundReviewStarted(scope, jobs);
+  }
 
-  // 3. Format report
-  return formatCombinedReport(results, scope);
+  return runSyncCodeReview({
+    reviewPresets,
+    diffMessage,
+    config,
+    scope,
+  });
 }

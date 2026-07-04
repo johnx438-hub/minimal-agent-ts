@@ -102,6 +102,7 @@ function normalizeArgs(toolName: string, args: Record<string, unknown>): Record<
       const out: Record<string, unknown> = {};
       if (args.scope !== undefined) out.scope = String(args.scope);
       if (args.focus !== undefined) out.focus = String(args.focus);
+      if (args.background === true) out.background = true;
       return out;
     }
     case 'spawn_agent':
