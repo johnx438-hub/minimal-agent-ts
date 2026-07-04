@@ -3,7 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import { formatEditToolResult } from './edit-display.js';
 import { hashFileContent } from './file-hash.js';
-import { resolveSafePath } from './path-utils.js';
+import { resolveWritablePath } from './path-utils.js';
 
 export const EDIT_FILE_DEFINITIONS: ToolDefinition[] = [
   {
@@ -76,7 +76,7 @@ export async function runEditFileTool(
 
   let file: string;
   try {
-    file = resolveSafePath(config.cwd, path);
+    file = resolveWritablePath(config.cwd, path);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return `error: ${msg}`;

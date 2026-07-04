@@ -32,8 +32,11 @@ function promptLine(question: string, signal?: AbortSignal): Promise<string> {
 
 export function createPermissionPrompter(): (req: PermissionRequest) => Promise<PermissionChoice> {
   return async (req) => {
-    const label = req.kind === 'shell' ? 'run_shell' : 'web_fetch';
-    console.log(`\n⚠ ${label} requested (${req.reason}) but ${req.kind} is OFF`);
+    const title =
+      req.kind === 'path_escape'
+        ? `⚠ path outside cwd (${req.reason})`
+        : `⚠ ${req.kind === 'shell' ? 'run_shell' : 'web_fetch'} requested (${req.reason}) but ${req.kind} is OFF`;
+    console.log(`\n${title}`);
     console.log('  [y] session  [o] once for this run  [n] deny');
     const answer = await promptLine('› approve ', req.abortSignal);
     if (req.abortSignal?.aborted) return 'deny';
@@ -41,6 +44,23 @@ export function createPermissionPrompter(): (req: PermissionRequest) => Promise<
     if (a === 'y' || a === 'yes' || a === 's' || a === 'session') return 'session';
     if (a === 'o' || a === 'once' || a === '1') return 'once';
     return 'deny';
+  };
+}
+
+export function createCwdChangeConfirm(): (
+  fromCwd: string,
+  toPath: string,
+  signal?: AbortSignal,
+) => Promise<boolean> {
+  return async (fromCwd, toPath, signal) => {
+    if (signal?.aborted) return false;
+    console.log(`\n⚠ Change cwd outside current tree?`);
+    console.log(`  from: ${fromCwd}`);
+    console.log(`  to:   ${toPath}`);
+    const answer = await promptLine('› change cwd? [y/N] ', signal);
+    if (signal?.aborted) return false;
+    const a = answer.trim().toLowerCase();
+    return a === 'y' || a === 'yes';
   };
 }
 

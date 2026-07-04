@@ -1,4 +1,8 @@
-import type { PermissionChoice, PermissionRequest } from '../../permission-gate.js';
+import type {
+  CapabilityKind,
+  PermissionChoice,
+  PermissionRequest,
+} from '../../permission-gate.js';
 import type { WorkflowCheckpointInfo } from '../../workflow-checkpoint.js';
 import { formatWorkflowCheckpoint } from '../../workflow-checkpoint.js';
 
@@ -6,15 +10,22 @@ import type { TUI } from '@earendil-works/pi-tui';
 
 import { showSelectOverlay } from './select-overlay.js';
 
+function permissionOverlayTitle(req: PermissionRequest): string {
+  if (req.kind === 'path_escape') {
+    return `⚠ path outside cwd\n${req.reason}`;
+  }
+  const label = req.kind === 'shell' ? 'run_shell' : 'web_fetch';
+  return `⚠ ${label} requested (${req.reason}) but ${req.kind} is OFF`;
+}
+
 export function createPiPermissionPrompter(
   tui: TUI,
-  onSessionGrant: (kind: 'shell' | 'web') => void,
+  onSessionGrant: (kind: CapabilityKind) => void,
 ): (req: PermissionRequest) => Promise<PermissionChoice> {
   return async (req) => {
-    const label = req.kind === 'shell' ? 'run_shell' : 'web_fetch';
     const item = await showSelectOverlay(
       tui,
-      `⚠ ${label} requested (${req.reason}) but ${req.kind} is OFF`,
+      permissionOverlayTitle(req),
       [
         { value: 'session', label: 'Session', description: 'Allow for this session' },
         { value: 'once', label: 'Once', description: 'Allow once for this run' },
@@ -28,6 +39,25 @@ export function createPiPermissionPrompter(
       return 'session';
     }
     return 'once';
+  };
+}
+
+export function createPiCwdChangeConfirm(
+  tui: TUI,
+): (fromCwd: string, toPath: string, signal?: AbortSignal) => Promise<boolean> {
+  return async (fromCwd, toPath, signal) => {
+    if (signal?.aborted) return false;
+    const item = await showSelectOverlay(
+      tui,
+      `⚠ Change cwd outside current tree?\n  from: ${fromCwd}\n  to:   ${toPath}`,
+      [
+        { value: 'yes', label: 'Change cwd', description: 'Allow for this session' },
+        { value: 'no', label: 'Cancel', description: 'Keep current cwd' },
+      ],
+      { abortSignal: signal },
+    );
+    if (signal?.aborted) return false;
+    return item?.value === 'yes';
   };
 }
 

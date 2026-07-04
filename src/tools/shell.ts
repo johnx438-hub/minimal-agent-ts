@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { sleep } from '../llm-retry.js';
 import { isCapabilityEnabled } from '../permission-gate.js';
 import type { AgentConfig, ToolDefinition } from '../types.js';
-import { resolveSafePath } from './path-utils.js';
+import { resolveReadablePath } from './path-utils.js';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_POLL_INTERVAL_MS = 2_000;
@@ -261,8 +261,11 @@ export async function runShellTool(
       return 'error: working_dir must be a non-empty path';
     }
     try {
-      workDir = resolveSafePath(config.cwd, dir);
+      workDir = await resolveReadablePath(config, dir, `run_shell working_dir: ${dir}`);
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return '[aborted]';
+      }
       const msg = err instanceof Error ? err.message : String(err);
       return `error: ${msg}`;
     }

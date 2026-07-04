@@ -1,6 +1,6 @@
 import type { AgentConfig } from './types.js';
 
-export type CapabilityKind = 'shell' | 'web';
+export type CapabilityKind = 'shell' | 'web' | 'path_escape';
 
 export type PermissionChoice = 'once' | 'session' | 'deny';
 
@@ -64,23 +64,32 @@ export class PermissionGate {
     return this.ensure('web', config, reason);
   }
 
+  /** JIT approval for read-only access outside `config.cwd` (write/edit stay hard-rejected). */
+  async ensurePathEscape(config: AgentConfig, reason: string): Promise<boolean> {
+    return this.ensure('path_escape', config, reason);
+  }
+
   private async ensure(
     kind: CapabilityKind,
     config: AgentConfig,
     reason: string,
   ): Promise<boolean> {
-    const enabled = kind === 'shell' ? config.allowShell : config.allowWeb;
-    if (enabled) return true;
+    if (kind === 'path_escape') {
+      // path_escape is always JIT-gated; no persistent allow* flag on config.
+    } else {
+      const enabled = kind === 'shell' ? config.allowShell : config.allowWeb;
+      if (enabled) return true;
+    }
 
     if (this.alwaysGrants.has(kind)) {
       if (kind === 'shell') config.allowShell = true;
-      else config.allowWeb = true;
+      else if (kind === 'web') config.allowWeb = true;
       return true;
     }
 
     if (this.sessionGrants.has(kind)) {
       if (kind === 'shell') config.allowShell = true;
-      else config.allowWeb = true;
+      else if (kind === 'web') config.allowWeb = true;
       return true;
     }
 
@@ -110,7 +119,7 @@ export class PermissionGate {
     }
 
     if (kind === 'shell') config.allowShell = true;
-    else config.allowWeb = true;
+    else if (kind === 'web') config.allowWeb = true;
     return true;
   }
 

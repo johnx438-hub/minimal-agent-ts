@@ -94,12 +94,12 @@ export type RuntimeEvent =
     }
   | {
       type: 'permission_prompt_start';
-      kind: 'shell' | 'web';
+      kind: 'shell' | 'web' | 'path_escape';
       reason: string;
     }
   | {
       type: 'permission_prompt_end';
-      kind: 'shell' | 'web';
+      kind: 'shell' | 'web' | 'path_escape';
       approved: boolean;
       reason: 'approved' | 'denied' | 'aborted';
     }

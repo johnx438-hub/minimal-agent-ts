@@ -25,7 +25,12 @@ import { printRuntimeEvent } from './log.js';
 import { resetMarkdownTerminal } from './markdown.js';
 import { CompressionFatigueTracker } from '../compression-fatigue.js';
 import { createFatiguePrompter } from './fatigue-prompt.js';
-import { createPermissionPrompter, createWorkflowConfirm } from './permission-prompt.js';
+import {
+  createCwdChangeConfirm,
+  createPermissionPrompter,
+  createWorkflowConfirm,
+} from './permission-prompt.js';
+import { cwdChangeNeedsConfirm } from '../tools/path-utils.js';
 
 export interface TuiAppOptions {
   runtime: AgentRuntime;
@@ -144,6 +149,7 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
     return choice;
   });
   runtime.setWorkflowConfirmFn(createWorkflowConfirm());
+  const confirmCwdChange = createCwdChangeConfirm();
 
   const setPrompt = (): void => {
     if (mode === 'confirm') {
@@ -600,7 +606,16 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
 
     if (result.message?.startsWith('__cwd__:')) {
       const path = result.message.slice('__cwd__:'.length);
-      await runtime.setCwd(resolve(path));
+      const target = resolve(path);
+      if (cwdChangeNeedsConfirm(runtime.config.cwd, target)) {
+        const ok = await confirmCwdChange(runtime.config.cwd, target);
+        if (!ok) {
+          console.log('cwd change cancelled');
+          showPrompt();
+          return;
+        }
+      }
+      await runtime.setCwd(target);
       console.log(`cwd → ${runtime.config.cwd}`);
       showPrompt();
       return;

@@ -73,6 +73,21 @@ describe('PermissionGate abort', () => {
     assert.deepEqual(events, ['aborted']);
   });
 
+  it('approves path_escape via JIT prompt', async () => {
+    const gate = new PermissionGate();
+    const events: string[] = [];
+    gate.setLifecycle((event) => {
+      events.push(event.type);
+    });
+    gate.setPrompter(async () => 'session');
+
+    const ok = await gate.ensurePathEscape(testConfig(), 'read_file: /etc/passwd');
+
+    assert.equal(ok, true);
+    assert.equal(gate.hasSessionGrant('path_escape'), true);
+    assert.deepEqual(events, ['permission_prompt_start', 'permission_prompt_end']);
+  });
+
   it('resolves deny when abort fires during prompt', async () => {
     const gate = new PermissionGate();
     const controller = new AbortController();

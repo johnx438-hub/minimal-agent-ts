@@ -32,11 +32,13 @@ import type { TuiAppOptions } from './app.js';
 import { PiChatLog } from './pi/chat-log.js';
 import { PiEventPresenter } from './pi/event-presenter.js';
 import {
+  createPiCwdChangeConfirm,
   createPiFatiguePrompter,
   createPiPermissionPrompter,
   createPiWorkflowConfirm,
   runPiFirstRunConfirm,
 } from './pi/prompts.js';
+import { cwdChangeNeedsConfirm } from '../tools/path-utils.js';
 import { buildSelectItems, showPickerOverlay } from './pi/picker.js';
 import { showHistoryBrowser } from './pi/history-overlay.js';
 import { showLogBrowser } from './pi/log-overlay.js';
@@ -170,6 +172,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     }),
   );
   runtime.setWorkflowConfirmFn(createPiWorkflowConfirm(tui));
+  const confirmCwdChange = createPiCwdChangeConfirm(tui);
 
   const fatigueTracker = new CompressionFatigueTracker();
   const fatiguePrompter = createPiFatiguePrompter(tui);
@@ -651,7 +654,16 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
 
     if (result.message?.startsWith('__cwd__:')) {
       const path = result.message.slice('__cwd__:'.length);
-      await runtime.setCwd(resolve(path));
+      const target = resolve(path);
+      if (cwdChangeNeedsConfirm(runtime.config.cwd, target)) {
+        const ok = await confirmCwdChange(runtime.config.cwd, target);
+        if (!ok) {
+          say('cwd change cancelled');
+          resumeEditor();
+          return;
+        }
+      }
+      await runtime.setCwd(target);
       say(`cwd → ${runtime.config.cwd}`);
       resumeEditor();
       return;

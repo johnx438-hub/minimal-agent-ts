@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { isAbortError } from '../events.js';
 import { loadAction } from '../action-store.js';
 import type { AgentConfig, ToolDefinition } from '../types.js';
-import { resolveSafePath } from './path-utils.js';
+import { resolveReadablePath } from './path-utils.js';
 
 const GREP_TIMEOUT_MS = 30_000;
 const MAX_BUFFER_BYTES = 1024 * 1024;
@@ -151,7 +151,14 @@ async function grepSearch(args: Record<string, unknown>, config: AgentConfig): P
 
   const pattern = String(args.pattern ?? '');
   const rel = String(args.path ?? '.');
-  const searchPath = resolveSafePath(config.cwd, rel);
+  let searchPath: string;
+  try {
+    searchPath = await resolveReadablePath(config, rel, `grep_search: ${rel}`);
+  } catch (err) {
+    if (isAbortError(err) || config.abortSignal?.aborted) return '[aborted]';
+    const msg = err instanceof Error ? err.message : String(err);
+    return `error: ${msg}`;
+  }
   const glob = args.glob ? String(args.glob) : undefined;
   const context = args.context_lines === undefined ? 0 : Number(args.context_lines);
   const maxMatches = args.max_matches === undefined ? 50 : Number(args.max_matches);
@@ -232,7 +239,14 @@ async function listFiles(args: Record<string, unknown>, config: AgentConfig): Pr
   if (aborted) return aborted;
 
   const rel = String(args.path ?? '.');
-  const dir = resolveSafePath(config.cwd, rel);
+  let dir: string;
+  try {
+    dir = await resolveReadablePath(config, rel, `list_files: ${rel}`);
+  } catch (err) {
+    if (isAbortError(err) || config.abortSignal?.aborted) return '[aborted]';
+    const msg = err instanceof Error ? err.message : String(err);
+    return `error: ${msg}`;
+  }
   const maxDepth = args.max_depth === undefined ? 3 : Number(args.max_depth);
   const includeHidden = args.include_hidden === true;
 
@@ -298,7 +312,14 @@ async function diffFile(args: Record<string, unknown>, config: AgentConfig): Pro
   if (aborted) return aborted;
 
   const path = String(args.path ?? '');
-  const file = resolveSafePath(config.cwd, path);
+  let file: string;
+  try {
+    file = await resolveReadablePath(config, path, `diff_file: ${path}`);
+  } catch (err) {
+    if (isAbortError(err) || config.abortSignal?.aborted) return '[aborted]';
+    const msg = err instanceof Error ? err.message : String(err);
+    return `error: ${msg}`;
+  }
   const after = await readFile(file, 'utf8');
 
   const before =

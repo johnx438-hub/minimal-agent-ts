@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import { formatFileMeta } from './file-hash.js';
-import { resolveSafePath, sliceLines } from './path-utils.js';
+import { resolveReadablePath, resolveWritablePath, sliceLines } from './path-utils.js';
 import { formatWriteToolResult } from './write-display.js';
 
 export const READ_WRITE_DEFINITIONS: ToolDefinition[] = [
@@ -49,7 +49,16 @@ export async function runReadWriteTool(
   switch (name) {
     case 'read_file': {
       const path = String(args.path ?? '');
-      const file = resolveSafePath(config.cwd, path);
+      let file: string;
+      try {
+        file = await resolveReadablePath(config, path, `read_file: ${path}`);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          return '[aborted]';
+        }
+        const msg = err instanceof Error ? err.message : String(err);
+        return `error: ${msg}`;
+      }
       const raw = await readFile(file, 'utf8');
       const offset = args.offset === undefined ? undefined : Number(args.offset);
       const limit = args.limit === undefined ? undefined : Number(args.limit);
@@ -65,7 +74,13 @@ export async function runReadWriteTool(
     case 'write_file': {
       const path = String(args.path ?? '');
       const content = String(args.content ?? '');
-      const file = resolveSafePath(config.cwd, path);
+      let file: string;
+      try {
+        file = resolveWritablePath(config.cwd, path);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return `error: ${msg}`;
+      }
 
       let previous: string | null = null;
       try {
