@@ -110,6 +110,7 @@ export async function runSpawnJob(opts: RunSpawnJobOptions): Promise<SpawnJobRes
   const jobOnStep = (event: AgentStepEvent): void => {
     if (pollJobCancel(jobId, abortController)) {
       appendJobEvent(jobId, { t: 'cancel', source: 'poll' });
+      return;
     }
     const compact = compactAgentStepEvent(event);
     if (compact) {
@@ -143,8 +144,13 @@ export async function runSpawnJob(opts: RunSpawnJobOptions): Promise<SpawnJobRes
     aborted = abortController.signal.aborted;
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    text = `error: spawn failed: ${msg}`;
+    if (abortController.signal.aborted) {
+      aborted = true;
+      text = '[aborted]';
+    } else {
+      const msg = err instanceof Error ? err.message : String(err);
+      text = `error: spawn failed: ${msg}`;
+    }
   }
 
   const durationMs = Date.now() - startedAt;

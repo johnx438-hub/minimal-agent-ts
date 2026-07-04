@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, afterEach } from 'node:test';
 
-import { resetJobRegistryForTests } from '../src/spawn/job-registry.js';
+import { getJobRegistry, resetJobRegistryForTests } from '../src/spawn/job-registry.js';
 import { setSpawnRunnerForTests } from '../src/spawn/job-runner.js';
 import { readJobMeta } from '../src/spawn/job-store.js';
 import {
@@ -216,11 +216,19 @@ describe('spawn job CLI (Phase 1b)', () => {
 
     await spawnGate;
 
+    const handle = getJobRegistry().getHandle(jobId!);
+    assert.ok(handle);
+
     const kill = killSpawnJob(jobId!);
     assert.equal(kill.ok, true);
     assert.match(kill.message, /cancelled/);
 
+    const result = await handle!.promise;
+    assert.equal(result.status, 'cancelled');
+    assert.equal(result.ok, false);
+
     const statusText = formatJobStatus(jobId!);
     assert.ok(statusText?.includes('"status": "cancelled"'));
+    assert.ok(statusText?.includes('"ok": false'));
   });
 });

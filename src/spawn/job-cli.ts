@@ -6,8 +6,11 @@ import {
   readJobEvents,
   readJobMeta,
   readJobResult,
+  type JobStatus,
   type SpawnJobMeta,
 } from './job-store.js';
+
+const TERMINAL_JOB_STATUSES = new Set<JobStatus>(['completed', 'failed', 'cancelled']);
 
 const STALE_MS = 24 * 60 * 60 * 1000;
 
@@ -120,20 +123,36 @@ export function tailJobEvents(
 ): () => void {
   const path = jobEventsPath(jobId);
   let offset = 0;
+  let stopped = false;
+
+  const stop = (): void => {
+    if (stopped) return;
+    stopped = true;
+    unwatchFile(path);
+  };
 
   const flush = (): void => {
+    if (stopped) return;
     if (!existsSync(path)) return;
     const content = readFileSync(path, 'utf8');
-    if (content.length <= offset) return;
-    const chunk = content.slice(offset);
-    offset = content.length;
-    for (const line of chunk.split('\n')) {
-      const trimmed = line.trim();
-      if (trimmed) onLine(trimmed);
+    if (content.length > offset) {
+      const chunk = content.slice(offset);
+      offset = content.length;
+      for (const line of chunk.split('\n')) {
+        const trimmed = line.trim();
+        if (trimmed) onLine(trimmed);
+      }
+    }
+
+    const meta = readJobMeta(jobId);
+    if (meta && TERMINAL_JOB_STATUSES.has(meta.status)) {
+      stop();
     }
   };
 
   flush();
-  watchFile(path, { interval: intervalMs }, flush);
-  return () => unwatchFile(path);
+  if (!stopped) {
+    watchFile(path, { interval: intervalMs }, flush);
+  }
+  return stop;
 }

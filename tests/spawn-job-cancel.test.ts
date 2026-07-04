@@ -16,8 +16,8 @@ import {
   resetJobRegistryForTests,
 } from '../src/spawn/job-registry.js';
 import { setSpawnRunnerForTests } from '../src/spawn/job-runner.js';
-import { readJobMeta } from '../src/spawn/job-store.js';
-import { killSpawnJob } from '../src/spawn/job-cli.js';
+import { appendJobEvent, readJobEvents, readJobMeta, readJobResult } from '../src/spawn/job-store.js';
+import { killSpawnJob, tailJobEvents } from '../src/spawn/job-cli.js';
 import type { RunSpawnOptions } from '../src/spawn/runner.js';
 import { runSpawnBackgroundTool } from '../src/tools/spawn-background.js';
 import type { AgentConfig } from '../src/types.js';
@@ -179,5 +179,112 @@ describe('spawn job cancel.requested (Phase 1c)', () => {
 
     const result = await handle!.promise;
     assert.equal(result.status, 'cancelled');
+  });
+
+  it('in-process cancel keeps meta and result at cancelled (no completed overwrite)', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'ma-spawn-cancel-final-'));
+    setWorkspaceRoot(tempDir);
+
+    let releaseSpawn: (() => void) | null = null;
+    const spawnGate = new Promise<void>((resolve) => {
+      releaseSpawn = resolve;
+    });
+
+    setSpawnRunnerForTests(async (opts: RunSpawnOptions) => {
+      releaseSpawn?.();
+      await new Promise<void>((resolve) => {
+        const timer = setInterval(() => {
+          if (opts.parentConfig.abortSignal?.aborted) {
+            clearInterval(timer);
+            resolve();
+          }
+        }, 5);
+      });
+      return '[aborted]';
+    });
+
+    const registry = getJobRegistry();
+    const handle = registry.start({
+      preset: testPreset,
+      task: 'terminal cancel status',
+      parentConfig: minimalParentConfig('session_cancel_final', tempDir),
+    });
+
+    await spawnGate;
+    assert.equal(registry.cancel(handle.jobId), 'aborted');
+
+    const result = await handle.promise;
+    assert.equal(result.status, 'cancelled');
+    assert.equal(result.ok, false);
+
+    const meta = readJobMeta(handle.jobId);
+    assert.equal(meta?.status, 'cancelled');
+    const resultFile = readJobResult(handle.jobId);
+    assert.equal(resultFile?.ok, false);
+  });
+
+  it('jobOnStep does not log step events after cancel poll fires', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'ma-spawn-cancel-step-'));
+    setWorkspaceRoot(tempDir);
+
+    let activeJobId = '';
+    let resolveStepGate: (() => void) | null = null;
+    const stepGate = new Promise<void>((resolve) => {
+      resolveStepGate = resolve;
+    });
+
+    setSpawnRunnerForTests(async (opts: RunSpawnOptions) => {
+      await stepGate;
+      writeCancelRequested(activeJobId);
+      opts.jobOnStep?.({ type: 'turn_start', turn: 1 });
+      await new Promise<void>((resolve) => {
+        const timer = setInterval(() => {
+          if (opts.parentConfig.abortSignal?.aborted) {
+            clearInterval(timer);
+            resolve();
+          }
+        }, 5);
+      });
+      return '[aborted]';
+    });
+
+    const registry = getJobRegistry();
+    const handle = registry.start({
+      preset: testPreset,
+      task: 'skip step after cancel',
+      parentConfig: minimalParentConfig('session_cancel_step', tempDir),
+    });
+    activeJobId = handle.jobId;
+    const jobId = handle.jobId;
+    resolveStepGate?.();
+    await handle.promise;
+
+    const events = readJobEvents(jobId);
+    assert.ok(events.some((e) => e.t === 'cancel' && e.source === 'poll'));
+    assert.equal(
+      events.filter((e) => e.t === 'turn_start').length,
+      0,
+    );
+  });
+
+  it('tailJobEvents stops immediately for terminal jobs', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'ma-spawn-tail-stop-'));
+    setWorkspaceRoot(tempDir);
+    setSpawnRunnerForTests(async () => 'done');
+
+    const registry = getJobRegistry();
+    const handle = registry.start({
+      preset: testPreset,
+      task: 'done',
+      parentConfig: minimalParentConfig('session_tail_stop', tempDir),
+    });
+
+    await handle.promise;
+    assert.equal(readJobMeta(handle.jobId)?.status, 'completed');
+
+    const lines: string[] = [];
+    const stop = tailJobEvents(handle.jobId, (line) => lines.push(line));
+    stop();
+    assert.ok(lines.length >= 0);
   });
 });

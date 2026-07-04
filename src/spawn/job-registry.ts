@@ -100,7 +100,8 @@ class JobRegistry {
 
   list(opts?: ListSpawnJobsOptions): SpawnJobMeta[] {
     const limit = opts?.limit ?? 50;
-    const index = readJobIndex(limit * 2);
+    const hasFilter = Boolean(opts?.parentSessionId || opts?.status);
+    const index = hasFilter ? readJobIndex() : readJobIndex(limit * 2);
     const seen = new Set<string>();
     const metas: SpawnJobMeta[] = [];
 
@@ -132,7 +133,6 @@ class JobRegistry {
     const handle = this.handles.get(jobId);
     if (handle) {
       handle.abortController.abort();
-      patchJobMeta(jobId, { status: 'cancelled' });
       appendJobEvent(jobId, { t: 'cancel', source: 'abort' });
       return 'aborted';
     }
