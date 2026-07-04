@@ -1,7 +1,7 @@
 {
   "name": "minimal-agent-ts",
   "version": "0.1.0",
-  "private": false,
+  "private": true,
   "type": "module",
   "description": "Minimal ReAct agent loop in TypeScript for learning",
   "scripts": {

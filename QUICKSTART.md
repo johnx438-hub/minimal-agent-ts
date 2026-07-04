@@ -199,4 +199,4 @@ A: 当 turn 仍完整；更早的用 `recall_query(action_id=…)`。浏览器/M
 A: 默认 `LOOP_GUARD=inject` 会 nudge → 强制文字总结；也可设 `MAX_TURNS=30` 硬顶。
 
 **Q: 推 git 会泄露什么？**  
-A: `.env`、`.sessions/`、`workspace/` 和除 `context-design` 外的 `skills/` 均已 ignore。公开仓库：https://github.com/johnx438-hub/minimal-agent-ts
+A: `.env`、`.sessions/`、`workspace/` 和除 `context-design` 外的 `skills/` 均已 ignore。私有仓库：https://github.com/johnx438-hub/minimal-agent-ts
