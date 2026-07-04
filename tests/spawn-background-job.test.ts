@@ -146,7 +146,7 @@ describe('spawn background jobs (Phase 1a)', () => {
     });
 
     await spawnStarted;
-    assert.equal(registry.cancel(handle.jobId), true);
+    assert.equal(registry.cancel(handle.jobId), 'aborted');
 
     const result = await handle.promise;
     assert.equal(result.status, 'cancelled');

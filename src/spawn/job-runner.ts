@@ -11,6 +11,7 @@ import {
   writeJobReport,
   writeJobResult,
 } from './job-store.js';
+import { clearCancelRequested, pollJobCancel } from './job-cancel.js';
 import { jobReportPath, relativeJobFile } from './job-paths.js';
 import { runSpawnAgent, type RunSpawnOptions } from './runner.js';
 import type { ResolvedSpawnPreset } from './types.js';
@@ -107,6 +108,9 @@ export async function runSpawnJob(opts: RunSpawnJobOptions): Promise<SpawnJobRes
   appendJobEvent(jobId, { t: 'spawn_start', preset: preset.name });
 
   const jobOnStep = (event: AgentStepEvent): void => {
+    if (pollJobCancel(jobId, abortController)) {
+      appendJobEvent(jobId, { t: 'cancel', source: 'poll' });
+    }
     const compact = compactAgentStepEvent(event);
     if (compact) {
       appendJobEvent(jobId, compact);
@@ -124,6 +128,11 @@ export async function runSpawnJob(opts: RunSpawnJobOptions): Promise<SpawnJobRes
   let aborted = false;
 
   try {
+    if (pollJobCancel(jobId, abortController)) {
+      appendJobEvent(jobId, { t: 'cancel', source: 'poll' });
+      aborted = true;
+      text = '[aborted]';
+    } else {
     text = await resolveSpawnRunner()({
       preset,
       task,
@@ -132,6 +141,7 @@ export async function runSpawnJob(opts: RunSpawnJobOptions): Promise<SpawnJobRes
       jobOnStep,
     });
     aborted = abortController.signal.aborted;
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     text = `error: spawn failed: ${msg}`;
@@ -170,6 +180,8 @@ export async function runSpawnJob(opts: RunSpawnJobOptions): Promise<SpawnJobRes
     wall_ms: durationMs,
     ...(error ? { detail: error } : {}),
   });
+
+  clearCancelRequested(jobId);
 
   return {
     jobId,

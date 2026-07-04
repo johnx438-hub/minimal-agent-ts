@@ -10,6 +10,7 @@ import {
   type SpawnJobMeta,
   writeJobMeta,
 } from './job-store.js';
+import { isCancelRequested, writeCancelRequested } from './job-cancel.js';
 import { jobEventsPath, jobMetaPath, jobResultPath, newJobId } from './job-paths.js';
 import { runSpawnJob, type SpawnJobResult } from './job-runner.js';
 import type { ResolvedSpawnPreset } from './types.js';
@@ -36,6 +37,8 @@ export interface ListSpawnJobsOptions {
   status?: JobStatus;
   limit?: number;
 }
+
+export type JobCancelOutcome = 'aborted' | 'requested' | false;
 
 class JobRegistry {
   private readonly handles = new Map<string, SpawnJobHandle>();
@@ -120,26 +123,36 @@ class JobRegistry {
     return metas;
   }
 
-  cancel(jobId: string): boolean {
-    const handle = this.handles.get(jobId);
-    if (!handle) {
-      const meta = readJobMeta(jobId);
-      if (!meta || meta.status !== 'running' && meta.status !== 'queued') {
-        return false;
-      }
-      patchJobMeta(jobId, { status: 'cancelled' });
-      appendJobEvent(jobId, { t: 'cancel', source: 'registry_miss' });
-      return true;
+  cancel(jobId: string): JobCancelOutcome {
+    const meta = readJobMeta(jobId);
+    if (!meta || (meta.status !== 'running' && meta.status !== 'queued')) {
+      return false;
     }
 
-    handle.abortController.abort();
-    patchJobMeta(jobId, { status: 'cancelled' });
-    appendJobEvent(jobId, { t: 'cancel', source: 'abort' });
-    return true;
+    const handle = this.handles.get(jobId);
+    if (handle) {
+      handle.abortController.abort();
+      patchJobMeta(jobId, { status: 'cancelled' });
+      appendJobEvent(jobId, { t: 'cancel', source: 'abort' });
+      return 'aborted';
+    }
+
+    if (isCancelRequested(jobId)) {
+      return 'requested';
+    }
+
+    writeCancelRequested(jobId, 'registry_miss');
+    appendJobEvent(jobId, { t: 'cancel', source: 'cancel_requested' });
+    return 'requested';
   }
 
   getHandle(jobId: string): SpawnJobHandle | undefined {
     return this.handles.get(jobId);
+  }
+
+  /** Test helper: simulate cross-process kill (no in-memory handle). */
+  releaseHandleForTests(jobId: string): void {
+    this.handles.delete(jobId);
   }
 }
 
@@ -154,4 +167,8 @@ export function getJobRegistry(): JobRegistry {
 
 export function resetJobRegistryForTests(): void {
   registry = null;
+}
+
+export function releaseJobHandleForTests(jobId: string): void {
+  getJobRegistry().releaseHandleForTests(jobId);
 }

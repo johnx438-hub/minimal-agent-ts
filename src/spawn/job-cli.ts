@@ -98,9 +98,16 @@ export function killSpawnJob(jobId: string): { ok: boolean; message: string } {
     };
   }
 
-  const cancelled = getJobRegistry().cancel(jobId);
-  if (!cancelled) {
+  const outcome = getJobRegistry().cancel(jobId);
+  if (!outcome) {
     return { ok: false, message: `error: failed to cancel "${jobId}"` };
+  }
+
+  if (outcome === 'requested') {
+    return {
+      ok: true,
+      message: `cancel requested for ${jobId} (workspace/jobs/${jobId}/cancel.requested)`,
+    };
   }
 
   return { ok: true, message: `cancelled ${jobId}` };

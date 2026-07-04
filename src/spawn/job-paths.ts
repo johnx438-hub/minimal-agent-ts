@@ -31,6 +31,10 @@ export function jobReportPath(jobId: string): string {
   return resolve(jobDir(jobId), 'report.md');
 }
 
+export function jobCancelRequestedPath(jobId: string): string {
+  return resolve(jobDir(jobId), 'cancel.requested');
+}
+
 /** Workspace-relative path for tool / prompt references. */
 export function relativeJobFile(jobId: string, filename: string): string {
   return `workspace/jobs/${jobId}/${filename}`;
