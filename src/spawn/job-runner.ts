@@ -5,6 +5,7 @@ import {
   appendJobEvent,
   buildJobResult,
   patchJobMeta,
+  readJobMeta,
   type JobEventRecord,
   type JobStatus,
   writeJobReport,
@@ -145,16 +146,23 @@ export async function runSpawnJob(opts: RunSpawnJobOptions): Promise<SpawnJobRes
     maybeWriteShortReport(jobId, text, reportPaths);
   }
 
+  const existingMeta = readJobMeta(jobId);
+  const hintedPaths = existingMeta?.output_paths ?? [];
+  const finalReportPaths =
+    ok
+      ? [...new Set([...hintedPaths, ...reportPaths])]
+      : [];
+
   const resultFile = buildJobResult({
     jobId,
     ok,
     text,
-    reportPaths: ok ? reportPaths : [],
+    reportPaths: finalReportPaths,
     durationMs,
     error: status === 'cancelled' ? 'cancelled' : error,
   });
   writeJobResult(resultFile);
-  patchJobMeta(jobId, { status, output_paths: ok ? reportPaths : [] });
+  patchJobMeta(jobId, { status, output_paths: finalReportPaths });
 
   appendJobEvent(jobId, {
     t: 'spawn_end',

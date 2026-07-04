@@ -20,6 +20,7 @@ import { WEB_FETCH_DEFINITIONS, runWebFetchTool } from './web-fetch.js';
 import { loadSpawnPresets } from '../spawn/load-preset.js';
 import { configureSpawnSemaphore } from '../spawn/semaphore.js';
 import type { ResolvedSpawnPreset } from '../spawn/types.js';
+import { buildSpawnBackgroundDefinitions, runSpawnBackgroundTool } from './spawn-background.js';
 import { buildSpawnDefinitions, runSpawnTool } from './spawn.js';
 
 type BuiltinHandler = (
@@ -174,16 +175,28 @@ export class ToolRegistry {
       }
     }
 
-    if (
-      this.enabledBuiltin.has('spawn_agent') &&
-      this.spawnPresets.length > 0 &&
-      this.isToolAllowed('spawn_agent', allowlist)
-    ) {
-      for (const def of buildSpawnDefinitions(this.spawnPresets)) {
-        const name = def.function.name;
-        if (seen.has(name)) continue;
-        seen.add(name);
-        defs.push(def);
+    if (this.spawnPresets.length > 0) {
+      if (
+        this.enabledBuiltin.has('spawn_agent') &&
+        this.isToolAllowed('spawn_agent', allowlist)
+      ) {
+        for (const def of buildSpawnDefinitions(this.spawnPresets)) {
+          const name = def.function.name;
+          if (seen.has(name)) continue;
+          seen.add(name);
+          defs.push(def);
+        }
+      }
+      if (
+        this.enabledBuiltin.has('spawn_background') &&
+        this.isToolAllowed('spawn_background', allowlist)
+      ) {
+        for (const def of buildSpawnBackgroundDefinitions(this.spawnPresets)) {
+          const name = def.function.name;
+          if (seen.has(name)) continue;
+          seen.add(name);
+          defs.push(def);
+        }
       }
     }
 
@@ -233,6 +246,14 @@ export class ToolRegistry {
           return 'error: spawn_agent is not configured (add spawn_presets and spawn_agent to agent.json)';
         }
         const result = await runSpawnTool(name, args, config, this.spawnPresets);
+        if (result !== null) return result;
+      }
+
+      if (name === 'spawn_background') {
+        if (!this.enabledBuiltin.has('spawn_background') || this.spawnPresets.length === 0) {
+          return 'error: spawn_background is not configured (add spawn_presets and spawn_background to agent.json)';
+        }
+        const result = await runSpawnBackgroundTool(name, args, config, this.spawnPresets);
         if (result !== null) return result;
       }
 

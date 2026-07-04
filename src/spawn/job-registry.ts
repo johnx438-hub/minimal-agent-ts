@@ -19,6 +19,7 @@ export interface StartSpawnJobOptions {
   preset: ResolvedSpawnPreset;
   task: string;
   parentConfig: AgentConfig;
+  outputPaths?: string[];
 }
 
 export interface SpawnJobHandle {
@@ -53,6 +54,7 @@ class JobRegistry {
       task: opts.task,
       cwd: opts.parentConfig.cwd,
       status: 'queued',
+      outputPaths: opts.outputPaths,
     });
     writeJobMeta(meta);
     appendJobIndex({

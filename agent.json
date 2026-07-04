@@ -11,6 +11,7 @@
     "run_shell",
     "web_fetch",
     "spawn_agent",
+    "spawn_background",
     "code_review"
   ],
   "spawn_policy": {

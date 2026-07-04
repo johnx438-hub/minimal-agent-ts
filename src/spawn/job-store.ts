@@ -187,6 +187,7 @@ export function buildInitialMeta(opts: {
   task: string;
   cwd: string;
   status?: JobStatus;
+  outputPaths?: string[];
 }): SpawnJobMeta {
   const now = new Date().toISOString();
   return {
@@ -200,7 +201,7 @@ export function buildInitialMeta(opts: {
     status: opts.status ?? 'queued',
     created_at: now,
     updated_at: now,
-    output_paths: defaultOutputPaths(opts.jobId),
+    output_paths: opts.outputPaths ?? defaultOutputPaths(opts.jobId),
     pid: process.pid,
   };
 }

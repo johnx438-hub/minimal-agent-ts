@@ -11,7 +11,7 @@ export interface LoopGuardConfig {
   regressionMode?: boolean;
 }
 
-const REVIEW_DELEGATION_TOOLS = new Set(['code_review', 'spawn_agent']);
+const REVIEW_DELEGATION_TOOLS = new Set(['code_review', 'spawn_agent', 'spawn_background']);
 
 const REGRESSION_PATH_MARKERS = ['workspace/p0-telemetry', 'workspace/code-review-'];
 
@@ -104,13 +104,15 @@ function normalizeArgs(toolName: string, args: Record<string, unknown>): Record<
       if (args.focus !== undefined) out.focus = String(args.focus);
       return out;
     }
-    case 'spawn_agent': {
+    case 'spawn_agent':
+    case 'spawn_background': {
       const out: Record<string, unknown> = {};
       if (args.preset !== undefined) out.preset = String(args.preset);
       if (args.task !== undefined) {
         const task = String(args.task).trim();
         out.task = task.length > 120 ? `${task.slice(0, 120)}…` : task;
       }
+      if (toolName === 'spawn_background' && args.wait === true) out.wait = true;
       return out;
     }
     default:
