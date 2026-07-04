@@ -36,6 +36,11 @@ npm start -- "列出当前目录文件，读 README，用一句话总结"
 | 多角色 workflow | `npm start -- --workflow workflows/review-loop.json "任务"` |
 | 锚点编辑 | `read_file` 返回 `[file_meta hash=…]` → `edit_file` 带 `expected_hash` |
 | 加载 Skill | `npm start -- --load-skills context-design "任务"` |
+| 终端 UI | `npm run tui` |
+| 同步子 Agent | Agent 调用 `spawn_agent(preset=…)` |
+| 后台子 Agent | Agent 调用 `spawn_background(preset=…)` → 拿 `job_id` |
+| 代码审查 | `code_review(scope=HEAD~3)` 或 `background=true` |
+| 查看后台 job | `npm run spawn:list` / `spawn:status -- <job_id>` |
 | 查看工具列表 | `npm start -- --list-tools` |
 | 关闭流式 | `STREAM=0 npm start -- "任务"` |
 
@@ -113,7 +118,30 @@ Workflow 引擎也支持宽松匹配，如纯文本 `needs_revision` 或 `approv
 
 可参考 `workflows/review-loop.json` 的结构，在 `flow` 中定义任意角色序列和循环条件。详细类型定义见 `src/workflow/types.ts`。
 
-## 5. 配置 `agent.json`
+## 5. 子 Agent 与代码审查
+
+### `spawn_agent`（同步）
+
+主 Agent 调用工具 `spawn_agent`，子 Agent 跑完后才返回。预设见 `agents/*.md`，在 `agent.json` → `spawn_presets` 注册。
+
+### `spawn_background`（非阻塞）
+
+立即返回 `job_id`，子进程在后台写 `workspace/jobs/<job_id>/`（`meta.json`、`events.jsonl`、`report.md`）。
+
+```bash
+npm run spawn:list
+npm run spawn:status -- job_xxx
+npm run spawn:kill -- job_xxx
+npm run spawn:tail -- job_xxx
+```
+
+### `code_review`
+
+并发启动 bug / security / quality 三个审查预设；`background: true` 时走 `spawn_background`，主 Agent 不阻塞。
+
+报告默认写入 `workspace/code-review-{bug,security,quality}.md`（本地，不进 git）。
+
+## 6. 配置 `agent.json`
 
 ```json
 {
@@ -129,7 +157,7 @@ Workflow 引擎也支持宽松匹配，如纯文本 `needs_revision` 或 `approv
 - **捞回历史**：`recall_query(action_id=…)`，≤24KB 默认返回全文
 - **MCP**：参考 `agent.mcp.example.json`，工具名形如 `mcp_<server>_<tool>`
 
-## 6. 推荐试手任务
+## 7. 推荐试手任务
 
 ```bash
 # 只读探索
@@ -142,7 +170,7 @@ npm start -- --allow-shell "运行 npm run typecheck，有错误就概括"
 npm start -- --resume session_20260628090040 "接着查上次没看完的文件"
 ```
 
-## 7. 本地数据说明
+## 8. 本地数据说明
 
 | 路径 | 内容 | 是否提交 git |
 |------|------|----------------|
@@ -155,14 +183,14 @@ npm start -- --resume session_20260628090040 "接着查上次没看完的文件"
 换机器或分享仓库时：别人只需 `npm install` + 自己的 `.env`，`.sessions` 从零开始。  
 可选 skill（如 `cloak-fetch`）自行放到 `skills/` 下，并在 `agent.json` 里打开对应开关。
 
-## 8. 源码阅读顺序（学习向）
+## 9. 源码阅读顺序（学习向）
 
 1. `src/agent.ts` — ReAct 主循环
 2. `src/tools/registry.ts` — 工具注册 + MCP
 3. `src/pointerize.ts` + `src/recall.ts` — 大结果瘦身与捞回
 4. `src/loop-guard.ts` — 循环检测与收口总结
 
-## 9. 常见问题
+## 10. 常见问题
 
 **Q: 工具输出太长，后面看不到了？**  
 A: 当 turn 仍完整；更早的用 `recall_query(action_id=…)`。浏览器/MCP 大结果 ≤24KB 可一次 recall 全文。
@@ -171,4 +199,4 @@ A: 当 turn 仍完整；更早的用 `recall_query(action_id=…)`。浏览器/M
 A: 默认 `LOOP_GUARD=inject` 会 nudge → 强制文字总结；也可设 `MAX_TURNS=30` 硬顶。
 
 **Q: 推 git 会泄露什么？**  
-A: 确认 `.env` 和 `.sessions/` 不在仓库里；若 `.env` 曾误提交过，需清 git 历史再公开推送。
+A: `.env`、`.sessions/`、`workspace/` 和除 `context-design` 外的 `skills/` 均已 ignore。公开仓库：https://github.com/johnx438-hub/minimal-agent-ts
