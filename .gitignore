@@ -13,6 +13,9 @@ out/
 # Session runtime: conversations, cold storage, vector index
 .sessions/
 
+# Background job scratch (under workspace/)
+workspace/jobs/
+
 # OS files
 .DS_Store
 Thumbs.db
@@ -40,3 +43,12 @@ PROJECT_SUMMARY.md
 # Zvec / local index artifacts (if created outside .sessions)
 *.zvec
 agent_memory.zvec
+
+# Skills: ship context-design only; install others locally under skills/
+skills/*
+!skills/context-design/
+!skills/context-design/**
+
+# Rust / Windows junk under optional local skills
+skills/**/target/
+*:Zone.Identifier

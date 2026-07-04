@@ -148,9 +148,12 @@ npm start -- --resume session_20260628090040 "接着查上次没看完的文件"
 |------|------|----------------|
 | `.sessions/` | 会话、冷存储、向量索引 | ❌ 已 ignore |
 | `.env` | API Key | ❌ 已 ignore |
+| `workspace/` | 审查报告、后台 job 输出 | ❌ 已 ignore |
+| `skills/*`（除 `context-design`） | 可选本地 skill | ❌ 已 ignore |
 | `node_modules/` | 依赖 | ❌ 已 ignore |
 
-换机器或分享仓库时：别人只需 `npm install` + 自己的 `.env`，`.sessions` 从零开始。
+换机器或分享仓库时：别人只需 `npm install` + 自己的 `.env`，`.sessions` 从零开始。  
+可选 skill（如 `cloak-fetch`）自行放到 `skills/` 下，并在 `agent.json` 里打开对应开关。
 
 ## 8. 源码阅读顺序（学习向）
 
