@@ -1,4 +1,5 @@
 import { hashResult } from './action-store.js';
+import type { ChatMessage } from './types.js';
 
 export type LoopGuardMode = 'inject' | 'terminate' | 'off';
 
@@ -39,6 +40,28 @@ export const SOFT_NUDGE_MESSAGE =
 export const FORCED_SUMMARY_MESSAGE = `[loop_guard] Stop calling tools now.
 
 Summarize what you have accomplished so far, what is still blocked, and list concrete next steps the user could take. Reply in plain text only — do not call any tools.`;
+
+export const EMPTY_CONTINUE_NUDGE = 'Please continue or summarize what you found.';
+
+export const FORCED_SUMMARY_RETRY_NUDGE =
+  'Please provide a plain-text summary without calling tools.';
+
+const LOOP_GUARD_INJECTIONS = new Set([
+  SOFT_NUDGE_MESSAGE,
+  FORCED_SUMMARY_MESSAGE,
+  EMPTY_CONTINUE_NUDGE,
+  FORCED_SUMMARY_RETRY_NUDGE,
+]);
+
+export function isLoopGuardInjection(message: ChatMessage): boolean {
+  if (message.role !== 'user') return false;
+  const content = typeof message.content === 'string' ? message.content : '';
+  return LOOP_GUARD_INJECTIONS.has(content);
+}
+
+export function stripLoopGuardInjections(messages: ChatMessage[]): ChatMessage[] {
+  return messages.filter((m) => !isLoopGuardInjection(m));
+}
 
 function stableStringify(value: unknown): string {
   if (value === null || typeof value !== 'object') {
@@ -234,7 +257,7 @@ export class LoopGuard {
   }
 
   shouldForceSummaryTurn(): boolean {
-    return this.forcedSummaryPending;
+    return this.forcedSummaryPending || this.forcedSummaryActive;
   }
 
   activateForcedSummary(): void {
@@ -326,7 +349,10 @@ export class LoopGuard {
     }
     this.emptyStreak++;
     if (this.emptyStreak >= 3) {
-      return this.hardLoopDecision('empty responses');
+      return {
+        action: 'terminate',
+        reason: 'loop_guard: empty responses',
+      };
     }
     return { action: 'continue' };
   }

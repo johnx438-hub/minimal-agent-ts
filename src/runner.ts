@@ -13,7 +13,8 @@ import {
   isAbortError,
   type RuntimeEvent,
 } from './events.js';
-import { parseLoopGuardMode } from './loop-guard.js';
+import { parseLoopGuardMode, stripLoopGuardInjections } from './loop-guard.js';
+import { classifyAgentStopReason, parseAgentStopReason } from './workflow/handback.js';
 import {
   ensureToolRegistry,
   reinitializeToolRegistry,
@@ -711,6 +712,7 @@ export class AgentRuntime {
     const runConfig = this.buildRunConfig(signal);
 
     try {
+      const priorMessages = [...session.current_messages];
       const answer = await runAgent({
         prompt: this.consumeHandoffPrompt(prompt),
         config: runConfig,
@@ -724,7 +726,26 @@ export class AgentRuntime {
         },
       });
 
-      session.current_messages = answer.messages;
+      const stopDetail = parseAgentStopReason(answer.text);
+      if (stopDetail) {
+        session.current_messages = priorMessages;
+        this.sessionDirty = true;
+        this.saveIfDirty();
+
+        const stopKind = classifyAgentStopReason(stopDetail);
+        const hint =
+          stopKind === 'loop_guard' || stopKind === 'turn_ceiling'
+            ? ' Session context was rolled back. Send a new message to continue, or use /clear to reset in-flight context.'
+            : ' Session context was rolled back.';
+        this.emit({
+          type: 'run_end',
+          reason: 'completed',
+          message: `${stopDetail}.${hint}`,
+        });
+        return answer;
+      }
+
+      session.current_messages = stripLoopGuardInjections(answer.messages);
       this.sessionDirty = true;
       this.saveIfDirty();
 

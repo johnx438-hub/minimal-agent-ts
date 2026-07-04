@@ -15,9 +15,12 @@ import {
   invokeLlmTurn,
 } from './stream-draft.js';
 import {
+  EMPTY_CONTINUE_NUDGE,
+  FORCED_SUMMARY_RETRY_NUDGE,
   isRegressionTaskPrompt,
   LoopGuard,
   resolveTurnCeiling,
+  stripLoopGuardInjections,
   type LoopGuardConfig,
   type ToolTurnRecord,
 } from './loop-guard.js';
@@ -114,7 +117,7 @@ function resolveInitialMessages(opts: RunAgentOptions): {
     return { messages: [system, userTask], userTask };
   }
 
-  const history = stripSystemMessages(session.current_messages);
+  const history = stripLoopGuardInjections(stripSystemMessages(session.current_messages));
   const budget = createBudgetConfig(config.model);
 
   if (
@@ -173,7 +176,7 @@ function finalizeSuccess(
     }
   }
 
-  return { text: cleanText, messages };
+  return { text: cleanText, messages: stripLoopGuardInjections(messages) };
 }
 
 export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
@@ -275,7 +278,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
       }
       messages.push({
         role: 'user',
-        content: 'Please provide a plain-text summary without calling tools.',
+        content: FORCED_SUMMARY_RETRY_NUDGE,
       });
       continue;
     }
@@ -503,21 +506,11 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
     commitAssistantText(messages, '', turn);
     const emptyDecision = loopGuard.afterEmptyResponse();
-    if (emptyDecision.action === 'forced_summary' && emptyDecision.message) {
-      messages.push({ role: 'user', content: emptyDecision.message });
-      onStep?.({
-        type: 'loop_guard',
-        turn,
-        action: 'forced_summary',
-        reason: emptyDecision.reason,
-      });
-      continue;
-    }
     if (emptyDecision.action === 'terminate') {
       return buildStoppedResult(messages, emptyDecision.reason ?? 'empty responses', turn, onStep);
     }
 
-    messages.push({ role: 'user', content: 'Please continue or summarize what you found.' });
+    messages.push({ role: 'user', content: EMPTY_CONTINUE_NUDGE });
   }
   } catch (err) {
     if (isAbortError(err)) {

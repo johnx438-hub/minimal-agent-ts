@@ -2,11 +2,18 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  EMPTY_CONTINUE_NUDGE,
+  FORCED_SUMMARY_MESSAGE,
+  FORCED_SUMMARY_RETRY_NUDGE,
+  isLoopGuardInjection,
   isRegressionTaskPrompt,
   LoopGuard,
+  SOFT_NUDGE_MESSAGE,
+  stripLoopGuardInjections,
   toolFingerprint,
   type ToolTurnRecord,
 } from '../src/loop-guard.js';
+import type { ChatMessage } from '../src/types.js';
 
 function record(name: string, args: Record<string, unknown>, output: string): ToolTurnRecord {
   return { name, argsJson: JSON.stringify(args), output };
@@ -94,6 +101,43 @@ describe('loop guard regression exemptions', () => {
     assert.equal(internal.seenResults.size, 0);
     assert.equal(internal.emptyStreak, 0);
     assert.equal(internal.lastTurnEntries, null);
+  });
+
+  it('terminates after repeated empty responses without forced summary', () => {
+    const guard = new LoopGuard({ enabled: true, mode: 'inject', hardCeiling: 200 });
+
+    assert.equal(guard.afterEmptyResponse().action, 'continue');
+    assert.equal(guard.afterEmptyResponse().action, 'continue');
+    const decision = guard.afterEmptyResponse();
+    assert.equal(decision.action, 'terminate');
+    assert.match(decision.reason ?? '', /empty responses/);
+    assert.equal(guard.forcedSummaryPending, false);
+  });
+
+  it('keeps forced summary active until text response', () => {
+    const guard = new LoopGuard({ enabled: true, mode: 'inject', hardCeiling: 200 });
+    guard.forcedSummaryPending = true;
+
+    assert.equal(guard.shouldForceSummaryTurn(), true);
+    guard.activateForcedSummary();
+    assert.equal(guard.shouldForceSummaryTurn(), true);
+
+    guard.afterTextResponse();
+    assert.equal(guard.shouldForceSummaryTurn(), false);
+  });
+
+  it('strips loop guard injection messages from history', () => {
+    const messages: ChatMessage[] = [
+      { role: 'user', content: 'Working directory: /tmp\n\nTask:\nhello' },
+      { role: 'assistant', content: 'ok', turn: 1 },
+      { role: 'user', content: SOFT_NUDGE_MESSAGE },
+      { role: 'user', content: FORCED_SUMMARY_MESSAGE },
+      { role: 'user', content: EMPTY_CONTINUE_NUDGE },
+      { role: 'user', content: FORCED_SUMMARY_RETRY_NUDGE },
+    ];
+
+    assert.equal(isLoopGuardInjection(messages[2]!), true);
+    assert.equal(stripLoopGuardInjections(messages).length, 2);
   });
 
   it('fingerprints code_review by scope and focus', () => {
