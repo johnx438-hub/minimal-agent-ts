@@ -31,23 +31,19 @@
 |------|------|
 | 模块职责 / 上下文冷热分离 | 核心亮点，维持现状 |
 | `ToolRegistry` 上帝对象 (~340 行) | 技术债，非紧急 |
-| `context-policy` 三层交织 | 改压缩策略前补回归测试 |
+| `context-policy` 三层交织 | Tier 1 prune/pointer 回归已补；改压缩策略前可再扩边界用例 |
 | `spawn/runner.ts` 动态 `import()` 破环 | 正确；禁止改回顶层静态 import |
 | `import type` 循环 | 低危，可接受 |
 
 ### 勘误：测试现状（报告 §四「无测试」已过时）
 
-| 项 | 2026-07-01 报告 | 当前（2026-07-04） |
+| 项 | 2026-07-01 报告 | 当前（2026-07-05） |
 |----|-----------------|---------------------|
-| 测试文件 | 0 | **38** |
-| 用例数 | — | **170**（`npm test`） |
-| 已覆盖 | — | compression、pointer-compact、tool-scheduler、llm-retry、permission-gate、spawn-*、**spawn-background**、**spawn-job-cancel**、**code-review-background**、**loop-guard**、**action-write/index queue**、**p0-telemetry**、web-fetch、session-*、TUI overlay 等 |
+| 测试文件 | 0 | **42** |
+| 用例数 | — | **211**（`npm test`） |
+| 已覆盖 | — | compression、**context-prune**、pointer-compact、**pointerize**、**action-store**、tool-scheduler、llm-retry、permission-gate、**path-utils**、spawn-*、**spawn-background**、**spawn-job-cancel**、**code-review-background**、**loop-guard**、**action-write/index queue**、**p0-telemetry**、web-fetch、session-*、TUI overlay 等 |
 
-**仍缺专门单测**（补洞即可，非从零建仓）：
-
-- `pointerize.ts` — `POINTER_RULES` / `shouldPointerize` 阈值（`pointer-compact` 未覆盖）
-- `action-store.ts` — 写入/读取/列表（`action-write-queue` / `session-log` 间接覆盖）
-- `assembleApiMessages` / prune — 2–3 条边界回归
+**Tier 1 补洞（✅ 2026-07-05）**：`tests/pointerize.test.ts`（`shouldPointerize` / `materializePriorTurnTools`）、`tests/action-store.test.ts`（冷存读写与列表）、`tests/context-prune.test.ts`（20k/40k 门槛、`assembleApiMessages`）。
 
 ### 优先级表（合并审查 + 实测）
 
@@ -55,7 +51,7 @@
 |:------:|------|-------------|:------:|
 | **P0** | 轨 B **观测填表**：turn P50/P95、`turn_io`、`spawn_background` 场景 | 异步 IO 已落地；**待复测** `max_parallel=3` + 后台 `code_review` | 半天 |
 | **P1** | ✅ **同步 IO 异步化**（B-IO-1～3、Index 队列） | `ActionWriteQueue`、`TranscriptWriteQueue`、`ActionIndexQueue` 已合入 | — |
-| **P1** | 测试补洞：pointerize 规则 + action-store + prune 边界 | 动压缩策略前的安全带 | 0.5–1 天 |
+| **P1** | ✅ 测试补洞：pointerize 规则 + action-store + prune 边界 | `pointerize` / `action-store` / `context-prune` 单测已合入 | — |
 | **P2** | `ToolRegistry` → Provider 拆分 | 新工具类型激增前 | 1–2 天 |
 | **P2** | `token_cost` 更准（tiktoken 或 CJK 友好近似） | 仅当要做预算 UI / 报表 | 半天 |
 | **P3** | `spawn/runner.ts` 静态 import 防护注释 + lint | 防误改破环 | 10 分钟 |
@@ -349,3 +345,4 @@ minimal-agent-ts-ds-cache/   # 已有：前缀缓存叙事 fork（独立）
 | 2026-07-03 | 合并 `CODE_REVIEW_REPORT.md` 勘误优先级；轨 B 增同步 IO 规划与 spawn 满并发 turn 延迟观测 |
 | 2026-07-03 | B-IO-4 + B-IO-1：`turn_io`/`action_flush` 指标 + `ActionWriteQueue` 异步写盘 |
 | 2026-07-04 | 勘误：轨 A/E 基础版、B-IO-2～7、`code_review`、loop guard；测试 170；公开 GitHub |
+| 2026-07-05 | Tier 1 测试补洞（pointerize / action-store / context-prune）；`path_escape` 权限；测试 **211** |
