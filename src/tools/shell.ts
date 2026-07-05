@@ -4,6 +4,7 @@ import { sleep } from '../llm-retry.js';
 import { isCapabilityEnabled } from '../permission-gate.js';
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import { resolveReadablePath } from './path-utils.js';
+import { resolveShellInvocation } from './shell-resolve.js';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_POLL_INTERVAL_MS = 2_000;
@@ -72,7 +73,8 @@ export async function runShellCommand(opts: ShellRunOptions): Promise<string> {
   const startedAt = Date.now();
 
   return new Promise((resolve) => {
-    const child = spawn('bash', ['-lc', opts.command], {
+    const shell = resolveShellInvocation();
+    const child = spawn(shell.command, shell.buildArgs(opts.command), {
       cwd: opts.cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -199,7 +201,7 @@ export const SHELL_DEFINITIONS: ToolDefinition[] = [
     function: {
       name: 'run_shell',
       description:
-        'Run a bash command. Disabled unless ALLOW_SHELL=1 or --allow-shell. Supports delay, custom timeout, and poll-based auto-extend for long commands.',
+        'Run a shell command (auto-detects SHELL / bash / sh; override with MINIMAL_SHELL). Disabled unless ALLOW_SHELL=1 or --allow-shell. Supports delay, custom timeout, and poll-based auto-extend for long commands.',
       parameters: {
         type: 'object',
         properties: {
