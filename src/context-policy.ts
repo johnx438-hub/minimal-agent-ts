@@ -21,12 +21,14 @@ const COMPACTED_STUB_PREFIX = '[compacted';
 
 /** Drop large in-memory bodies for API-pruned messages; cold storage retains full text. */
 export function releaseCompactedContent(msg: ChatMessage): void {
-  if (!msg.compacted_at || msg.pointerized) return;
+  if (!msg.compacted_at) return;
   const content = msg.content ?? '';
   if (content.startsWith(COMPACTED_STUB_PREFIX)) return;
 
   if (msg.role === 'tool' && msg.action_id) {
     msg.content = `[compacted tool action_id=${msg.action_id}]`;
+  } else if (msg.role === 'tool') {
+    msg.content = '[compacted tool]';
   } else if (msg.role === 'assistant') {
     msg.tool_calls = undefined;
     msg.content = '[compacted assistant]';
@@ -47,9 +49,71 @@ export function releaseAllCompactedContent(messages: ChatMessage[]): number {
 
 /**
  * Messages marked compacted_at are omitted from LLM requests (OpenCode-style prune).
+ * Repairs assistant/tool_call pairs so APIs never see orphan tool messages.
  */
 export function assembleApiMessages(messages: ChatMessage[]): ChatMessage[] {
-  return messages.filter((m) => !m.compacted_at).map(stripInternalMetadata);
+  const visible = messages.filter((m) => !m.compacted_at).map(stripInternalMetadata);
+  return repairToolCallPairs(visible);
+}
+
+/**
+ * Drop orphan tool messages and trim assistant tool_calls to matching responses.
+ * OpenAI-compatible APIs require each tool message to follow an assistant tool_calls block.
+ */
+export function repairToolCallPairs(messages: ChatMessage[]): ChatMessage[] {
+  const result: ChatMessage[] = [];
+  let i = 0;
+
+  while (i < messages.length) {
+    const msg = messages[i];
+
+    if (msg.role !== 'assistant' || !msg.tool_calls?.length) {
+      if (msg.role === 'tool') {
+        i++;
+        continue;
+      }
+      result.push(msg);
+      i++;
+      continue;
+    }
+
+    const calls = msg.tool_calls;
+    const callIds = new Set(calls.map((c) => c.id));
+    const toolsById = new Map<string, ChatMessage>();
+    let j = i + 1;
+    while (j < messages.length && messages[j].role === 'tool') {
+      const tid = messages[j].tool_call_id;
+      if (tid && callIds.has(tid) && !toolsById.has(tid)) {
+        toolsById.set(tid, messages[j]);
+      }
+      j++;
+    }
+
+    const validCalls = calls.filter((c) => toolsById.has(c.id));
+    if (validCalls.length > 0) {
+      result.push({
+        role: 'assistant',
+        content: msg.content,
+        tool_calls: validCalls,
+      });
+      for (const call of validCalls) {
+        const tool = toolsById.get(call.id);
+        if (tool) {
+          result.push({
+            role: 'tool',
+            tool_call_id: tool.tool_call_id,
+            content: tool.content,
+          });
+        }
+      }
+    } else if (msg.content != null && msg.content !== '') {
+      result.push({ role: 'assistant', content: msg.content });
+    }
+
+    i = j;
+  }
+
+  return result;
 }
 
 /** Remove fields not accepted by OpenAI-compatible chat APIs. */
@@ -215,6 +279,27 @@ export function shouldPrune(messages: ChatMessage[], currentTurn: number): boole
   return estimatePruneSavings(messages, currentTurn) >= PRUNE_MIN_SAVINGS;
 }
 
+function compactToolResponsesForAssistant(
+  messages: ChatMessage[],
+  assistantIndex: number,
+  toolCallIds: Set<string>,
+  now: number,
+): number {
+  if (toolCallIds.size === 0) return 0;
+  const ids = toolCallIds;
+
+  let count = 0;
+  for (let j = assistantIndex + 1; j < messages.length && messages[j].role === 'tool'; j++) {
+    const tid = messages[j].tool_call_id;
+    if (!tid || !ids.has(tid)) break;
+    if (messages[j].compacted_at) continue;
+    messages[j].compacted_at = now;
+    releaseCompactedContent(messages[j]);
+    count++;
+  }
+  return count;
+}
+
 /** Mark eligible messages compacted_at (in-place). Returns count pruned. */
 export function applyPrune(messages: ChatMessage[], currentTurn: number): number {
   const protectedSet = protectedIndices(messages, currentTurn);
@@ -223,10 +308,21 @@ export function applyPrune(messages: ChatMessage[], currentTurn: number): number
 
   for (let i = 0; i < messages.length; i++) {
     if (protectedSet.has(i)) continue;
+    if (messages[i].compacted_at) continue;
     if (!canPrune(messages[i])) continue;
+
+    const cascadeToolCallIds =
+      messages[i].role === 'assistant'
+        ? new Set(messages[i].tool_calls?.map((tc) => tc.id) ?? [])
+        : null;
+
     messages[i].compacted_at = now;
     releaseCompactedContent(messages[i]);
     count++;
+
+    if (cascadeToolCallIds && cascadeToolCallIds.size > 0) {
+      count += compactToolResponsesForAssistant(messages, i, cascadeToolCallIds, now);
+    }
   }
 
   return count;
