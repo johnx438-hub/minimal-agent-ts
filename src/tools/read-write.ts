@@ -1,3 +1,5 @@
+import { mkdir } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { readFile, writeFile } from 'node:fs/promises';
 
 import type { AgentConfig, ToolDefinition } from '../types.js';
@@ -93,6 +95,7 @@ export async function runReadWriteTool(
         }
       }
 
+      await mkdir(dirname(file), { recursive: true });
       await writeFile(file, content, 'utf8');
       const byteSize = Buffer.byteLength(content, 'utf8');
       return formatWriteToolResult(path, byteSize, previous, content);

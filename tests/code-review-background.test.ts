@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, it, afterEach } from 'node:test';
@@ -201,5 +201,6 @@ describe('code_review background (Phase 1d)', () => {
     assert.equal(jobs.length, 1);
     const meta = readJobMeta(jobs[0]!.jobId);
     assert.deepEqual(meta?.output_paths, ['workspace/code-review-bug.md']);
+    assert.ok(existsSync(join(tempDir, 'workspace')));
   });
 });

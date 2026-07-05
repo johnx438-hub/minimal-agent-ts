@@ -24,7 +24,7 @@
       "name": "web-researcher",
       "description": "Delegate web lookup and source summaries",
       "prompt_file": "agents/web-researcher.md",
-      "tools": ["web_fetch", "read_file", "grep_search"]
+      "tools": ["web_fetch", "read_file", "grep_search", "write_file"]
     },
     {
       "name": "skeleton-reader",
@@ -36,7 +36,7 @@
       "name": "hackernews-digest",
       "description": "Fetch HN post URLs and return a short digest",
       "prompt_file": "agents/hackernews-digest.md",
-      "tools": ["web_fetch", "read_file"]
+      "tools": ["web_fetch", "read_file", "write_file"]
     },
     {
       "name": "code-review-bug",

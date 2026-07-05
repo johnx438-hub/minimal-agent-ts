@@ -12,6 +12,7 @@ import {
 } from './job-store.js';
 import { isCancelRequested, writeCancelRequested } from './job-cancel.js';
 import { jobEventsPath, jobMetaPath, jobResultPath, newJobId } from './job-paths.js';
+import { ensureSpawnOutputPaths } from './ensure-output-paths.js';
 import { runSpawnJob, type SpawnJobResult } from './job-runner.js';
 import type { ResolvedSpawnPreset } from './types.js';
 import type { AgentConfig } from '../types.js';
@@ -59,6 +60,7 @@ class JobRegistry {
       status: 'queued',
       outputPaths: opts.outputPaths,
     });
+    ensureSpawnOutputPaths(opts.parentConfig.cwd, meta.output_paths);
     writeJobMeta(meta);
     appendJobIndex({
       job_id: jobId,
