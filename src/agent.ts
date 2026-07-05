@@ -1,3 +1,4 @@
+import { awaitWithAbort, resolveAbortSignal } from './agent-abort.js';
 import { indexActionAsync, scheduleIndexSync } from './action-index.js';
 
 import { beginTurnIo, buildTurnIoEvent } from './action-io-metrics.js';
@@ -33,7 +34,13 @@ import { buildSystemPrompt } from './agent-prompt.js';
 import { isAbortError, type AgentStepEvent } from './events.js';
 import { materializePriorTurnTools } from './pointerize.js';
 import { parseAgentSummary, extractCleanAnswer } from './summary.js';
-import { buildContext, createBudgetConfig, shouldCompress, estimateTokens } from './context-budget.js';
+import {
+  buildContext,
+  createBudgetConfig,
+  shouldCompress,
+  estimateTokens,
+  type BudgetConfig,
+} from './context-budget.js';
 import { scheduleToolCalls } from './tool-scheduler.js';
 import { executeTool, getToolDefinitions } from './tools.js';
 import { splitEditToolOutput } from './tools/edit-display.js';
@@ -75,20 +82,64 @@ function throwIfAborted(signal?: AbortSignal): void {
   }
 }
 
-/** Reject as soon as signal aborts — do not wait for in-flight parallel work. */
-function awaitWithAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
-  if (!signal) return promise;
-  throwIfAborted(signal);
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => {
-      signal.addEventListener(
-        'abort',
-        () => reject(new DOMException('Aborted', 'AbortError')),
-        { once: true },
-      );
-    }),
-  ]);
+function applyTurnEndCompression(opts: {
+  messages: ChatMessage[];
+  turn: number;
+  config: AgentConfig;
+  session?: SessionFile;
+  budget: BudgetConfig;
+  userTask: ChatMessage;
+  onStep?: RunAgentOptions['onStep'];
+}): void {
+  const { messages, turn, config, session, budget, userTask, onStep } = opts;
+  if (turn <= 1) return;
+
+  materializePriorTurnTools(messages, turn, {
+    keepInlineTurns: config.keepInlineTurns ?? 2,
+    previewPolicy: config.previewPolicy ?? DEFAULT_PREVIEW_POLICY,
+  });
+
+  const pruned = maybePrune(messages, turn);
+  if (pruned > 0) {
+    onStep?.({ type: 'compression', turn, pruned });
+  }
+
+  const pointerCompacted = maybeCompactPointerCards(messages, turn, budget);
+  if (pointerCompacted > 0) {
+    onStep?.({ type: 'compression', turn, pointer_compacted: pointerCompacted });
+  }
+
+  if (
+    runCompressionEvent({
+      messages,
+      session,
+      currentTurn: turn,
+      budget,
+      userTask,
+    })
+  ) {
+    onStep?.({ type: 'compression', turn });
+  }
+}
+
+function persistToolAction(
+  tracker: TaskTracker,
+  name: string,
+  args: string,
+  output: string,
+  turn: number,
+  previewPolicy: typeof DEFAULT_PREVIEW_POLICY,
+): string | undefined {
+  try {
+    const block = tracker.recordToolCall(name, args, output, turn);
+    if (!block) return undefined;
+    attachActionPreview(block, previewPolicy);
+    saveAction(block);
+    indexActionAsync(block);
+    return block.action_id;
+  } catch {
+    return undefined;
+  }
 }
 
 function stripSystemMessages(msgs: ChatMessage[]): ChatMessage[] {
@@ -181,11 +232,12 @@ function finalizeSuccess(
 
 export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
   const { config, session, sessionId, stream = true, onStep, onTaskComplete, signal } = opts;
+  const abortSignal = resolveAbortSignal(signal, config.abortSignal);
 
   const toolConfig: AgentConfig = {
     ...config,
     sessionId: sessionId ?? session?.session_id,
-    abortSignal: signal ?? config.abortSignal,
+    abortSignal,
     nestedStepSink: onStep,
     spawnDepth: config.spawnDepth ?? 0,
   };
@@ -216,7 +268,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
   const budget = createBudgetConfig(config.model);
   try {
   for (let turn = 1; ; turn++) {
-    if (signal?.aborted) {
+    if (abortSignal?.aborted) {
       throw new DOMException('Aborted', 'AbortError');
     }
 
@@ -241,6 +293,16 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         reason: 'repeated tool calls with no progress',
       });
 
+      applyTurnEndCompression({
+        messages,
+        turn,
+        config,
+        session,
+        budget,
+        userTask,
+        onStep,
+      });
+
       const apiMessages = assembleApiMessages(messages);
       const { message, finishReason, usage } = await invokeLlmTurn({
         turn,
@@ -253,13 +315,23 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
           baseUrl: config.baseUrl,
           model: config.model,
           stream,
-          signal: toolConfig.abortSignal,
+          signal: abortSignal,
         },
       });
 
       onStep?.({ type: 'llm_done', turn, finishReason, usage });
 
       if (message.tool_calls && message.tool_calls.length > 0) {
+        const violationMsg: ChatMessage = {
+          role: 'assistant',
+          content: message.content,
+          tool_calls: message.tool_calls,
+          turn,
+        };
+        if (tracker) {
+          tracker.onAssistantMessage(violationMsg, turn);
+        }
+        commitAssistantToolCalls(messages, message, turn);
         const decision = loopGuard.onForcedSummaryViolation();
         return buildStoppedResult(messages, decision.reason ?? 'forced summary violated', turn, onStep);
       }
@@ -283,34 +355,15 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
       continue;
     }
 
-    if (turn > 1) {
-      materializePriorTurnTools(messages, turn, {
-        keepInlineTurns: config.keepInlineTurns ?? 2,
-        previewPolicy: config.previewPolicy ?? DEFAULT_PREVIEW_POLICY,
-      });
-
-      const pruned = maybePrune(messages, turn);
-      if (pruned > 0) {
-        onStep?.({ type: 'compression', turn, pruned });
-      }
-
-      const pointerCompacted = maybeCompactPointerCards(messages, turn, budget);
-      if (pointerCompacted > 0) {
-        onStep?.({ type: 'compression', turn, pointer_compacted: pointerCompacted });
-      }
-
-      if (
-        runCompressionEvent({
-          messages,
-          session,
-          currentTurn: turn,
-          budget,
-          userTask,
-        })
-      ) {
-        onStep?.({ type: 'compression', turn });
-      }
-    }
+    applyTurnEndCompression({
+      messages,
+      turn,
+      config,
+      session,
+      budget,
+      userTask,
+      onStep,
+    });
 
     const apiMessages = assembleApiMessages(messages);
     const toolDefs = getToolDefinitions(toolConfig);
@@ -326,14 +379,14 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         baseUrl: config.baseUrl,
         model: config.model,
         stream,
-        signal: toolConfig.abortSignal,
+        signal: abortSignal,
       },
     });
 
     onStep?.({ type: 'llm_done', turn, finishReason, usage });
 
     if (message.tool_calls && message.tool_calls.length > 0) {
-      throwIfAborted(signal);
+      throwIfAborted(abortSignal);
 
       const assistantMsg: ChatMessage = {
         role: 'assistant',
@@ -371,7 +424,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
       const turnRecords: ToolTurnRecord[] = [];
 
       async function runOne(call: ToolCall): Promise<void> {
-        if (signal?.aborted) {
+        if (abortSignal?.aborted) {
           resultById.set(call.id, { output: ABORTED_TOOL_OUTPUT });
           return;
         }
@@ -403,28 +456,28 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         });
         turnRecords.push({ name, argsJson: args, output });
 
-        let actionId: string | undefined;
-        if (tracker) {
-          const block = tracker.recordToolCall(name, args, output, turn);
-          if (block) {
-            attachActionPreview(block, config.previewPolicy ?? DEFAULT_PREVIEW_POLICY);
-            saveAction(block);
-            indexActionAsync(block);
-            actionId = block.action_id;
-          }
-        }
+        const actionId = tracker
+          ? persistToolAction(
+              tracker,
+              name,
+              args,
+              output,
+              turn,
+              config.previewPolicy ?? DEFAULT_PREVIEW_POLICY,
+            )
+          : undefined;
 
         resultById.set(call.id, { output, actionId });
       }
 
       try {
-        await awaitWithAbort(Promise.all(plan.parallel.map(runOne)), signal);
+        await awaitWithAbort(Promise.all(plan.parallel.map(runOne)), abortSignal);
         for (const call of plan.serial) {
-          if (signal?.aborted) {
+          if (abortSignal?.aborted) {
             resultById.set(call.id, { output: ABORTED_TOOL_OUTPUT });
             continue;
           }
-          await awaitWithAbort(runOne(call), signal);
+          await awaitWithAbort(runOne(call), abortSignal);
         }
       } catch (err) {
         if (!isAbortError(err)) throw err;
@@ -435,7 +488,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         }
       }
 
-      if (signal?.aborted) {
+      if (abortSignal?.aborted) {
         for (const call of message.tool_calls) {
           if (!resultById.has(call.id)) {
             resultById.set(call.id, { output: ABORTED_TOOL_OUTPUT });
