@@ -1,11 +1,12 @@
 # minimal-agent-ts 后续路线图
 
 > **定位**: 一页纸规划，避免 TUI / 性能 / Rust 三线并行。  
-> **前提**: Phase 1–2、4–6 已实现；Phase 3 跨 session 由 **MemFileCli** 外置（见 `SPEC_CONTEXT_MANAGEMENT.md` §Phase 3、`MemFileCli-skill`）。  
-> **当前重点**: 轨 B **P0 填表复测**（异步 IO 已落地，待量化 spawn `max_parallel=3` + `code_review` 后台场景）；轨 E 后台 spawn **基础版已闭环**。  
+> **前提**: Phase 1–2、4–6 已实现。  
+> **当前重点**: 轨 B **P0 填表复测**；轨 A TUI 细节打磨；轨 F 个性化与 ZVEC 减负（见下）。  
+> **能力拓展**（web search / LSP / 文档转换 / Office）：单见 **[SPEC_TOOLS.md](./SPEC_TOOLS.md)**，不进本表主线。  
 > **工程审查**: `workspace/CODE_REVIEW_REPORT.md`（2026-07-01）为历史快照；以本文件 + `npm test` 为准。
 
-**推荐顺序**: **B（P0 观测填表）→ 视数据选 C**；轨 A / 轨 E 增强按需排期，不要 B+C 同时开工。
+**推荐顺序**: **B（P0 填表）→ F（轻量记忆 + Agent.md + 去 ZVEC）→ 视数据选 C**；轨 A / 轨 E 增强与 **SPEC_TOOLS** 按需并行，不要 B+C 同时开工。
 
 ---
 
@@ -18,6 +19,8 @@
 | **C** | Rust 内核 fork（CPU 热点） | B 填表后仍撞墙，且热点已定位 | preemptive 全量重写 `runAgent` | P3 |
 | **D** | `spawn_agent` 同步预设子 Agent | ✅ **已实现**（基础版） | Meta-Planner 动态 flow、嵌套 spawn | — |
 | **E** | `spawn_background` + `code_review` 后台 job | ✅ **已实现**（Phase 1a–1d） | TUI jobs 面板、跨机调度 | P2（增强） |
+| **F** | 个性化 + 依赖减负 | P0 填表后、细节打磨期 | 内置 RAG、重造 MemFileCli | P1 |
+| **—** | 工具能力拓展 | 有真实任务需求 | 见 [SPEC_TOOLS.md](./SPEC_TOOLS.md) | 按需 |
 
 ---
 
@@ -40,7 +43,7 @@
 | 项 | 2026-07-01 报告 | 当前（2026-07-05） |
 |----|-----------------|---------------------|
 | 测试文件 | 0 | **42** |
-| 用例数 | — | **211**（`npm test`） |
+| 用例数 | — | **232**（`npm test`） |
 | 已覆盖 | — | compression、**context-prune**、pointer-compact、**pointerize**、**action-store**、tool-scheduler、llm-retry、permission-gate、**path-utils**、spawn-*、**spawn-background**、**spawn-job-cancel**、**code-review-background**、**loop-guard**、**action-write/index queue**、**p0-telemetry**、web-fetch、session-*、TUI overlay 等 |
 
 **Tier 1 补洞（✅ 2026-07-05）**：`tests/pointerize.test.ts`（`shouldPointerize` / `materializePriorTurnTools`）、`tests/action-store.test.ts`（冷存读写与列表）、`tests/context-prune.test.ts`（20k/40k 门槛、`assembleApiMessages`）。
@@ -270,13 +273,83 @@ node --heapsnapshot-near-heap-limit=3 $(which tsx) src/tui/main.ts
 3. embedding 懒加载、批量 `indexActionAsync` 限流
 4. 压缩后释放大 `content` 引用（仅留 action_id）
 5. `assembleApiMessages` 结果缓存失效策略收紧
-6. 系统提示词 MD 解析替换 — **维护者自行实验**，不进本轨 P0
+6. 系统提示词 `Agent.md` — 见 **轨 F-1**
 
 ### 验收
 
 - 同任务复测（尤其 **spawn max_parallel=2** 场景）：turn P95 或 RSS 明显改善（记入上表）
 - headless / TUI 行为与 spec 一致；abort 后冷存完整
 - `npm test` 无回归
+
+---
+
+## 轨 F：个性化与依赖减负
+
+### 目标
+
+**文件即配置、文件即记忆**；削减 ZVEC / embedding 开销；与 ReAct 主线正交，可小步 PR。
+
+### F-1：`Agent.md` 工作区系统提示词
+
+| 项 | 说明 |
+|----|------|
+| 文件 | `cwd/Agent.md` 或 `AGENTS.md`（先命中先用） |
+| 注入 | `buildSystemPrompt()` 之后追加；设字符上限（如 8k） |
+| 优先级 | base prompt < **Agent.md** < `agent.json` extension < workflow 角色 |
+| 路径 | `src/agent-prompt.ts` + run 前 loader（`runner.ts`） |
+
+- [ ] 读取 + 截断 + 单测（缺失文件不报错）
+- [ ] TUI `/reload` 或新 session 时重新加载（可选）
+
+### F-2：轻量跨 session 记忆（Obsidian-lite，无 RAG）
+
+不内置向量检索；**Markdown 文件 + slash + 现有 read/grep**。
+
+```
+.agent/memory/
+  profile.md        # 用户画像、偏好
+  archives.md       # 任务归档索引（路径 + 一句话）
+  requirements.md   # 少量硬性要求
+```
+
+| 项 | 说明 |
+|----|------|
+| slash | `/memory` 查看与编辑上述文件（或子命令 `show` / `edit`） |
+| 注入 | session 启动将 `profile` + `requirements` 拼入 system 扩展（token 上限） |
+| 归档 | 大任务完成写 `archives.md` 一行；召回靠 `grep_search` / `read_file` |
+| 与 MemFileCli | **可选并存** — MemFileCli 管深度 Wiki；本仓只管轻量用户层 |
+
+- [ ] 目录约定 + `workspace.ts` 路径 helper
+- [ ] `/memory` slash + 注入 hook
+- [ ] 更新 `SPEC_CONTEXT_MANAGEMENT.md` §Phase 3 职责分界（一句指向轨 F）
+
+### F-3：ZVEC 逐步剔除
+
+| 阶段 | 内容 | 状态 |
+|:----:|------|------|
+| **F3-a** | 默认 `ENABLE_ZVEC=0`；文档标 deprecated | 待做 |
+| **F3-b** | `recall_query` 仅保留 `action_id` + 标量/keyword 过滤 | 待做 |
+| **F3-c** | 删除 `action-index.ts`、`embedding.ts`、`@zvec/zvec` | 待做 |
+
+**保留**：`action-store` 冷存、`recall_query(action_id)`、transcript 内 grep。  
+**删除**：384 维 embedding、`@xenova/transformers` 索引路径（若仅服务 ZVEC）。  
+**收益**：安装体积、索引 CPU/RSS、轨 B 表「混合检索」一行可填「已移除」。
+
+### 触发条件
+
+- [x] 细节打磨期，需要用户可配置行为（Agent.md、/memory）
+- [ ] P0 表确认 embedding/zvec 对 turn 延迟有贡献，或维护者主观同意先删
+
+### 验收
+
+- 新 clone：`ENABLE_ZVEC=0` 默认下 `npm test` 全绿
+- `Agent.md` 存在时行为可感知变化，不存在时与现版一致
+- `/memory` 只动 `.agent/memory/`，不碰 session 冷存格式
+
+### 明确不做
+
+- 内置跨 session 向量库 / RAG pipeline
+- 用 `/memory` 替代 `recall_query` 的 session 内冷存
 
 ---
 
@@ -290,8 +363,8 @@ node --heapsnapshot-near-heap-limit=3 $(which tsx) src/tui/main.ts
 
 | 候选 | 现 TS 模块 | 不适合迁 Rust 的 |
 |------|------------|------------------|
-| Embedding 推理 | `embedding.ts` | `runAgent` 主循环、LLM 流式 |
-| 向量 + FTS 检索 | `action-index.ts` | workflow 模板、slash |
+| Embedding 推理 | `embedding.ts`（**轨 F3 剔除后取消**） | `runAgent` 主循环、LLM 流式 |
+| 向量 + FTS 检索 | `action-index.ts`（**轨 F3 剔除后取消**） | workflow 模板、slash |
 | 大文本 hash / diff | `file-hash.ts`、`edit_file` 锚定 | MCP stdio、Skills 加载 |
 | Action 冷存批量 IO | `action-store.ts`（或轨 B 队列后再评估） | session 业务逻辑 |
 
@@ -331,7 +404,8 @@ minimal-agent-ts-ds-cache/   # 已有：前缀缓存叙事 fork（独立）
 |------|------|
 | **minimal-agent-ts**（本仓） | session 内上下文实验 + 极简 TUI + harness |
 | **minimal-agent-ts-ds-cache** | DeepSeek 前缀缓存友好变体 |
-| **MemFileCli** | 跨 session / 跨 Agent 记忆（Phase 3 外置） |
+| **MemFileCli** | 可选：深度 Wiki 记忆（轨 F `/memory` 管轻量用户层） |
+| **SPEC_TOOLS.md** | 工具能力拓展（web search / LSP / 文档 / Office），与主线解耦 |
 | **minimal-agent-rs**（规划） | 可选 CPU 内核，轨 C 触发后再建 |
 
 ---
@@ -346,3 +420,4 @@ minimal-agent-ts-ds-cache/   # 已有：前缀缓存叙事 fork（独立）
 | 2026-07-03 | B-IO-4 + B-IO-1：`turn_io`/`action_flush` 指标 + `ActionWriteQueue` 异步写盘 |
 | 2026-07-04 | 勘误：轨 A/E 基础版、B-IO-2～7、`code_review`、loop guard；测试 170；公开 GitHub |
 | 2026-07-05 | Tier 1 测试补洞（pointerize / action-store / context-prune）；`path_escape` 权限；测试 **211** |
+| 2026-07-06 | 轨 F（Agent.md、/memory、ZVEC 剔除）；**SPEC_TOOLS.md** 单开；pi-tui compact tool 显示；测试 **232** |
