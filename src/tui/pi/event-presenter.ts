@@ -9,6 +9,11 @@ import {
 import { shouldFormatFinal } from '../markdown.js';
 import type { PiChatLog } from './chat-log.js';
 import { piChalk, piMarkdownTheme } from './themes.js';
+import {
+  formatGenericToolFailureLine,
+  formatTurnToolFlushLine,
+  isToolFailure,
+} from './tool-compact.js';
 import { PiToolPresenter } from './tool-presenter.js';
 
 function isAgentStep(event: RuntimeEvent): event is AgentStepEvent {
@@ -43,6 +48,7 @@ export class PiEventPresenter {
   private streamMd: Markdown | null = null;
   private loader: CancellableLoader | null = null;
   private readonly toolPresenter: PiToolPresenter;
+  private turnToolOk = 0;
 
   constructor(opts: PiEventPresenterOptions) {
     this.chat = opts.chat;
@@ -168,7 +174,14 @@ export class PiEventPresenter {
     this.tui.requestRender();
   }
 
+  private flushTurnToolStats(): void {
+    const line = formatTurnToolFlushLine(this.turnToolOk);
+    if (line) this.appendRunMeta(line);
+    this.turnToolOk = 0;
+  }
+
   private beginRun(sessionId: string, cwd: string): void {
+    this.flushTurnToolStats();
     this.streamBuffer = '';
     this.streamMd = null;
     this.toolPresenter.reset();
@@ -188,6 +201,7 @@ export class PiEventPresenter {
   }
 
   private endRun(reason: 'completed' | 'aborted' | 'error', message?: string): void {
+    this.flushTurnToolStats();
     this.toolPresenter.reset();
     if (this.loader) {
       this.loader.stop();
@@ -210,6 +224,7 @@ export class PiEventPresenter {
   private handleAgentStep(event: AgentStepEvent): void {
     switch (event.type) {
       case 'turn_start':
+        this.flushTurnToolStats();
         this.appendRunMeta(`[turn ${event.turn}] LLM`);
         break;
       case 'token': {
@@ -219,7 +234,9 @@ export class PiEventPresenter {
         break;
       }
       case 'llm_done':
-        this.appendRunFooter(`finish=${event.finishReason ?? 'null'}`);
+        if (event.finishReason !== 'tool_calls') {
+          this.appendRunFooter(`finish=${event.finishReason ?? 'null'}`);
+        }
         break;
       case 'llm_retry':
         this.appendRunMeta(formatLlmRetrySummary(event));
@@ -253,26 +270,33 @@ export class PiEventPresenter {
         break;
       case 'tool_call':
         if (!this.toolPresenter.handleToolCall(event.call_id, event.name, event.args)) {
-          this.appendRunMeta(`→ ${event.name}(${event.args})`);
+          // Generic tools stay silent in compact mode; failures surface on tool_result.
         }
         break;
       case 'tool_result': {
-        if (
-          !this.toolPresenter.handleToolResult(
-            event.call_id,
-            event.name,
-            event.output,
-            event.display,
-            event.args,
-          )
-        ) {
-          const preview = event.preview ?? event.output;
-          const shown = preview.length > 400 ? `${preview.slice(0, 400)}…` : preview;
-          this.appendRunMeta(`← ${event.name}: ${shown.replace(/\n/g, '\\n')}`);
+        const failed = isToolFailure(event.name, event.output);
+        const presentOpts = { compact: !failed };
+        const handled = this.toolPresenter.handleToolResult(
+          event.call_id,
+          event.name,
+          event.output,
+          event.display,
+          event.args,
+          presentOpts,
+        );
+        if (failed) {
+          if (!handled) {
+            this.appendRunMeta(
+              formatGenericToolFailureLine(event.name, event.output, event.preview),
+            );
+          }
+        } else {
+          this.turnToolOk += 1;
         }
         break;
       }
       case 'final': {
+        this.flushTurnToolStats();
         const text = event.text;
         if (shouldFormatFinal(text)) {
           this.ensureStreamMd().setText(text);
