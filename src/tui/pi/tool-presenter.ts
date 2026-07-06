@@ -28,11 +28,12 @@ export interface PiToolPresenterOptions {
   chat: PiChatLog;
   tui: TUI;
   getAnchor: () => Component | null;
-  /** When true, successful tool results render silently (failures still show full detail). */
+  /** Tiered display: write/edit rich, shell folded on success, breadcrumbs elsewhere. */
   compact?: boolean;
 }
 
 export interface PiToolPresentOptions {
+  /** When false, shell shows full stdout even on success. */
   compact?: boolean;
 }
 
@@ -72,28 +73,22 @@ export class PiToolPresenter {
   }
 
   /** @returns true if handled (caller should skip default rendering). */
-  handleToolCall(callId: string, name: string, args: string, opts?: PiToolPresentOptions): boolean {
-    const compact = opts?.compact ?? this.compact;
-
+  handleToolCall(callId: string, name: string, args: string, _opts?: PiToolPresentOptions): boolean {
     if (name === 'write_file') {
       this.pending.set(callId, { name, args });
-      if (!compact) {
-        this.insertBeforeAnchor(
-          new Text(formatWriteCallLine(args), 1, 0, (s) => piChalk.dim(s)),
-        );
-        this.tui.requestRender();
-      }
+      this.insertBeforeAnchor(
+        new Text(formatWriteCallLine(args), 1, 0, (s) => piChalk.dim(s)),
+      );
+      this.tui.requestRender();
       return true;
     }
 
     if (name === 'edit_file') {
       this.pending.set(callId, { name, args });
-      if (!compact) {
-        this.insertBeforeAnchor(
-          new Text(formatEditCallLineFromArgs(parseEditArgs(args)), 1, 0, (s) => piChalk.dim(s)),
-        );
-        this.tui.requestRender();
-      }
+      this.insertBeforeAnchor(
+        new Text(formatEditCallLineFromArgs(parseEditArgs(args)), 1, 0, (s) => piChalk.dim(s)),
+      );
+      this.tui.requestRender();
       return true;
     }
 
@@ -108,11 +103,9 @@ export class PiToolPresenter {
     );
     this.pending.set(callId, { name, args, loader });
 
-    if (!compact) {
-      this.insertBeforeAnchor(
-        new Text(formatShellCallLine(command), 1, 0, (s) => piChalk.dim(s)),
-      );
-    }
+    this.insertBeforeAnchor(
+      new Text(formatShellCallLine(command), 1, 0, (s) => piChalk.dim(s)),
+    );
     this.insertBeforeAnchor(loader);
     loader.start();
     this.tui.requestRender();
@@ -128,17 +121,13 @@ export class PiToolPresenter {
     args?: string,
     opts?: PiToolPresentOptions,
   ): boolean {
-    const compact = opts?.compact ?? this.compact;
+    const foldShell = (opts?.compact ?? this.compact);
     const pending = this.pending.get(callId);
     this.pending.delete(callId);
     const argsJson = args ?? pending?.args ?? '{}';
 
     if (name === 'write_file') {
       const parts = buildWriteDisplayParts(argsJson, output, display);
-      if (compact && parts.status === 'ok') {
-        this.tui.requestRender();
-        return true;
-      }
       this.insertBeforeAnchor(
         new Text(formatWriteSummaryLine(parts), 1, 0, (s) => piChalk.dim(s)),
       );
@@ -151,10 +140,6 @@ export class PiToolPresenter {
 
     if (name === 'edit_file') {
       const parts = buildEditDisplayParts(argsJson, output, display);
-      if (compact && parts.status === 'ok') {
-        this.tui.requestRender();
-        return true;
-      }
       this.insertBeforeAnchor(
         new Text(formatEditSummaryLine(parts), 1, 0, (s) => piChalk.dim(s)),
       );
@@ -172,14 +157,13 @@ export class PiToolPresenter {
     }
 
     const parts = buildShellDisplayParts(argsJson, output);
-    if (compact && parts.status === 'ok') {
-      this.tui.requestRender();
-      return true;
-    }
+    const showBody = !foldShell || parts.status !== 'ok';
     this.insertBeforeAnchor(
       new Text(formatShellSummaryLine(parts), 1, 0, (s) => piChalk.dim(s)),
     );
-    this.insertBeforeAnchor(new Markdown(formatShellResultMarkdown(parts), 1, 1, piMarkdownTheme));
+    if (showBody) {
+      this.insertBeforeAnchor(new Markdown(formatShellResultMarkdown(parts), 1, 1, piMarkdownTheme));
+    }
     this.tui.requestRender();
     return true;
   }

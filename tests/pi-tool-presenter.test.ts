@@ -90,8 +90,8 @@ describe('PiToolPresenter call_id pairing', () => {
   });
 });
 
-describe('PiToolPresenter compact mode', () => {
-  it('suppresses successful write_file rendering', () => {
+describe('PiToolPresenter tiered display', () => {
+  it('keeps successful write_file rendering in compact mode', () => {
     const { presenter, textLines } = createCompactPresenter();
 
     presenter.handleToolCall('call_a', 'write_file', '{"path":"a.ts","content":"aaa"}');
@@ -104,7 +104,8 @@ describe('PiToolPresenter compact mode', () => {
       '{"path":"a.ts","content":"aaa"}',
     );
 
-    assert.equal(textLines.length, 0);
+    const joined = textLines.join('\n');
+    assert.match(joined, /a\.ts/);
   });
 
   it('shows write_file failures in full', () => {
@@ -125,13 +126,22 @@ describe('PiToolPresenter compact mode', () => {
     assert.match(joined, /a\.ts/);
   });
 
-  it('suppresses successful shell output but keeps failure detail', () => {
+  it('folds successful shell stdout but keeps summary and failure detail', () => {
     const { presenter, textLines } = createCompactPresenter();
 
     presenter.handleToolCall('shell_1', 'run_shell', '{"command":"echo hi"}');
     textLines.length = 0;
-    presenter.handleToolResult('shell_1', 'run_shell', '[shell:ok]\nhi', undefined, '{"command":"echo hi"}');
-    assert.equal(textLines.length, 0);
+    presenter.handleToolResult(
+      'shell_1',
+      'run_shell',
+      '[shell: elapsed=0s]\nhi',
+      undefined,
+      '{"command":"echo hi"}',
+      { compact: true },
+    );
+    const okJoined = textLines.join('\n');
+    assert.match(okJoined, /shell: ok/i);
+    assert.doesNotMatch(okJoined, /\*\*\$/);
 
     presenter.handleToolCall('shell_2', 'run_shell', '{"command":"false"}');
     textLines.length = 0;
@@ -141,8 +151,9 @@ describe('PiToolPresenter compact mode', () => {
       'error: exit 1',
       undefined,
       '{"command":"false"}',
+      { compact: false },
     );
-    const joined = textLines.join('\n');
-    assert.match(joined, /exit 1|error/i);
+    const failJoined = textLines.join('\n');
+    assert.match(failJoined, /exit 1|error/i);
   });
 });
