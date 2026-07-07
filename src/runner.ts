@@ -73,6 +73,7 @@ import {
 } from './p0-telemetry.js';
 import type { TaskBlock } from './task-tracker.js';
 import { setWorkspaceRoot } from './workspace.js';
+import { loadWorkspaceAgentMd } from './workspace-agent-md.js';
 
 function env(name: string, fallback?: string): string | undefined {
   const v = process.env[name]?.trim();
@@ -131,6 +132,18 @@ export function buildAgentConfig(opts: BuildConfigOptions): {
 }
 
 export type RuntimeListener = (event: RuntimeEvent) => void;
+
+function runStartAgentMdMeta(
+  cwd: string,
+): { path: string; chars: number; truncated: boolean } | undefined {
+  const doc = loadWorkspaceAgentMd(cwd);
+  if (!doc) return undefined;
+  return {
+    path: doc.relativePath,
+    chars: doc.content.length,
+    truncated: doc.truncated,
+  };
+}
 
 export type WorkflowConfirmFn = (
   info: WorkflowCheckpointInfo,
@@ -581,6 +594,7 @@ export class AgentRuntime {
       type: 'run_start',
       session_id: session.session_id,
       cwd: this.config.cwd,
+      agent_md: runStartAgentMdMeta(this.config.cwd),
     });
     setActiveActionSessionId(session.session_id);
 
@@ -706,6 +720,7 @@ export class AgentRuntime {
       type: 'run_start',
       session_id: session.session_id,
       cwd: this.config.cwd,
+      agent_md: runStartAgentMdMeta(this.config.cwd),
     });
     setActiveActionSessionId(session.session_id);
 

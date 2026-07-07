@@ -69,7 +69,7 @@ export class PiEventPresenter {
 
     switch (event.type) {
       case 'run_start':
-        this.beginRun(event.session_id, event.cwd);
+        this.beginRun(event.session_id, event.cwd, event.agent_md);
         break;
       case 'run_stopping':
         this.setStopping();
@@ -174,7 +174,11 @@ export class PiEventPresenter {
     this.tui.requestRender();
   }
 
-  private beginRun(sessionId: string, cwd: string): void {
+  private beginRun(
+    sessionId: string,
+    cwd: string,
+    agentMd?: { path: string; chars: number; truncated: boolean },
+  ): void {
     this.streamBuffer = '';
     this.streamMd = null;
     this.toolPresenter.reset();
@@ -190,6 +194,10 @@ export class PiEventPresenter {
     this.loader.start();
 
     this.appendRunMeta(`▶ task start  session=${sessionId}\n  cwd: ${cwd}`);
+    if (agentMd) {
+      const trunc = agentMd.truncated ? ', truncated' : '';
+      this.appendRunMeta(`📋 ${agentMd.path} (${agentMd.chars} chars${trunc})`);
+    }
     this.tui.requestRender();
   }
 

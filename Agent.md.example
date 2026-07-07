@@ -1,0 +1,35 @@
+# Workspace agent instructions
+
+Copy to `Agent.md` (or `AGENTS.md`) in your project root. Loaded into the system prompt on **every task run**.
+
+## Paradigm
+
+- **Plan-with-files**: multi-file or >10-turn work → write `.agent/plan.md` (goal / steps / risks) before editing source.
+- **Spec-first**: new features → `specs/<feature>.md` with acceptance criteria; align implementation to spec.
+- **Grill mode**: vague or large tasks → ask 3–5 clarifying questions **before** destructive tools; continue after user replies.
+
+## Triggers
+
+| Condition | Action |
+|-----------|--------|
+| Touches >3 files or unclear scope | Ask clarifying questions; optional `.agent/plan.md` |
+| New feature / API change | `specs/<name>.md` then implement |
+| Small fix (1–2 files) | Proceed directly |
+| User says "grill me" | Questions only this turn; no write/edit/shell until answered |
+
+## Artifacts
+
+```
+.agent/plan.md       # current task plan (agent-maintained)
+specs/               # feature specs (optional)
+```
+
+## Skills (on demand)
+
+Use `invoke_skill` for full playbooks instead of duplicating them here:
+
+- `invoke_skill` with skill name + optional query when a trigger matches and you need the full checklist.
+
+## Project notes
+
+<!-- Add stack, conventions, test commands, paths to avoid, etc. -->

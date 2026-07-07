@@ -298,8 +298,9 @@ node --heapsnapshot-near-heap-limit=3 $(which tsx) src/tui/main.ts
 | 优先级 | base prompt < **Agent.md** < `agent.json` extension < workflow 角色 |
 | 路径 | `src/agent-prompt.ts` + run 前 loader（`runner.ts`） |
 
-- [ ] 读取 + 截断 + 单测（缺失文件不报错）
-- [ ] TUI `/reload` 或新 session 时重新加载（可选）
+- [x] 读取 + 截断 + 单测（缺失文件不报错）；模板 `Agent.md.example`
+- [x] 每 task run 重新加载（`buildSystemPrompt`）；TUI `run_start` 显示 `📋 Agent.md`
+- [ ] TUI `/reload` 显式刷新（可选）
 
 ### F-2：轻量跨 session 记忆（Obsidian-lite，无 RAG）
 

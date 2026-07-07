@@ -68,7 +68,12 @@ export type AgentStepEvent =
 /** Agent step events plus runtime lifecycle events (TUI / --json-events). */
 export type RuntimeEvent =
   | AgentStepEvent
-  | { type: 'run_start'; session_id: string; cwd: string }
+  | {
+      type: 'run_start';
+      session_id: string;
+      cwd: string;
+      agent_md?: { path: string; chars: number; truncated: boolean };
+    }
   | { type: 'run_stopping'; session_id: string }
   | { type: 'run_end'; reason: 'completed' | 'aborted' | 'error'; message?: string }
   | { type: 'session_saved'; session_id: string; task_count: number }

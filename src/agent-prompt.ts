@@ -2,6 +2,10 @@ import { getSummaryPromptExtension } from './summary.js';
 import { toolRegistry } from './tools/registry.js';
 import { RECALL_DEFINITIONS } from './tools/recall.js';
 import type { AgentConfig, ToolDefinition } from './types.js';
+import {
+  formatWorkspaceAgentMdBlock,
+  loadWorkspaceAgentMd,
+} from './workspace-agent-md.js';
 
 function firstSentence(text: string): string {
   const idx = text.indexOf('.');
@@ -73,5 +77,10 @@ export function buildSystemPrompt(config: AgentConfig): string {
   lines.push(`- ${pointerizeRecallGuidance(recallKb)}`);
   lines.push('- If recall marks stale, use read_file for the latest file content.');
 
-  return lines.join('\n') + skillExt + getSummaryPromptExtension();
+  const base = lines.join('\n');
+  const agentMd = loadWorkspaceAgentMd(config.cwd);
+  const agentMdBlock = agentMd ? formatWorkspaceAgentMdBlock(agentMd) : '';
+
+  // Order: base < Agent.md < loaded_skills (agent.json) < summary JSON extension
+  return base + agentMdBlock + skillExt + getSummaryPromptExtension();
 }
