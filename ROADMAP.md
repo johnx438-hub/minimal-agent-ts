@@ -320,8 +320,8 @@ node --heapsnapshot-near-heap-limit=3 $(which tsx) src/tui/main.ts
 | 归档 | 大任务完成写 `archives.md` 一行；召回靠 `grep_search` / `read_file` |
 | 与 MemFileCli | **可选并存** — MemFileCli 管深度 Wiki；本仓只管轻量用户层 |
 
-- [ ] 目录约定 + `workspace.ts` 路径 helper
-- [ ] `/memory` slash + 注入 hook
+- [x] 目录约定 `.agent/memory/` + `src/workspace-memory.ts`
+- [x] `/memory` slash（status / show / init / paths）+ system 注入 profile + requirements
 - [ ] 更新 `SPEC_CONTEXT_MANAGEMENT.md` §Phase 3 职责分界（一句指向轨 F）
 
 ### F-3：ZVEC 逐步剔除

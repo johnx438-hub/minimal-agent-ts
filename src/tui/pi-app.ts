@@ -21,6 +21,7 @@ import {
   resolvePrefsRoot,
   type TuiPrefs,
 } from './prefs.js';
+import { executeMemorySlash } from '../workspace-memory.js';
 import {
   isSlashCommand,
   normalizeReplInput,
@@ -439,6 +440,20 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
         );
       } else {
         say(`Handoff loaded from ${path} — queued for next task`);
+      }
+      resumeEditor();
+      return;
+    }
+
+    if (result.memoryMessage) {
+      say(result.memoryMessage);
+      resumeEditor();
+      return;
+    }
+
+    if (result.memoryAction) {
+      for (const line of executeMemorySlash(runtime.config.cwd, result.memoryAction).split('\n')) {
+        say(line, true);
       }
       resumeEditor();
       return;

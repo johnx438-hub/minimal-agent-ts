@@ -73,6 +73,11 @@ export type RuntimeEvent =
       session_id: string;
       cwd: string;
       agent_md?: { path: string; chars: number; truncated: boolean };
+      memory?: {
+        profile_chars: number;
+        requirements_chars: number;
+        truncated: boolean;
+      };
     }
   | { type: 'run_stopping'; session_id: string }
   | { type: 'run_end'; reason: 'completed' | 'aborted' | 'error'; message?: string }

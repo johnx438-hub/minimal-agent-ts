@@ -1,3 +1,6 @@
+import type { MemorySlashAction } from '../workspace-memory.js';
+import { parseMemorySlash } from '../workspace-memory.js';
+
 export type ApproveKind = 'shell' | 'web';
 
 export type ApproveAction =
@@ -20,6 +23,9 @@ export interface SlashResult {
   /** Session id to load; omit = current session. */
   handoffLoad?: string;
   approveAction?: ApproveAction;
+  memoryAction?: MemorySlashAction;
+  /** Usage or error text when memoryAction could not be parsed. */
+  memoryMessage?: string;
 }
 
 /** Single source of truth for slash help, aliases, and autocomplete hints. */
@@ -70,6 +76,23 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
     autocomplete: false,
     hintZh: '排队加载交接（下条任务注入）',
     hintEn: 'Queue handoff for next task',
+  },
+  {
+    command: '/memory',
+    hintZh: '跨 session 记忆（.agent/memory/）',
+    hintEn: 'Cross-session memory files',
+  },
+  {
+    command: '/memory show [profile|archives|requirements]',
+    autocomplete: false,
+    hintZh: '查看记忆文件',
+    hintEn: 'Show memory file contents',
+  },
+  {
+    command: '/memory init',
+    autocomplete: false,
+    hintZh: '创建 profile/archives/requirements 模板',
+    hintEn: 'Create memory file templates',
   },
   {
     command: '/log [session_id]',
@@ -307,6 +330,14 @@ export function parseSlashLine(line: string): SlashResult | null {
         return { handled: true, handoffLoad: id ?? '' };
       }
       return { handled: true, handoffWrite: true };
+    }
+
+    case '/memory': {
+      const parsed = parseMemorySlash(parts);
+      if (typeof parsed === 'string') {
+        return { handled: true, memoryMessage: parsed };
+      }
+      return { handled: true, memoryAction: parsed };
     }
 
     case '/resume': {

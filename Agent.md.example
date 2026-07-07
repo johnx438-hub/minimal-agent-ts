@@ -30,6 +30,13 @@ Use `invoke_skill` for full playbooks instead of duplicating them here:
 
 - `invoke_skill` with skill name + optional query when a trigger matches and you need the full checklist.
 
+## Cross-session memory
+
+User-level notes live in `.agent/memory/` (see `/memory` in TUI):
+
+- `profile.md` / `requirements.md` — injected every run
+- `archives.md` — task index only (use `grep_search` / `read_file`)
+
 ## Project notes
 
 <!-- Add stack, conventions, test commands, paths to avoid, etc. -->

@@ -74,6 +74,10 @@ import {
 import type { TaskBlock } from './task-tracker.js';
 import { setWorkspaceRoot } from './workspace.js';
 import { loadWorkspaceAgentMd } from './workspace-agent-md.js';
+import {
+  loadWorkspaceMemoryInjection,
+  workspaceMemoryRunMeta,
+} from './workspace-memory.js';
 
 function env(name: string, fallback?: string): string | undefined {
   const v = process.env[name]?.trim();
@@ -143,6 +147,14 @@ function runStartAgentMdMeta(
     chars: doc.content.length,
     truncated: doc.truncated,
   };
+}
+
+function runStartMemoryMeta(
+  cwd: string,
+): { profile_chars: number; requirements_chars: number; truncated: boolean } | undefined {
+  const injection = loadWorkspaceMemoryInjection(cwd);
+  if (!injection) return undefined;
+  return workspaceMemoryRunMeta(injection);
 }
 
 export type WorkflowConfirmFn = (
@@ -595,6 +607,7 @@ export class AgentRuntime {
       session_id: session.session_id,
       cwd: this.config.cwd,
       agent_md: runStartAgentMdMeta(this.config.cwd),
+      memory: runStartMemoryMeta(this.config.cwd),
     });
     setActiveActionSessionId(session.session_id);
 
@@ -721,6 +734,7 @@ export class AgentRuntime {
       session_id: session.session_id,
       cwd: this.config.cwd,
       agent_md: runStartAgentMdMeta(this.config.cwd),
+      memory: runStartMemoryMeta(this.config.cwd),
     });
     setActiveActionSessionId(session.session_id);
 

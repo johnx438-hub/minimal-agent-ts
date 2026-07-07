@@ -6,6 +6,10 @@ import {
   formatWorkspaceAgentMdBlock,
   loadWorkspaceAgentMd,
 } from './workspace-agent-md.js';
+import {
+  formatWorkspaceMemoryBlock,
+  loadWorkspaceMemoryInjection,
+} from './workspace-memory.js';
 
 function firstSentence(text: string): string {
   const idx = text.indexOf('.');
@@ -80,7 +84,9 @@ export function buildSystemPrompt(config: AgentConfig): string {
   const base = lines.join('\n');
   const agentMd = loadWorkspaceAgentMd(config.cwd);
   const agentMdBlock = agentMd ? formatWorkspaceAgentMdBlock(agentMd) : '';
+  const memory = loadWorkspaceMemoryInjection(config.cwd);
+  const memoryBlock = memory ? formatWorkspaceMemoryBlock(memory) : '';
 
-  // Order: base < Agent.md < loaded_skills (agent.json) < summary JSON extension
-  return base + agentMdBlock + skillExt + getSummaryPromptExtension();
+  // Order: base < Agent.md < memory < loaded_skills (agent.json) < summary JSON extension
+  return base + agentMdBlock + memoryBlock + skillExt + getSummaryPromptExtension();
 }

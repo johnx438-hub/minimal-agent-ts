@@ -30,6 +30,9 @@ describe('slash registry', () => {
     assert.equal(parseSlashLine('/log session_x')?.message, '__log__:session_x');
     assert.equal(parseSlashLine('/history')?.message, '__history__');
     assert.equal(parseSlashLine('/history session_x')?.message, '__history__:session_x');
+    assert.equal(parseSlashLine('/memory')?.memoryAction?.type, 'status');
+    assert.equal(parseSlashLine('/memory init')?.memoryAction?.type, 'init');
+    assert.equal(parseSlashLine('/memory show profile')?.memoryAction?.file, 'profile');
   });
 
   it('exposes autocomplete items with bilingual descriptions', () => {

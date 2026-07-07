@@ -69,7 +69,7 @@ export class PiEventPresenter {
 
     switch (event.type) {
       case 'run_start':
-        this.beginRun(event.session_id, event.cwd, event.agent_md);
+        this.beginRun(event.session_id, event.cwd, event.agent_md, event.memory);
         break;
       case 'run_stopping':
         this.setStopping();
@@ -178,6 +178,7 @@ export class PiEventPresenter {
     sessionId: string,
     cwd: string,
     agentMd?: { path: string; chars: number; truncated: boolean },
+    memory?: { profile_chars: number; requirements_chars: number; truncated: boolean },
   ): void {
     this.streamBuffer = '';
     this.streamMd = null;
@@ -197,6 +198,13 @@ export class PiEventPresenter {
     if (agentMd) {
       const trunc = agentMd.truncated ? ', truncated' : '';
       this.appendRunMeta(`📋 ${agentMd.path} (${agentMd.chars} chars${trunc})`);
+    }
+    if (memory) {
+      const total = memory.profile_chars + memory.requirements_chars;
+      const trunc = memory.truncated ? ', truncated' : '';
+      this.appendRunMeta(
+        `🧠 memory: profile ${memory.profile_chars} + requirements ${memory.requirements_chars} = ${total} chars${trunc}`,
+      );
     }
     this.tui.requestRender();
   }
