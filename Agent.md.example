@@ -7,6 +7,7 @@ Copy to `Agent.md` (or `AGENTS.md`) in your project root. Loaded into the system
 - **Plan-with-files**: multi-file or >10-turn work → write `.agent/plan.md` (goal / steps / risks) before editing source.
 - **Spec-first**: new features → `specs/<feature>.md` with acceptance criteria; align implementation to spec.
 - **Grill mode**: vague or large tasks → ask 3–5 clarifying questions **before** destructive tools; continue after user replies.
+- **Large HTML/JSON**: `write_file` with **content_b64** (UTF-8 base64) — avoids broken JSON tool args from unescaped quotes.
 
 ## Triggers
 
