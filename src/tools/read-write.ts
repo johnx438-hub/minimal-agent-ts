@@ -5,6 +5,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import { formatFileMeta } from './file-hash.js';
 import { resolveReadablePath, resolveWritablePath, sliceLines } from './path-utils.js';
+import { decodeWriteFileContent } from './tool-args.js';
 import { formatWriteToolResult } from './write-display.js';
 
 export const READ_WRITE_DEFINITIONS: ToolDefinition[] = [
@@ -28,14 +29,23 @@ export const READ_WRITE_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'write_file',
-      description: 'Write or overwrite a text file.',
+      description:
+        'Write or overwrite a text file. For HTML, CSS, JSON, or other text with many quotes/backslashes, prefer content_b64 (UTF-8 base64) instead of content — especially above ~4KB.',
       parameters: {
         type: 'object',
         properties: {
           path: { type: 'string', description: 'File path' },
-          content: { type: 'string', description: 'Full file content' },
+          content: {
+            type: 'string',
+            description: 'Full file content (UTF-8). Fine for small/plain text.',
+          },
+          content_b64: {
+            type: 'string',
+            description:
+              'Base64-encoded UTF-8 file content. Prefer for HTML, large payloads, or strings with unescaped quotes.',
+          },
         },
-        required: ['path', 'content'],
+        required: ['path'],
       },
     },
   },
@@ -75,7 +85,9 @@ export async function runReadWriteTool(
 
     case 'write_file': {
       const path = String(args.path ?? '');
-      const content = String(args.content ?? '');
+      const decoded = decodeWriteFileContent(args);
+      if (!decoded.ok) return decoded.error;
+      const content = decoded.content;
       let file: string;
       try {
         file = resolveWritablePath(config.cwd, path);

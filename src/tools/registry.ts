@@ -22,6 +22,7 @@ import { configureSpawnSemaphore } from '../spawn/semaphore.js';
 import type { ResolvedSpawnPreset } from '../spawn/types.js';
 import { buildSpawnBackgroundDefinitions, runSpawnBackgroundTool } from './spawn-background.js';
 import { buildSpawnDefinitions, runSpawnTool } from './spawn.js';
+import { parseToolArgsJson } from './tool-args.js';
 
 type BuiltinHandler = (
   toolName: string,
@@ -220,12 +221,9 @@ export class ToolRegistry {
     argsJson: string,
     config: AgentConfig,
   ): Promise<string> {
-    let args: Record<string, unknown>;
-    try {
-      args = JSON.parse(argsJson) as Record<string, unknown>;
-    } catch {
-      return `error: invalid JSON arguments: ${argsJson}`;
-    }
+    const parsed = parseToolArgsJson(argsJson, name);
+    if (!parsed.ok) return parsed.error;
+    const args = parsed.args;
 
     try {
       if (config.abortSignal?.aborted) {

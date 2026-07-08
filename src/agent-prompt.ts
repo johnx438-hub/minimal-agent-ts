@@ -41,6 +41,11 @@ function toolGuidanceLine(name: string, description: string): string | null {
       );
     case 'edit_file':
       return `Prefer read_file before editing; ${firstSentence(description)}`;
+    case 'write_file':
+      return (
+        `${firstSentence(description)} ` +
+        'Large HTML/JSON or quote-heavy text: use content_b64; or split writes; heredoc via run_shell if allowed.'
+      );
     case 'invoke_skill':
     case 'spawn_agent':
       return description;
@@ -69,7 +74,7 @@ export function buildSystemPrompt(config: AgentConfig): string {
     `You have builtin tools (${toolList}) plus any MCP tools exposed as mcp_<server>_<tool>.`,
   ];
 
-  for (const name of ['web_fetch', 'edit_file', 'invoke_skill', 'spawn_agent'] as const) {
+  for (const name of ['web_fetch', 'write_file', 'edit_file', 'invoke_skill', 'spawn_agent'] as const) {
     const def = findDefinition(defs, name);
     if (!def) continue;
     const hint = toolGuidanceLine(name, def.function.description);
