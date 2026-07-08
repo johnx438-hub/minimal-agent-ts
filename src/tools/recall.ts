@@ -7,7 +7,7 @@ export const RECALL_DEFINITIONS: ToolDefinition[] = [
     function: {
       name: 'recall_query',
       description:
-        'Retrieve a prior tool result from cold storage. With action_id, returns full text up to ~24KB by default; larger bodies use offset/limit. Keyword search uses head_tail unless format=full.',
+        'Retrieve a prior tool result from cold storage (no vector index). Prefer action_id from [action:…] cards. query= scans session cold storage by keyword; optional filter tool:run_shell <terms>.',
       parameters: {
         type: 'object',
         properties: {
@@ -17,7 +17,7 @@ export const RECALL_DEFINITIONS: ToolDefinition[] = [
           },
           query: {
             type: 'string',
-            description: 'Keyword search when action_id unknown',
+            description: 'Keyword search in cold storage when action_id unknown; prefix tool:<name> to filter',
           },
           task_id: { type: 'string', description: 'Limit search to a task_id' },
           scope: {

@@ -1,7 +1,6 @@
 import { stat } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 
-import { searchActions } from './action-index.js';
 import { listActions, loadAction } from './action-store.js';
 import type { ActionBlock, AgentConfig, RecallResult } from './types.js';
 
@@ -112,8 +111,23 @@ export function grepInContent(text: string, query: string, maxLines = 40): strin
   return hits.length > 0 ? hits.join('\n') : '(no lines matched query)';
 }
 
-function scoreAction(block: ActionBlock, query: string): number {
-  const q = query.toLowerCase();
+const KEYWORD_SCAN_MAX = 500;
+
+function parseKeywordQuery(raw: string): { toolName?: string; terms: string } {
+  const trimmed = raw.trim();
+  const toolMatch = trimmed.match(/^tool:([^\s]+)\s*(.*)$/i);
+  if (toolMatch) {
+    return {
+      toolName: toolMatch[1]!.toLowerCase(),
+      terms: toolMatch[2]!.trim() || toolMatch[1]!,
+    };
+  }
+  return { terms: trimmed };
+}
+
+function scoreAction(block: ActionBlock, terms: string): number {
+  const q = terms.toLowerCase();
+  if (!q) return 0;
   let score = 0;
   const hay = [
     block.tool_name,
@@ -128,6 +142,27 @@ function scoreAction(block: ActionBlock, query: string): number {
     if (hay.includes(t)) score += 2;
   }
   return score;
+}
+
+function findBestActionByKeyword(
+  candidates: ActionBlock[],
+  query: string,
+): ActionBlock | null {
+  const { toolName, terms } = parseKeywordQuery(query);
+  const scoped = toolName
+    ? candidates.filter((b) => b.tool_name.toLowerCase() === toolName)
+    : candidates;
+
+  let best: ActionBlock | null = null;
+  let bestScore = 0;
+  for (const block of scoped.slice(0, KEYWORD_SCAN_MAX)) {
+    const s = scoreAction(block, terms);
+    if (s > bestScore) {
+      bestScore = s;
+      best = block;
+    }
+  }
+  return bestScore > 0 ? best : null;
 }
 
 function throwIfAborted(config: AgentConfig): void {
@@ -156,38 +191,13 @@ async function resolveActionBlock(
   const sessionId = scope === 'session' ? config.sessionId : undefined;
   const taskId = scope === 'task' || params.task_id ? params.task_id : undefined;
 
-  const indexedIds = await searchActions({
-    query,
-    sessionId,
-    taskId,
-    topk: 5,
-  });
-  throwIfAborted(config);
-
-  for (const id of indexedIds) {
-    throwIfAborted(config);
-    const block = loadAction(id);
-    if (block) return block;
-  }
-
-  // Fallback: keyword scan of cold storage when index miss / disabled
   let candidates = listActions(sessionId, taskId);
   if (scope === 'task' && params.task_id) {
     candidates = candidates.filter((b) => b.task_id === params.task_id);
   }
 
-  let best: ActionBlock | null = null;
-  let bestScore = 0;
-  for (const block of candidates) {
-    throwIfAborted(config);
-    const s = scoreAction(block, query);
-    if (s > bestScore) {
-      bestScore = s;
-      best = block;
-    }
-  }
-
-  return bestScore > 0 ? best : null;
+  throwIfAborted(config);
+  return findBestActionByKeyword(candidates, query);
 }
 
 export async function recallQuery(

@@ -27,8 +27,19 @@ export function resetZvecCollection(): void {
   boundMemoryDir = null;
 }
 
+/** Opt-in only; default off (F3-a soft deprecation). Removed in F3-c. */
 export function isZvecEnabled(): boolean {
-  return process.env.ENABLE_ZVEC !== '0';
+  return process.env.ENABLE_ZVEC === '1';
+}
+
+let zvecDeprecatedWarned = false;
+
+function warnZvecDeprecatedOnce(): void {
+  if (zvecDeprecatedWarned) return;
+  zvecDeprecatedWarned = true;
+  console.warn(
+    '[zvec] ENABLE_ZVEC=1 is deprecated; semantic index will be removed. Prefer recall_query(action_id) or keyword query on cold storage.',
+  );
 }
 
 export function buildIndexContent(block: ActionBlock): string {
@@ -141,6 +152,7 @@ export async function upsertActionIndex(block: ActionBlock): Promise<void> {
 
 export function indexActionAsync(block: ActionBlock): void {
   if (!isZvecEnabled()) return;
+  warnZvecDeprecatedOnce();
   void import('./action-index-queue.js')
     .then((m) => m.enqueueActionIndex(block))
     .catch(() => {});

@@ -123,7 +123,7 @@ npm start -- --load-skills context-design "设计上下文策略"
 | `grep_search` | 项目内搜索（rg / grep） |
 | `list_files` | 目录列举 |
 | `diff_file` | 与冷存储快照或指定文本对比 |
-| `recall_query` | 按 `action_id` 或语义搜索捞回历史 tool 结果 |
+| `recall_query` | 按 `action_id` 或冷存关键词捞回历史 tool 结果 |
 | `invoke_skill` | 加载 `skills/` 下的 SKILL.md 指引 |
 | `run_shell` | 执行 shell（需 `--allow-shell`） |
 | `web_fetch` | 抓取 URL → Markdown（L1 HTTP；可选本地 cloak-fetch L2） |
@@ -171,6 +171,7 @@ CLI：`npm run spawn:{list,status,kill,tail}`。
 | `STREAM` | `1` | 设为 `0` 关闭流式输出 |
 | `P0_TELEMETRY` | — | turn/IO 遥测 → `workspace/p0-telemetry/` |
 | `MAX_CONTEXT_TOKENS` | — | 手动覆盖模型上下文上限 |
+| `ENABLE_ZVEC` | off | **已废弃**；设为 `1` 才启用旧版 ZVEC 索引（F3-c 将移除） |
 
 ## 路线图状态
 

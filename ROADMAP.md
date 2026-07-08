@@ -328,8 +328,8 @@ node --heapsnapshot-near-heap-limit=3 $(which tsx) src/tui/main.ts
 
 | 阶段 | 内容 | 状态 |
 |:----:|------|------|
-| **F3-a** | 默认 `ENABLE_ZVEC=0`；文档标 deprecated | 待做 |
-| **F3-b** | `recall_query` 仅保留 `action_id` + 标量/keyword 过滤 | 待做 |
+| **F3-a** | 默认 `ENABLE_ZVEC=0`（opt-in `=1`）；文档标 deprecated | ✅ |
+| **F3-b** | `recall_query` 仅 `action_id` + 冷存 keyword（`tool:` 过滤） | ✅ |
 | **F3-c** | 删除 `action-index.ts`、`embedding.ts`、`@zvec/zvec` | 待做 |
 
 **保留**：`action-store` 冷存、`recall_query(action_id)`、transcript 内 grep。  
@@ -339,7 +339,7 @@ node --heapsnapshot-near-heap-limit=3 $(which tsx) src/tui/main.ts
 ### 触发条件
 
 - [x] 细节打磨期，需要用户可配置行为（Agent.md、/memory）
-- [ ] P0 表确认 embedding/zvec 对 turn 延迟有贡献，或维护者主观同意先删
+- [x] F3-a/b 已落地；F3-c 硬删待稳态后
 
 ### 验收
 
@@ -422,3 +422,4 @@ minimal-agent-ts-ds-cache/   # 已有：前缀缓存叙事 fork（独立）
 | 2026-07-04 | 勘误：轨 A/E 基础版、B-IO-2～7、`code_review`、loop guard；测试 170；公开 GitHub |
 | 2026-07-05 | Tier 1 测试补洞（pointerize / action-store / context-prune）；`path_escape` 权限；测试 **211** |
 | 2026-07-06 | 轨 F（Agent.md、/memory、ZVEC 剔除）；**SPEC_TOOLS.md** 单开；pi-tui compact tool 显示；测试 **232** |
+| 2026-07-06 | F3-a/b：ZVEC 默认 off（opt-in）；recall 冷存 keyword + `tool:` 过滤；测试 **259** |
