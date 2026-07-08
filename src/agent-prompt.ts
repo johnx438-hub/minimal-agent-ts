@@ -40,7 +40,10 @@ function toolGuidanceLine(name: string, description: string): string | null {
         'If the result is [web_spill], the page is on disk as Markdown only — read with read_file(offset/limit); open source_url in a browser if conversion looks wrong.'
       );
     case 'edit_file':
-      return `Prefer read_file before editing; ${firstSentence(description)}`;
+      return (
+        `Prefer read_file before editing; ${firstSentence(description)} ` +
+        'Quote-heavy snippets: old_string_b64/new_string_b64 (or new_content_b64).'
+      );
     case 'write_file':
       return (
         `${firstSentence(description)} ` +

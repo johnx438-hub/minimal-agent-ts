@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
+import { runEditFileTool } from '../src/tools/edit-file.js';
 import { runReadWriteTool } from '../src/tools/read-write.js';
-import { decodeWriteFileContent, parseToolArgsJson } from '../src/tools/tool-args.js';
+import {
+  decodeWriteFileContent,
+  parseToolArgsJson,
+  resolveEditFileStringFields,
+} from '../src/tools/tool-args.js';
 import { ensureToolRegistry, toolRegistry } from '../src/tools/registry.js';
 import type { AgentConfig } from '../src/types.js';
 
@@ -19,6 +24,13 @@ describe('tool args parsing', () => {
     assert.match(result.error, /content_b64/);
     assert.match(result.error, /Preview:/);
     assert.ok(result.error.length < 500);
+  });
+
+  it('suggests b64 fields on edit_file JSON parse failure', () => {
+    const result = parseToolArgsJson('{"path":"a.ts","old_string":"unclosed', 'edit_file');
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.match(result.error, /old_string_b64/);
   });
 
   it('omits write_file hint for other tools', () => {
@@ -52,6 +64,22 @@ describe('tool args parsing', () => {
     assert.equal(decoded.ok, false);
     if (decoded.ok) return;
     assert.match(decoded.error, /content or content_b64/);
+  });
+
+  it('resolves edit_file b64 fields with priority', () => {
+    const snippet = '<div class="mask">"x"</div>';
+    const b64 = Buffer.from(snippet, 'utf8').toString('base64');
+    const resolved = resolveEditFileStringFields({
+      path: 'a.html',
+      old_string: 'wrong',
+      old_string_b64: b64,
+      new_string_b64: Buffer.from('replaced', 'utf8').toString('base64'),
+    });
+    assert.equal(resolved.ok, true);
+    if (!resolved.ok) return;
+    assert.equal(resolved.fields.old_string, snippet);
+    assert.equal(resolved.fields.new_string, 'replaced');
+    assert.equal(resolved.fields.hasSearch, true);
   });
 });
 
@@ -94,5 +122,30 @@ describe('write_file content_b64 integration', () => {
       config,
     );
     assert.match(out, /content_b64/);
+  });
+
+  it('applies edit_file search_replace via old_string_b64', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'edit-b64-'));
+    const path = join(dir, 'game.html');
+    writeFileSync(path, '<old>"quote"</old>', 'utf8');
+    const oldB64 = Buffer.from('<old>"quote"</old>', 'utf8').toString('base64');
+    const newB64 = Buffer.from('<new>"safe"</new>', 'utf8').toString('base64');
+    const config: AgentConfig = {
+      apiKey: 'k',
+      baseUrl: 'http://localhost',
+      model: 'm',
+      maxTurns: 0,
+      cwd: dir,
+      allowShell: false,
+      allowWeb: false,
+    };
+
+    const out = await runEditFileTool(
+      'edit_file',
+      { path: 'game.html', old_string_b64: oldB64, new_string_b64: newB64 },
+      config,
+    );
+    assert.match(out ?? '', /^ok: edited/);
+    assert.equal(readFileSync(path, 'utf8'), '<new>"safe"</new>');
   });
 });

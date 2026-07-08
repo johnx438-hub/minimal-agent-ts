@@ -4,6 +4,7 @@ import type { AgentConfig, ToolDefinition } from '../types.js';
 import { formatEditToolResult } from './edit-display.js';
 import { hashFileContent } from './file-hash.js';
 import { resolveWritablePath } from './path-utils.js';
+import { resolveEditFileStringFields } from './tool-args.js';
 
 export const EDIT_FILE_DEFINITIONS: ToolDefinition[] = [
   {
@@ -11,7 +12,7 @@ export const EDIT_FILE_DEFINITIONS: ToolDefinition[] = [
     function: {
       name: 'edit_file',
       description:
-        'Apply a anchored edit to a text file. Prefer over write_file for partial changes. Use expected_hash from read_file [file_meta] to detect stale files.',
+        'Apply a anchored edit to a text file. Prefer over write_file for partial changes. For snippets with many quotes or backslashes, use *_b64 UTF-8 base64 fields instead of plain strings.',
       parameters: {
         type: 'object',
         properties: {
@@ -24,9 +25,17 @@ export const EDIT_FILE_DEFINITIONS: ToolDefinition[] = [
             type: 'string',
             description: 'Exact text to replace (must be unique unless replace_all)',
           },
+          old_string_b64: {
+            type: 'string',
+            description: 'Base64 UTF-8 old_string (preferred when snippet contains quotes/HTML)',
+          },
           new_string: {
             type: 'string',
             description: 'Replacement text for old_string mode',
+          },
+          new_string_b64: {
+            type: 'string',
+            description: 'Base64 UTF-8 new_string',
           },
           replace_all: {
             type: 'boolean',
@@ -43,6 +52,10 @@ export const EDIT_FILE_DEFINITIONS: ToolDefinition[] = [
           new_content: {
             type: 'string',
             description: 'Replacement lines for line-range mode',
+          },
+          new_content_b64: {
+            type: 'string',
+            description: 'Base64 UTF-8 new_content for line-range mode',
           },
         },
         required: ['path'],
@@ -102,8 +115,9 @@ export async function runEditFileTool(
     ].join('\n');
   }
 
-  const hasSearch = args.old_string !== undefined;
-  const hasLine = args.start_line !== undefined;
+  const resolved = resolveEditFileStringFields(args);
+  if (!resolved.ok) return resolved.error;
+  const { hasSearch, hasLine, old_string, new_string, new_content } = resolved.fields;
 
   if (hasSearch && hasLine) {
     return 'error: use either old_string+new_string or start_line+end_line+new_content, not both';
@@ -114,8 +128,8 @@ export async function runEditFileTool(
   let editMode: 'search_replace' | 'line_range' = 'search_replace';
 
   if (hasSearch) {
-    const oldString = String(args.old_string);
-    const newString = String(args.new_string ?? '');
+    const oldString = old_string ?? '';
+    const newString = new_string ?? '';
     const replaceAll = args.replace_all === true;
 
     if (!oldString) return 'error: old_string must not be empty';
@@ -138,7 +152,7 @@ export async function runEditFileTool(
   } else if (hasLine) {
     const startLine = Number(args.start_line);
     const endLine = Number(args.end_line ?? args.start_line);
-    const newBlock = String(args.new_content ?? '');
+    const newBlock = new_content ?? '';
 
     if (!Number.isFinite(startLine) || !Number.isFinite(endLine)) {
       return 'error: start_line and end_line must be numbers';
