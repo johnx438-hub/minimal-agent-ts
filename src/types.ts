@@ -1,4 +1,6 @@
 import type { PreviewPolicy } from './action-preview.js';
+import type { WorkspaceAgentMd } from './workspace-agent-md.js';
+import type { WorkspaceMemoryInjection } from './workspace-memory.js';
 import type { AgentStepEvent } from './events.js';
 import type { PermissionGate } from './permission-gate.js';
 import type { LoopGuardConfig } from './loop-guard.js';
@@ -52,6 +54,12 @@ export interface ActionBlock {
 }
 
 /** Tool definition sent to the API. */
+/** Agent.md + memory loaded once per run for prompt and run_start metadata. */
+export interface WorkspacePromptBundle {
+  agentMd: WorkspaceAgentMd | null;
+  memory: WorkspaceMemoryInjection | null;
+}
+
 export interface ToolDefinition {
   type: 'function';
   function: {
@@ -95,6 +103,8 @@ export interface AgentConfig {
   spawnLifecycle?: (event: SpawnLifecycleEvent) => void;
   /** Parent session id when running as a spawn sub-agent (cold storage path). */
   spawnParentSessionId?: string;
+  /** Pre-loaded Agent.md + memory so run_start metadata matches the system prompt. */
+  workspacePrompt?: WorkspacePromptBundle;
 }
 
 export type SpawnLifecycleEvent =

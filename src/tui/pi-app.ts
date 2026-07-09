@@ -452,7 +452,9 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     }
 
     if (result.memoryAction) {
-      for (const line of executeMemorySlash(runtime.config.cwd, result.memoryAction).split('\n')) {
+      for (const line of executeMemorySlash(runtime.config.cwd, result.memoryAction)
+        .split('\n')
+        .filter((l) => l.length > 0)) {
         say(line, true);
       }
       resumeEditor();

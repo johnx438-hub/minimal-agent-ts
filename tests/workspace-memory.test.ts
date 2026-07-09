@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
@@ -47,6 +47,15 @@ describe('workspace memory', () => {
     const injection = loadWorkspaceMemoryInjection(dir, { maxChars: 120 });
     assert.ok(injection?.truncated);
     assert.equal(injection!.combinedChars, 120);
+  });
+
+  it('executeMemorySlash init returns error instead of throwing on FS failure', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ws-mem-'));
+    mkdirSync(join(dir, '.agent'));
+    writeFileSync(join(dir, '.agent', 'memory'), 'not a directory');
+
+    const out = executeMemorySlash(dir, { type: 'init' });
+    assert.match(out, /^Failed to create memory files:/);
   });
 
   it('executes memory slash status and show', () => {

@@ -1,7 +1,7 @@
 import { getSummaryPromptExtension } from './summary.js';
 import { toolRegistry } from './tools/registry.js';
 import { RECALL_DEFINITIONS } from './tools/recall.js';
-import type { AgentConfig, ToolDefinition } from './types.js';
+import type { AgentConfig, ToolDefinition, WorkspacePromptBundle } from './types.js';
 import {
   formatWorkspaceAgentMdBlock,
   loadWorkspaceAgentMd,
@@ -9,7 +9,36 @@ import {
 import {
   formatWorkspaceMemoryBlock,
   loadWorkspaceMemoryInjection,
+  workspaceMemoryRunMeta,
 } from './workspace-memory.js';
+
+export function loadWorkspacePromptBundle(cwd: string): WorkspacePromptBundle {
+  return {
+    agentMd: loadWorkspaceAgentMd(cwd),
+    memory: loadWorkspaceMemoryInjection(cwd),
+  };
+}
+
+export function workspacePromptRunStartMeta(bundle: WorkspacePromptBundle): {
+  agent_md?: { path: string; chars: number; truncated: boolean };
+  memory?: { profile_chars: number; requirements_chars: number; truncated: boolean };
+} {
+  const meta: {
+    agent_md?: { path: string; chars: number; truncated: boolean };
+    memory?: { profile_chars: number; requirements_chars: number; truncated: boolean };
+  } = {};
+  if (bundle.agentMd) {
+    meta.agent_md = {
+      path: bundle.agentMd.relativePath,
+      chars: bundle.agentMd.content.length,
+      truncated: bundle.agentMd.truncated,
+    };
+  }
+  if (bundle.memory) {
+    meta.memory = workspaceMemoryRunMeta(bundle.memory);
+  }
+  return meta;
+}
 
 function firstSentence(text: string): string {
   const idx = text.indexOf('.');
@@ -95,10 +124,9 @@ export function buildSystemPrompt(config: AgentConfig): string {
   lines.push('- If recall marks stale, use read_file for the latest file content.');
 
   const base = lines.join('\n');
-  const agentMd = loadWorkspaceAgentMd(config.cwd);
-  const agentMdBlock = agentMd ? formatWorkspaceAgentMdBlock(agentMd) : '';
-  const memory = loadWorkspaceMemoryInjection(config.cwd);
-  const memoryBlock = memory ? formatWorkspaceMemoryBlock(memory) : '';
+  const bundle = config.workspacePrompt ?? loadWorkspacePromptBundle(config.cwd);
+  const agentMdBlock = bundle.agentMd ? formatWorkspaceAgentMdBlock(bundle.agentMd) : '';
+  const memoryBlock = bundle.memory ? formatWorkspaceMemoryBlock(bundle.memory) : '';
 
   // Order: base < Agent.md < memory < loaded_skills (agent.json) < summary JSON extension
   return base + agentMdBlock + memoryBlock + skillExt + getSummaryPromptExtension();

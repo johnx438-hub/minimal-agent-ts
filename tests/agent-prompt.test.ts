@@ -4,7 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
-import { buildSystemPrompt } from '../src/agent-prompt.js';
+import {
+  buildSystemPrompt,
+  loadWorkspacePromptBundle,
+  workspacePromptRunStartMeta,
+} from '../src/agent-prompt.js';
 import type { AgentConfig } from '../src/types.js';
 import { initUserMemoryFiles, userMemoryFilePath } from '../src/workspace-memory.js';
 
@@ -36,6 +40,22 @@ describe('buildSystemPrompt', () => {
     const dir = mkdtempSync(join(tmpdir(), 'agent-prompt-'));
     const prompt = buildSystemPrompt(minimalConfig(dir));
     assert.doesNotMatch(prompt, /Workspace agent instructions/);
+  });
+
+  it('workspacePrompt bundle keeps run_start meta aligned with prompt', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agent-prompt-'));
+    writeFileSync(join(dir, 'Agent.md'), 'Workspace rules here.');
+    initUserMemoryFiles(dir);
+    writeFileSync(userMemoryFilePath(dir, 'profile'), 'Memory line.');
+
+    const bundle = loadWorkspacePromptBundle(dir);
+    const meta = workspacePromptRunStartMeta(bundle);
+    const prompt = buildSystemPrompt({ ...minimalConfig(dir), workspacePrompt: bundle });
+
+    assert.equal(meta.agent_md?.chars, bundle.agentMd?.content.length);
+    assert.equal(meta.memory?.profile_chars, bundle.memory?.files.find((f) => f.key === 'profile')?.content.length);
+    assert.match(prompt, /Workspace rules here/);
+    assert.match(prompt, /Memory line/);
   });
 
   it('appends cross-session memory when profile exists', () => {

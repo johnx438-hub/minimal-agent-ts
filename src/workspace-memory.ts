@@ -233,11 +233,16 @@ export function parseMemorySlash(parts: string[]): MemorySlashAction | string {
 export function executeMemorySlash(cwd: string, action: MemorySlashAction): string {
   switch (action.type) {
     case 'init': {
-      const created = initUserMemoryFiles(cwd);
-      if (created.length === 0) {
-        return 'Memory files already exist (.agent/memory/). Use /memory show to view.';
+      try {
+        const created = initUserMemoryFiles(cwd);
+        if (created.length === 0) {
+          return 'Memory files already exist (.agent/memory/). Use /memory show to view.';
+        }
+        return `Created:\n${created.map((p) => `  ${p}`).join('\n')}`;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return `Failed to create memory files: ${msg}`;
       }
-      return `Created:\n${created.map((p) => `  ${p}`).join('\n')}`;
     }
     case 'paths': {
       const dir = userMemoryDir(cwd);

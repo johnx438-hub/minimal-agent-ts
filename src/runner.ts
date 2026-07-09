@@ -44,6 +44,7 @@ import type {
   SessionOverview,
   SpawnLifecycleEvent,
   TaskSummaryDoc,
+  WorkspacePromptBundle,
 } from './types.js';
 import {
   formatHandoffInjection,
@@ -73,11 +74,10 @@ import {
 } from './p0-telemetry.js';
 import type { TaskBlock } from './task-tracker.js';
 import { setWorkspaceRoot } from './workspace.js';
-import { loadWorkspaceAgentMd } from './workspace-agent-md.js';
 import {
-  loadWorkspaceMemoryInjection,
-  workspaceMemoryRunMeta,
-} from './workspace-memory.js';
+  loadWorkspacePromptBundle,
+  workspacePromptRunStartMeta,
+} from './agent-prompt.js';
 
 function env(name: string, fallback?: string): string | undefined {
   const v = process.env[name]?.trim();
@@ -137,26 +137,6 @@ export function buildAgentConfig(opts: BuildConfigOptions): {
 
 export type RuntimeListener = (event: RuntimeEvent) => void;
 
-function runStartAgentMdMeta(
-  cwd: string,
-): { path: string; chars: number; truncated: boolean } | undefined {
-  const doc = loadWorkspaceAgentMd(cwd);
-  if (!doc) return undefined;
-  return {
-    path: doc.relativePath,
-    chars: doc.content.length,
-    truncated: doc.truncated,
-  };
-}
-
-function runStartMemoryMeta(
-  cwd: string,
-): { profile_chars: number; requirements_chars: number; truncated: boolean } | undefined {
-  const injection = loadWorkspaceMemoryInjection(cwd);
-  if (!injection) return undefined;
-  return workspaceMemoryRunMeta(injection);
-}
-
 export type WorkflowConfirmFn = (
   info: WorkflowCheckpointInfo,
   signal?: AbortSignal,
@@ -194,6 +174,7 @@ export class AgentRuntime {
   readonly permissionGate = new PermissionGate();
   private workflowConfirmFn?: WorkflowConfirmFn;
   private pendingHandoffPrefix: string | null = null;
+  private runWorkspacePrompt: WorkspacePromptBundle | null = null;
   private readonly p0Collector: P0TelemetryCollector | null;
 
   constructor(opts: AgentRuntimeOptions) {
@@ -349,6 +330,12 @@ export class AgentRuntime {
     });
   };
 
+  private beginRunWorkspacePrompt(): WorkspacePromptBundle {
+    const bundle = loadWorkspacePromptBundle(this.config.cwd);
+    this.runWorkspacePrompt = bundle;
+    return bundle;
+  }
+
   private buildRunConfig(signal: AbortSignal): AgentConfig {
     const session = this.ensureSession();
     return {
@@ -357,6 +344,7 @@ export class AgentRuntime {
       abortSignal: signal,
       permissionGate: this.permissionGate,
       spawnLifecycle: this.onSpawnLifecycle,
+      workspacePrompt: this.runWorkspacePrompt ?? undefined,
     };
   };
 
@@ -602,12 +590,13 @@ export class AgentRuntime {
     this.abortController = new AbortController();
     const signal = this.abortController.signal;
 
+    const wsMeta = workspacePromptRunStartMeta(this.beginRunWorkspacePrompt());
     this.emit({
       type: 'run_start',
       session_id: session.session_id,
       cwd: this.config.cwd,
-      agent_md: runStartAgentMdMeta(this.config.cwd),
-      memory: runStartMemoryMeta(this.config.cwd),
+      agent_md: wsMeta.agent_md,
+      memory: wsMeta.memory,
     });
     setActiveActionSessionId(session.session_id);
 
@@ -729,12 +718,13 @@ export class AgentRuntime {
     this.abortController = new AbortController();
     const signal = this.abortController.signal;
 
+    const wsMeta = workspacePromptRunStartMeta(this.beginRunWorkspacePrompt());
     this.emit({
       type: 'run_start',
       session_id: session.session_id,
       cwd: this.config.cwd,
-      agent_md: runStartAgentMdMeta(this.config.cwd),
-      memory: runStartMemoryMeta(this.config.cwd),
+      agent_md: wsMeta.agent_md,
+      memory: wsMeta.memory,
     });
     setActiveActionSessionId(session.session_id);
 
