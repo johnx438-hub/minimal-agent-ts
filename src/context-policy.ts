@@ -5,7 +5,8 @@ import {
   usableContextTokens,
   type BudgetConfig,
 } from './context-budget.js';
-import type { ChatMessage, SessionFile, TaskSummaryDoc } from './types.js';
+import { isToolArgsJsonValid } from './tools/tool-args.js';
+import type { ChatMessage, SessionFile, TaskSummaryDoc, ToolCall } from './types.js';
 
 /** OpenCode-style prune thresholds (Phase 2c). */
 export const PRUNE_MIN_SAVINGS = 20_000;
@@ -77,7 +78,19 @@ export function repairToolCallPairs(messages: ChatMessage[]): ChatMessage[] {
       continue;
     }
 
-    const calls = msg.tool_calls;
+    const calls = filterApiSafeToolCalls(msg.tool_calls);
+    if (calls.length === 0) {
+      if (msg.content != null && msg.content !== '') {
+        result.push({ role: 'assistant', content: msg.content });
+      }
+      let j = i + 1;
+      while (j < messages.length && messages[j].role === 'tool') {
+        j++;
+      }
+      i = j;
+      continue;
+    }
+
     const callIds = new Set(calls.map((c) => c.id));
     const toolsById = new Map<string, ChatMessage>();
     let j = i + 1;
@@ -114,6 +127,12 @@ export function repairToolCallPairs(messages: ChatMessage[]): ChatMessage[] {
   }
 
   return result;
+}
+
+/** xAI and some providers reject assistant tool_calls whose arguments are not valid JSON. */
+export function filterApiSafeToolCalls(calls: ToolCall[] | undefined): ToolCall[] {
+  if (!calls?.length) return [];
+  return calls.filter((c) => isToolArgsJsonValid(c.function.arguments));
 }
 
 /** Remove fields not accepted by OpenAI-compatible chat APIs. */

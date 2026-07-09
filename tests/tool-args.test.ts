@@ -7,8 +7,12 @@ import { describe, it } from 'node:test';
 import { runEditFileTool } from '../src/tools/edit-file.js';
 import { runReadWriteTool } from '../src/tools/read-write.js';
 import {
+  buildMalformedToolCallNudge,
+  decodeShellCommand,
   decodeWriteFileContent,
+  isToolArgsJsonValid,
   parseToolArgsJson,
+  partitionToolCallsByValidJson,
   resolveEditFileStringFields,
 } from '../src/tools/tool-args.js';
 import { ensureToolRegistry, toolRegistry } from '../src/tools/registry.js';
@@ -31,6 +35,48 @@ describe('tool args parsing', () => {
     assert.equal(result.ok, false);
     if (result.ok) return;
     assert.match(result.error, /old_string_b64/);
+  });
+
+  it('suggests command_b64 on run_shell JSON parse failure', () => {
+    const result = parseToolArgsJson('{"command":"echo "hi"', 'run_shell');
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.match(result.error, /command_b64/);
+  });
+
+  it('isToolArgsJsonValid rejects truncated JSON', () => {
+    assert.equal(isToolArgsJsonValid('{"command":"broken'), false);
+    assert.equal(isToolArgsJsonValid('{"command":"ok"}'), true);
+  });
+
+  it('partitions tool calls by JSON validity', () => {
+    const calls = [
+      {
+        id: 'a',
+        type: 'function' as const,
+        function: { name: 'run_shell', arguments: '{"command":"ok"}' },
+      },
+      {
+        id: 'b',
+        type: 'function' as const,
+        function: { name: 'run_shell', arguments: '{"command":"bad' },
+      },
+    ];
+    const { valid, invalid } = partitionToolCallsByValidJson(calls);
+    assert.equal(valid.length, 1);
+    assert.equal(invalid.length, 1);
+    assert.match(buildMalformedToolCallNudge(invalid), /command_b64/);
+  });
+
+  it('decodes command_b64 for run_shell', () => {
+    const cmd = 'opencli search "hello world"';
+    const decoded = decodeShellCommand({
+      command_b64: Buffer.from(cmd, 'utf8').toString('base64'),
+    });
+    assert.equal(decoded.ok, true);
+    if (!decoded.ok) return;
+    assert.equal(decoded.command, cmd);
+    assert.equal(decoded.source, 'command_b64');
   });
 
   it('omits write_file hint for other tools', () => {

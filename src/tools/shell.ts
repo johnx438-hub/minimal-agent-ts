@@ -5,6 +5,7 @@ import { isCapabilityEnabled } from '../permission-gate.js';
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import { resolveReadablePath } from './path-utils.js';
 import { resolveShellInvocation } from './shell-resolve.js';
+import { decodeShellCommand } from './tool-args.js';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_POLL_INTERVAL_MS = 2_000;
@@ -46,8 +47,9 @@ export interface ShellRunOptions {
 }
 
 function parseShellArgs(args: Record<string, unknown>): ShellRunOptions | string {
-  const command = String(args.command ?? '').trim();
-  if (!command) return 'error: command is required';
+  const decoded = decodeShellCommand(args);
+  if (!decoded.ok) return decoded.error;
+  const command = decoded.command;
 
   const timeoutMs = clampInt(args.timeout_ms, DEFAULT_TIMEOUT_MS, 1_000, 600_000);
   let maxTimeoutMs = clampInt(args.max_timeout_ms, DEFAULT_MAX_TIMEOUT_MS, timeoutMs, 600_000);
@@ -201,11 +203,16 @@ export const SHELL_DEFINITIONS: ToolDefinition[] = [
     function: {
       name: 'run_shell',
       description:
-        'Run a shell command (auto-detects SHELL / bash / sh; override with MINIMAL_SHELL). Disabled unless ALLOW_SHELL=1 or --allow-shell. Supports delay, custom timeout, and poll-based auto-extend for long commands.',
+        'Run a shell command (auto-detects SHELL / bash / sh; override with MINIMAL_SHELL). Disabled unless ALLOW_SHELL=1 or --allow-shell. For commands with quotes/backslashes, prefer command_b64 (UTF-8 base64). Supports delay, custom timeout, and poll-based auto-extend for long commands.',
       parameters: {
         type: 'object',
         properties: {
-          command: { type: 'string', description: 'Shell command' },
+          command: { type: 'string', description: 'Shell command (plain text)' },
+          command_b64: {
+            type: 'string',
+            description:
+              'Base64-encoded UTF-8 shell command. Prefer when the command contains quotes, backslashes, or complex escaping.',
+          },
           working_dir: {
             type: 'string',
             description: 'Optional subdirectory under project cwd (default: project root)',
@@ -236,7 +243,7 @@ export const SHELL_DEFINITIONS: ToolDefinition[] = [
             description: 'Hard cap when auto_extend=true (default 300000)',
           },
         },
-        required: ['command'],
+        required: [],
       },
     },
   },

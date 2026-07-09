@@ -43,6 +43,10 @@ import {
 } from './context-budget.js';
 import { scheduleToolCalls } from './tool-scheduler.js';
 import { executeTool, getToolDefinitions } from './tools.js';
+import {
+  buildMalformedToolCallNudge,
+  partitionToolCallsByValidJson,
+} from './tools/tool-args.js';
 import { splitEditToolOutput } from './tools/edit-display.js';
 import { splitWriteToolOutput } from './tools/write-display.js';
 import { TaskTracker, type TaskBlock } from './task-tracker.js';
@@ -388,6 +392,21 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
     if (message.tool_calls && message.tool_calls.length > 0) {
       throwIfAborted(abortSignal);
 
+      const { valid: validToolCalls, invalid: invalidToolCalls } =
+        partitionToolCallsByValidJson(message.tool_calls);
+
+      if (validToolCalls.length === 0) {
+        const assistantText =
+          (message.content ?? '').trim() || '(tool call arguments were invalid JSON)';
+        commitAssistantText(messages, assistantText, turn);
+        messages.push({
+          role: 'user',
+          content: buildMalformedToolCallNudge(invalidToolCalls),
+        });
+        onStep?.({ type: 'tool_args_invalid', turn, count: invalidToolCalls.length });
+        continue;
+      }
+
       const assistantMsg: ChatMessage = {
         role: 'assistant',
         content: message.content,
@@ -401,8 +420,23 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
       commitAssistantToolCalls(messages, message, turn);
 
-      const plan = scheduleToolCalls(message.tool_calls);
-      const total = message.tool_calls.length;
+      if (invalidToolCalls.length > 0) {
+        for (const call of invalidToolCalls) {
+          const output = await executeTool(call.function.name, call.function.arguments, toolConfig);
+          const toolMsg: ChatMessage = {
+            role: 'tool',
+            tool_call_id: call.id,
+            content: output,
+            turn,
+          };
+          if (tracker) tracker.onToolResult(toolMsg);
+          messages.push(toolMsg);
+        }
+        onStep?.({ type: 'tool_args_invalid', turn, count: invalidToolCalls.length });
+      }
+
+      const plan = scheduleToolCalls(validToolCalls);
+      const total = validToolCalls.length;
       if (total >= 2) {
         onStep?.({
           type: 'tool_plan',
@@ -481,7 +515,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         }
       } catch (err) {
         if (!isAbortError(err)) throw err;
-        for (const call of message.tool_calls) {
+        for (const call of validToolCalls) {
           if (!resultById.has(call.id)) {
             resultById.set(call.id, { output: ABORTED_TOOL_OUTPUT });
           }
@@ -489,7 +523,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
       }
 
       if (abortSignal?.aborted) {
-        for (const call of message.tool_calls) {
+        for (const call of validToolCalls) {
           if (!resultById.has(call.id)) {
             resultById.set(call.id, { output: ABORTED_TOOL_OUTPUT });
           }
@@ -509,7 +543,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         throw new DOMException('Aborted', 'AbortError');
       }
 
-      for (const call of message.tool_calls) {
+      for (const call of validToolCalls) {
         const result = resultById.get(call.id);
         if (!result) continue;
 
@@ -526,6 +560,13 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         }
 
         messages.push(toolMsg);
+      }
+
+      if (invalidToolCalls.length > 0) {
+        messages.push({
+          role: 'user',
+          content: buildMalformedToolCallNudge(invalidToolCalls),
+        });
       }
 
       const turnIo = buildTurnIoEvent(turn);

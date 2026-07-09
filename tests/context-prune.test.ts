@@ -9,6 +9,7 @@ import {
   PRUNE_MIN_SAVINGS,
   PROTECT_RECENT_TOKENS,
   PROTECT_USER_TURNS,
+  filterApiSafeToolCalls,
   repairToolCallPairs,
   shouldPrune,
 } from '../src/context-policy.js';
@@ -254,6 +255,45 @@ describe('assembleApiMessages', () => {
       { role: 'system', content: 'sys' },
       { role: 'user', content: 'continue' },
     ]);
+  });
+
+  it('drops assistant tool_calls with invalid JSON arguments (xAI-safe)', () => {
+    const api = assembleApiMessages([
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          {
+            id: 'call_bad',
+            type: 'function',
+            function: { name: 'run_shell', arguments: '{"command":"echo "x"' },
+          },
+          {
+            id: 'call_good',
+            type: 'function',
+            function: { name: 'read_file', arguments: '{"path":"a.txt"}' },
+          },
+        ],
+      },
+      { role: 'tool', tool_call_id: 'call_bad', content: 'error: invalid JSON' },
+      { role: 'tool', tool_call_id: 'call_good', content: 'file body' },
+      { role: 'user', content: 'continue' },
+    ]);
+
+    assert.equal(api.length, 3);
+    assert.equal(api[0]?.tool_calls?.length, 1);
+    assert.equal(api[0]?.tool_calls?.[0]?.id, 'call_good');
+    assert.equal(api[1]?.tool_call_id, 'call_good');
+    assert.equal(api[2]?.role, 'user');
+  });
+
+  it('filterApiSafeToolCalls keeps only parseable argument objects', () => {
+    const safe = filterApiSafeToolCalls([
+      { id: 'a', type: 'function', function: { name: 'run_shell', arguments: '{bad' } },
+      { id: 'b', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+    ]);
+    assert.equal(safe.length, 1);
+    assert.equal(safe[0]?.id, 'b');
   });
 
   it('trims assistant tool_calls when only some tool responses remain', () => {

@@ -1,8 +1,13 @@
+import type { ToolCall } from '../types.js';
+
 const WRITE_JSON_HINT =
   'Retry with content_b64 (preferred for HTML/large quoted text), split into smaller writes, or use run_shell heredoc if shell is allowed.';
 
 const EDIT_JSON_HINT =
   'Retry with old_string_b64/new_string_b64 (or new_content_b64), narrower snippets, or write_file with content_b64 for full rewrites.';
+
+const SHELL_JSON_HINT =
+  'Retry with command_b64 (preferred for commands with quotes/backslashes), or simplify quoting.';
 
 const ARGS_PREVIEW_MAX = 240;
 
@@ -18,16 +23,56 @@ export type ParseToolArgsResult =
   | { ok: true; args: Record<string, unknown> }
   | { ok: false; error: string };
 
-export function parseToolArgsJson(argsJson: string, toolName?: string): ParseToolArgsResult {
+/** Fast check for OpenAI/xAI tool_call argument strings (must be valid JSON object). */
+export function isToolArgsJsonValid(argsJson: string): boolean {
   try {
     const parsed = JSON.parse(argsJson) as unknown;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return { ok: false, error: formatInvalidToolArgsError(argsJson, toolName) };
-    }
-    return { ok: true, args: parsed as Record<string, unknown> };
+    return Boolean(parsed && typeof parsed === 'object' && !Array.isArray(parsed));
   } catch {
+    return false;
+  }
+}
+
+export function parseToolArgsJson(argsJson: string, toolName?: string): ParseToolArgsResult {
+  if (!isToolArgsJsonValid(argsJson)) {
     return { ok: false, error: formatInvalidToolArgsError(argsJson, toolName) };
   }
+  return { ok: true, args: JSON.parse(argsJson) as Record<string, unknown> };
+}
+
+export function partitionToolCallsByValidJson(
+  calls: ToolCall[],
+): { valid: ToolCall[]; invalid: ToolCall[] } {
+  const valid: ToolCall[] = [];
+  const invalid: ToolCall[] = [];
+  for (const call of calls) {
+    if (isToolArgsJsonValid(call.function.arguments)) {
+      valid.push(call);
+    } else {
+      invalid.push(call);
+    }
+  }
+  return { valid, invalid };
+}
+
+export function buildMalformedToolCallNudge(invalid: ToolCall[]): string {
+  const lines = [
+    'Your previous tool call arguments were invalid JSON (often from unescaped quotes in shell commands or large HTML).',
+    'Retry with the base64 field variants where available.',
+  ];
+  for (const call of invalid) {
+    const hint =
+      call.function.name === 'write_file'
+        ? WRITE_JSON_HINT
+        : call.function.name === 'edit_file'
+          ? EDIT_JSON_HINT
+          : call.function.name === 'run_shell'
+            ? SHELL_JSON_HINT
+            : 'Ensure arguments are valid JSON.';
+    lines.push(`- ${call.function.name}: ${hint}`);
+    lines.push(`  Preview: ${previewArgs(call.function.arguments)}`);
+  }
+  return lines.join('\n');
 }
 
 function formatInvalidToolArgsError(argsJson: string, toolName?: string): string {
@@ -37,6 +82,8 @@ function formatInvalidToolArgsError(argsJson: string, toolName?: string): string
     lines.push(WRITE_JSON_HINT);
   } else if (toolName === 'edit_file') {
     lines.push(EDIT_JSON_HINT);
+  } else if (toolName === 'run_shell') {
+    lines.push(SHELL_JSON_HINT);
   }
   lines.push(`Preview: ${previewArgs(argsJson)}`);
   return lines.join('\n');
@@ -94,6 +141,25 @@ export type ResolvedEditFileStrings = {
   hasSearch: boolean;
   hasLine: boolean;
 };
+
+export type DecodeShellCommandResult =
+  | { ok: true; command: string; source: 'command' | 'command_b64' }
+  | { ok: false; error: string };
+
+export function decodeShellCommand(args: Record<string, unknown>): DecodeShellCommandResult {
+  const decoded = decodePlainOrB64Field(args, 'command', 'command_b64');
+  if (!decoded.ok) return decoded;
+  if (!decoded.defined) {
+    return { ok: false, error: 'error: run_shell requires command or command_b64' };
+  }
+  const trimmed = decoded.value.trim();
+  if (!trimmed) {
+    return { ok: false, error: 'error: command is required' };
+  }
+  const source =
+    typeof args.command_b64 === 'string' && args.command_b64.trim() ? 'command_b64' : 'command';
+  return { ok: true, command: trimmed, source };
+}
 
 export function resolveEditFileStringFields(
   args: Record<string, unknown>,

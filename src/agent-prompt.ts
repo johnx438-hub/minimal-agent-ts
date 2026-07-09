@@ -49,6 +49,11 @@ function toolGuidanceLine(name: string, description: string): string | null {
         `${firstSentence(description)} ` +
         'Large HTML/JSON or quote-heavy text: use content_b64; or split writes; heredoc via run_shell if allowed.'
       );
+    case 'run_shell':
+      return (
+        `${firstSentence(description)} ` +
+        'Commands with quotes/backslashes: use command_b64 (UTF-8 base64).'
+      );
     case 'invoke_skill':
     case 'spawn_agent':
       return description;
