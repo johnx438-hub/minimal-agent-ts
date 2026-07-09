@@ -22,6 +22,8 @@ export interface StartSpawnJobOptions {
   task: string;
   parentConfig: AgentConfig;
   outputPaths?: string[];
+  /** When set, use this id instead of generating a new one (e.g. code_review report paths). */
+  jobId?: string;
 }
 
 export interface SpawnJobHandle {
@@ -45,7 +47,7 @@ class JobRegistry {
   private readonly handles = new Map<string, SpawnJobHandle>();
 
   start(opts: StartSpawnJobOptions): SpawnJobHandle {
-    const jobId = newJobId();
+    const jobId = opts.jobId ?? newJobId();
     const parentSessionId = opts.parentConfig.sessionId ?? 'unknown';
     const spawnSessionId = buildSpawnSessionId(parentSessionId);
     const abortController = new AbortController();

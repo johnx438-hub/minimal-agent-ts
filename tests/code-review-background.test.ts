@@ -8,10 +8,11 @@ import { getJobRegistry, resetJobRegistryForTests } from '../src/spawn/job-regis
 import { setSpawnRunnerForTests } from '../src/spawn/job-runner.js';
 import { readJobMeta } from '../src/spawn/job-store.js';
 import {
+  buildReviewTaskWithReportPath,
   formatBackgroundReviewStarted,
   resolveRequestedReviewAgents,
+  reviewReportPathForJob,
   runCodeReviewTool,
-
   setGitDiffForTests,
   startBackgroundCodeReviewJobs,
   validateReviewAgents,
@@ -117,7 +118,8 @@ describe('code_review background (Phase 1d)', () => {
     assert.ok(result!.includes('code-review-security'));
     assert.ok(result!.includes('code-review-quality'));
     assert.ok(result!.includes('npm run spawn:list'));
-    assert.ok(result!.includes('workspace/code-review-bug.md'));
+    assert.ok(result!.includes('workspace/jobs/'));
+    assert.ok(result!.includes('/report.md'));
     assert.ok(elapsed < 300);
 
     const runningJobs = getJobRegistry().list({
@@ -129,7 +131,7 @@ describe('code_review background (Phase 1d)', () => {
     for (const meta of runningJobs) {
       const jobId = meta.job_id;
       assert.equal(meta.status, 'running');
-      assert.ok(meta.output_paths.some((p) => p.startsWith('workspace/code-review-')));
+      assert.ok(meta.output_paths.every((p) => p.startsWith('workspace/jobs/') && p.endsWith('/report.md')));
       assert.ok(readJobMeta(jobId)?.job_id === jobId);
     }
 
@@ -176,19 +178,29 @@ describe('code_review background (Phase 1d)', () => {
     assert.equal(spawnCalls, 3);
   });
 
-  it('formats background table with job paths', () => {
+  it('formats background table with per-job report paths', () => {
     const text = formatBackgroundReviewStarted('HEAD~2', [
-      { agent: 'code-review-bug', jobId: 'job_test_001' },
-      { agent: 'code-review-security', jobId: 'job_test_002' },
+      {
+        agent: 'code-review-bug',
+        jobId: 'job_test_001',
+        reportPath: reviewReportPathForJob('job_test_001'),
+      },
+      {
+        agent: 'code-review-security',
+        jobId: 'job_test_002',
+        reportPath: reviewReportPathForJob('job_test_002'),
+      },
     ]);
 
     assert.ok(text.includes('scope: HEAD~2'));
     assert.ok(text.includes('job_test_001'));
     assert.ok(text.includes('workspace/jobs/job_test_001/meta.json'));
-    assert.ok(text.includes('workspace/code-review-bug.md'));
+    assert.ok(text.includes('workspace/jobs/job_test_001/report.md'));
+    assert.ok(text.includes('workspace/jobs/job_test_002/report.md'));
+    assert.ok(!text.includes('workspace/code-review-bug.md'));
   });
 
-  it('startBackgroundCodeReviewJobs wires report output hints', () => {
+  it('startBackgroundCodeReviewJobs uses per-job report paths and task hints', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'ma-code-review-hints-'));
     setWorkspaceRoot(tempDir);
 
@@ -196,11 +208,47 @@ describe('code_review background (Phase 1d)', () => {
       reviewPresets: [testPresets[0]!],
       diffMessage: 'review this',
       config: minimalConfig(),
+      scope: 'unstaged',
     });
 
     assert.equal(jobs.length, 1);
-    const meta = readJobMeta(jobs[0]!.jobId);
-    assert.deepEqual(meta?.output_paths, ['workspace/code-review-bug.md']);
-    assert.ok(existsSync(join(tempDir, 'workspace')));
+    const { jobId, reportPath } = jobs[0]!;
+    assert.equal(reportPath, reviewReportPathForJob(jobId));
+    const meta = readJobMeta(jobId);
+    assert.deepEqual(meta?.output_paths, [reportPath]);
+    assert.match(meta?.task_preview ?? '', /Report output/);
+    assert.match(reportPath, /report\.md$/);
+    assert.ok(existsSync(join(tempDir, 'workspace', 'jobs', jobId)));
+  });
+
+  it('parallel bug jobs get distinct report paths', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'ma-code-review-parallel-'));
+    setWorkspaceRoot(tempDir);
+
+    const jobs = startBackgroundCodeReviewJobs({
+      reviewPresets: [testPresets[0]!, testPresets[0]!, testPresets[0]!],
+      diffMessage: 'review this',
+      config: minimalConfig(),
+      scope: 'unstaged',
+    });
+
+    assert.equal(jobs.length, 3);
+    const paths = new Set(jobs.map((j) => j.reportPath));
+    assert.equal(paths.size, 3);
+    for (const path of paths) {
+      assert.match(path, /^workspace\/jobs\/job_/);
+      assert.ok(path.endsWith('/report.md'));
+    }
+  });
+
+  it('buildReviewTaskWithReportPath forbids shared preset report files', () => {
+    const task = buildReviewTaskWithReportPath(
+      'diff here',
+      'unstaged',
+      'code-review-bug',
+      'workspace/jobs/job_abc/report.md',
+    );
+    assert.match(task, /workspace\/jobs\/job_abc\/report\.md/);
+    assert.match(task, /Do \*\*not\*\* write to `workspace\/code-review-bug\.md`/);
   });
 });

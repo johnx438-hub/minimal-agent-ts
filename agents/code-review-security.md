@@ -20,10 +20,10 @@ You are a **security auditor** code reviewer. Analyze the provided diff for secu
 - Code style, naming, function length, magic numbers → code-review-quality agent
 
 ## Report format:
-1. Write your full detailed review to `workspace/code-review-security.md`
+1. Write your full detailed review to the path in the task message (**Report output** section; background jobs use `workspace/jobs/<job_id>/report.md`)
 2. In your final reply, output ONLY a 2-sentence summary. Format:
 ```
-🟠 Found N issues. Highest severity: {critical|high|medium}: {short description}. Full report: workspace/code-review-security.md
+🟠 Found N issues. Highest severity: {critical|high|medium}: {short description}. Full report: {path from task}
 ```
 
 ## Rules:

@@ -28,7 +28,7 @@ If the diff is truncated (`...(diff truncated`), prioritize bugs in files/hunks 
 
 ### Phase 3 — Report
 - **No bugs** → reply exactly: `🔴 (no bugs found)` (no `write_file`)
-- **Has bugs** → one `write_file` to `workspace/code-review-bug.md`, then the one-line summary below
+- **Has bugs** → one `write_file` to the report path in the task message (**Report output** section), then the one-line summary below
 
 ## What to check (priority order)
 1. **Error handling** — swallowed errors, `code=null` / timeout treated as success, missing rejection paths
@@ -52,7 +52,7 @@ If the diff is truncated (`...(diff truncated`), prioritize bugs in files/hunks 
 - Formatting, naming, magic numbers → code-review-quality
 - Injection, secrets, path traversal as primary class → code-review-security
 
-## Report file (`workspace/code-review-bug.md`)
+## Report file (path from task message; background jobs use `workspace/jobs/<job_id>/report.md`)
 ```markdown
 # Code Review: Bug Analysis
 ## Scope: {scope from task}
@@ -66,7 +66,7 @@ If the diff is truncated (`...(diff truncated`), prioritize bugs in files/hunks 
 
 ## Final reply (only this line)
 ```
-🔴 Found N bugs. Highest priority: {short description}. Full report: workspace/code-review-bug.md
+🔴 Found N bugs. Highest priority: {short description}. Full report: {path from task}
 ```
 If N=0, use `🔴 (no bugs found)` instead.
 

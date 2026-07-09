@@ -20,10 +20,10 @@ You are a **code quality** reviewer. Analyze the provided diff for maintainabili
 - SQL injection, path traversal, exposed secrets → code-review-security agent
 
 ## Report format:
-1. Write your full detailed review to `workspace/code-review-quality.md`
+1. Write your full detailed review to the path in the task message (**Report output** section; background jobs use `workspace/jobs/<job_id>/report.md`)
 2. In your final reply, output ONLY a 2-sentence summary. Format:
 ```
-🔵 Found N issues. Most notable: {short description}. Full report: workspace/code-review-quality.md
+🔵 Found N issues. Most notable: {short description}. Full report: {path from task}
 ```
 
 ## Rules:

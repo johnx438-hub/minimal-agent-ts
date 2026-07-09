@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import { getJobRegistry } from '../spawn/job-registry.js';
-import { relativeJobFile } from '../spawn/job-paths.js';
+import { newJobId, relativeJobFile } from '../spawn/job-paths.js';
 import type { ResolvedSpawnPreset } from '../spawn/types.js';
 
 export const REVIEW_REPORT_PATHS: Record<string, string> = {
@@ -90,6 +90,30 @@ export function reportPathForReviewAgent(agent: string): string | undefined {
   return REVIEW_REPORT_PATHS[agent];
 }
 
+/** Per-job report path for background reviews (avoids overwriting shared preset files). */
+export function reviewReportPathForJob(jobId: string): string {
+  return relativeJobFile(jobId, 'report.md');
+}
+
+export function buildReviewTaskWithReportPath(
+  diffMessage: string,
+  scope: string,
+  agent: string,
+  reportPath: string,
+): string {
+  const sharedPath = reportPathForReviewAgent(agent);
+  const sharedNote = sharedPath
+    ? `\n- Do **not** write to \`${sharedPath}\` — that path is shared and may be overwritten by other jobs.`
+    : '';
+  return `${diffMessage}
+
+---
+## Report output (required for this background job)
+- Scope: \`${scope}\` · Agent: \`${agent}\`
+- Write your **full detailed review** to exactly: \`${reportPath}\`${sharedNote}
+- Final one-line reply must end with: \`Full report: ${reportPath}\``;
+}
+
 function formatCombinedReport(
   sections: { agent: string; text: string }[],
   scope: string,
@@ -124,7 +148,7 @@ function formatCombinedReport(
 
 export function formatBackgroundReviewStarted(
   scope: string,
-  jobs: Array<{ agent: string; jobId: string }>,
+  jobs: Array<{ agent: string; jobId: string; reportPath?: string }>,
 ): string {
   const lines = [
     `code_review: started ${jobs.length} background job(s) (scope: ${scope})`,
@@ -142,10 +166,10 @@ export function formatBackgroundReviewStarted(
   lines.push('Check: npm run spawn:list');
   lines.push('Status: npm run spawn:status -- <job_id>');
   lines.push('Kill:  npm run spawn:kill -- <job_id>');
-  lines.push('Reports when done:');
-  for (const { agent } of jobs) {
-    const path = reportPathForReviewAgent(agent);
-    if (path) lines.push(`- ${path} (${agent})`);
+  lines.push('Reports when done (one file per job — safe for parallel runs):');
+  for (const { agent, jobId, reportPath } of jobs) {
+    const path = reportPath ?? reviewReportPathForJob(jobId);
+    lines.push(`- ${path} (${agent}, ${jobId})`);
   }
 
   return lines.join('\n');
@@ -225,19 +249,28 @@ export function startBackgroundCodeReviewJobs(opts: {
   reviewPresets: ResolvedSpawnPreset[];
   diffMessage: string;
   config: AgentConfig;
-}): Array<{ agent: string; jobId: string }> {
+  scope: string;
+}): Array<{ agent: string; jobId: string; reportPath: string }> {
   const registry = getJobRegistry();
-  const jobs: Array<{ agent: string; jobId: string }> = [];
+  const jobs: Array<{ agent: string; jobId: string; reportPath: string }> = [];
 
   for (const preset of opts.reviewPresets) {
-    const reportPath = reportPathForReviewAgent(preset.name);
+    const jobId = newJobId();
+    const reportPath = reviewReportPathForJob(jobId);
+    const task = buildReviewTaskWithReportPath(
+      opts.diffMessage,
+      opts.scope,
+      preset.name,
+      reportPath,
+    );
     const handle = registry.start({
+      jobId,
       preset,
-      task: opts.diffMessage,
+      task,
       parentConfig: opts.config,
-      outputPaths: reportPath ? [reportPath] : undefined,
+      outputPaths: [reportPath],
     });
-    jobs.push({ agent: preset.name, jobId: handle.jobId });
+    jobs.push({ agent: preset.name, jobId: handle.jobId, reportPath });
   }
 
   return jobs;
@@ -313,6 +346,7 @@ export async function runCodeReviewTool(
       reviewPresets,
       diffMessage,
       config,
+      scope,
     });
     return formatBackgroundReviewStarted(scope, jobs);
   }
