@@ -1,4 +1,5 @@
 import type { ToolPlanEntry, ToolPlanReason } from './events.js';
+import { decodeShellCommand } from './tools/tool-args.js';
 import type { ToolCall } from './types.js';
 
 const PARALLEL_SAFE = new Set([
@@ -86,7 +87,8 @@ function classifyCalls(calls: ToolCall[]): {
       if (name === 'run_shell') {
         try {
           const parsed = JSON.parse(args) as Record<string, unknown>;
-          shellCommands.push(String(parsed.command ?? ''));
+          const decoded = decodeShellCommand(parsed);
+          shellCommands.push(decoded.ok ? decoded.command : String(parsed.command ?? ''));
         } catch {
           shellCommands.push('');
         }

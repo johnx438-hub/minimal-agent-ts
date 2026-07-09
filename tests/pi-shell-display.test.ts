@@ -22,6 +22,21 @@ describe('parseShellCommand', () => {
   it('returns empty string for invalid JSON', () => {
     assert.equal(parseShellCommand('not-json'), '');
   });
+
+  it('decodes command_b64 for display', () => {
+    const cmd = 'opencli hotlist --site hn';
+    const b64 = Buffer.from(cmd, 'utf8').toString('base64');
+    assert.equal(parseShellCommand(JSON.stringify({ command_b64: b64 })), cmd);
+  });
+
+  it('prefers command_b64 over plain command', () => {
+    const cmd = 'echo "real"';
+    const b64 = Buffer.from(cmd, 'utf8').toString('base64');
+    assert.equal(
+      parseShellCommand(JSON.stringify({ command: 'wrong', command_b64: b64 })),
+      cmd,
+    );
+  });
 });
 
 describe('splitShellOutput', () => {

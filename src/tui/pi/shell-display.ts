@@ -1,3 +1,4 @@
+import { resolveShellCommandFromArgsJson } from '../../tools/tool-args.js';
 import { pickCodeFence } from './markdown-fence.js';
 
 /** Pure formatting helpers for run_shell tool display in pi TUI. */
@@ -10,12 +11,7 @@ export interface ShellDisplayParts {
 }
 
 export function parseShellCommand(argsJson: string): string {
-  try {
-    const args = JSON.parse(argsJson) as Record<string, unknown>;
-    return String(args.command ?? '').trim();
-  } catch {
-    return '';
-  }
+  return resolveShellCommandFromArgsJson(argsJson);
 }
 
 export function splitShellOutput(output: string): { meta?: string; body: string } {

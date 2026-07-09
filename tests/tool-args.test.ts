@@ -14,6 +14,7 @@ import {
   parseToolArgsJson,
   partitionToolCallsByValidJson,
   resolveEditFileStringFields,
+  resolveShellCommandFromArgsJson,
 } from '../src/tools/tool-args.js';
 import { ensureToolRegistry, toolRegistry } from '../src/tools/registry.js';
 import type { AgentConfig } from '../src/types.js';
@@ -66,6 +67,16 @@ describe('tool args parsing', () => {
     assert.equal(valid.length, 1);
     assert.equal(invalid.length, 1);
     assert.match(buildMalformedToolCallNudge(invalid), /command_b64/);
+  });
+
+  it('resolveShellCommandFromArgsJson mirrors decodeShellCommand', () => {
+    const cmd = 'curl -s "https://example.com"';
+    const b64 = Buffer.from(cmd, 'utf8').toString('base64');
+    assert.equal(
+      resolveShellCommandFromArgsJson(JSON.stringify({ command_b64: b64 })),
+      cmd,
+    );
+    assert.equal(resolveShellCommandFromArgsJson('{"command":'), '');
   });
 
   it('decodes command_b64 for run_shell', () => {

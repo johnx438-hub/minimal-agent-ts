@@ -1,4 +1,5 @@
 import { stripFileMeta } from './tools/file-hash.js';
+import { decodeShellCommand } from './tools/tool-args.js';
 import type { ActionBlock } from './types.js';
 
 export type PreviewMode = 'generic' | 'smart';
@@ -216,7 +217,8 @@ export function buildSmartToolPreview(
     }
 
     case 'run_shell': {
-      const command = truncateLine(String(args.command ?? ''), 80);
+      const decoded = decodeShellCommand(args);
+      const command = truncateLine(decoded.ok ? decoded.command : String(args.command ?? ''), 80);
       const errMatch = text.match(/^error: exit (\d+)/m);
       const timeoutMatch = text.match(/^error: command timed out/m);
       const meta = text.match(/^\[shell:[^\]]+\]/m)?.[0];

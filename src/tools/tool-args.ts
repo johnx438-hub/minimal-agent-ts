@@ -146,6 +146,14 @@ export type DecodeShellCommandResult =
   | { ok: true; command: string; source: 'command' | 'command_b64' }
   | { ok: false; error: string };
 
+/** Resolve the shell command string from tool-call args JSON (plain or command_b64). */
+export function resolveShellCommandFromArgsJson(argsJson: string): string {
+  if (!isToolArgsJsonValid(argsJson)) return '';
+  const args = JSON.parse(argsJson) as Record<string, unknown>;
+  const decoded = decodeShellCommand(args);
+  return decoded.ok ? decoded.command : '';
+}
+
 export function decodeShellCommand(args: Record<string, unknown>): DecodeShellCommandResult {
   const decoded = decodePlainOrB64Field(args, 'command', 'command_b64');
   if (!decoded.ok) return decoded;

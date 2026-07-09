@@ -1,4 +1,5 @@
 import { hashResult } from './action-store.js';
+import { decodeShellCommand } from './tools/tool-args.js';
 import type { ChatMessage } from './types.js';
 
 export type LoopGuardMode = 'inject' | 'terminate' | 'off';
@@ -109,7 +110,10 @@ function normalizeArgs(toolName: string, args: Record<string, unknown>): Record<
     case 'web_fetch':
       return { url: String(args.url ?? '').trim() };
     case 'run_shell': {
-      const out: Record<string, unknown> = { command: String(args.command ?? '').trim() };
+      const decoded = decodeShellCommand(args);
+      const out: Record<string, unknown> = {
+        command: decoded.ok ? decoded.command : String(args.command ?? '').trim(),
+      };
       if (args.working_dir !== undefined) out.working_dir = String(args.working_dir);
       if (args.auto_extend === true) out.auto_extend = true;
       if (args.timeout_ms !== undefined) out.timeout_ms = Number(args.timeout_ms);
