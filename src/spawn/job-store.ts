@@ -13,6 +13,14 @@ import {
 
 export type JobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
+/** LLM binding snapshot on job meta (轨 G2-b); optional on legacy jobs. */
+export interface SpawnJobLlmSnapshot {
+  api_profile: string;
+  model: string;
+  llm_base_url?: string;
+  cache_mode?: string;
+}
+
 export interface SpawnJobMeta {
   v: 1;
   job_id: string;
@@ -26,6 +34,10 @@ export interface SpawnJobMeta {
   updated_at: string;
   output_paths: string[];
   pid: number;
+  api_profile?: string;
+  model?: string;
+  llm_base_url?: string;
+  cache_mode?: string;
 }
 
 export interface SpawnJobResultFile {
@@ -179,6 +191,20 @@ export function writeJobReport(jobId: string, content: string): void {
   writeFileSync(jobReportPath(jobId), content, 'utf8');
 }
 
+export function applyJobLlmSnapshot(
+  meta: SpawnJobMeta,
+  llm?: SpawnJobLlmSnapshot,
+): SpawnJobMeta {
+  if (!llm) return meta;
+  return {
+    ...meta,
+    api_profile: llm.api_profile,
+    model: llm.model,
+    ...(llm.llm_base_url ? { llm_base_url: llm.llm_base_url } : {}),
+    ...(llm.cache_mode ? { cache_mode: llm.cache_mode } : {}),
+  };
+}
+
 export function buildInitialMeta(opts: {
   jobId: string;
   parentSessionId: string;
@@ -188,9 +214,10 @@ export function buildInitialMeta(opts: {
   cwd: string;
   status?: JobStatus;
   outputPaths?: string[];
+  llm?: SpawnJobLlmSnapshot;
 }): SpawnJobMeta {
   const now = new Date().toISOString();
-  return {
+  const base: SpawnJobMeta = {
     v: META_VERSION,
     job_id: opts.jobId,
     parent_session_id: opts.parentSessionId,
@@ -204,6 +231,7 @@ export function buildInitialMeta(opts: {
     output_paths: opts.outputPaths ?? defaultOutputPaths(opts.jobId),
     pid: process.pid,
   };
+  return applyJobLlmSnapshot(base, opts.llm);
 }
 
 export function buildJobResult(opts: {

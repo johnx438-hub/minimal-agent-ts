@@ -39,13 +39,22 @@ export function listSpawnJobs(opts?: ListJobsOptions): SpawnJobMeta[] {
   return jobs.filter((meta) => isStaleJob(meta));
 }
 
+export function formatJobLlmTag(meta: SpawnJobMeta): string {
+  if (!meta.api_profile && !meta.model) return '—';
+  const profile = meta.api_profile ?? '?';
+  const model = meta.model ?? '?';
+  const tag = `${profile}/${model}`;
+  return tag.length > 28 ? `${tag.slice(0, 27)}…` : tag;
+}
+
 export function formatJobListLine(meta: SpawnJobMeta, stale = false): string {
   const staleTag = stale ? ' [stale]' : '';
   const preview =
     meta.task_preview.length > 48
       ? `${meta.task_preview.slice(0, 48)}…`
       : meta.task_preview;
-  return `${meta.job_id}  ${meta.status.padEnd(10)}  ${meta.preset.padEnd(20)}  ${preview}${staleTag}`;
+  const llm = formatJobLlmTag(meta).padEnd(28);
+  return `${meta.job_id}  ${meta.status.padEnd(10)}  ${meta.preset.padEnd(20)}  ${llm}  ${preview}${staleTag}`;
 }
 
 export function formatJobList(opts?: ListJobsOptions): string {
@@ -54,7 +63,8 @@ export function formatJobList(opts?: ListJobsOptions): string {
     return opts?.staleOnly ? 'No stale jobs.' : 'No background jobs found.';
   }
 
-  const header = 'JOB_ID                      STATUS      PRESET                TASK';
+  const header =
+    'JOB_ID                      STATUS      PRESET                LLM                           TASK';
   const lines = jobs.map((meta) => formatJobListLine(meta, isStaleJob(meta)));
   return [header, ...lines].join('\n');
 }

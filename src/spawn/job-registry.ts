@@ -13,6 +13,7 @@ import {
 import { isCancelRequested, writeCancelRequested } from './job-cancel.js';
 import { jobEventsPath, jobMetaPath, jobResultPath, newJobId } from './job-paths.js';
 import { ensureSpawnOutputPaths } from './ensure-output-paths.js';
+import { buildJobLlmMeta } from '../llm-profiles.js';
 import { runSpawnJob, type SpawnJobResult } from './job-runner.js';
 import type { ResolvedSpawnPreset } from './types.js';
 import type { AgentConfig } from '../types.js';
@@ -61,6 +62,7 @@ class JobRegistry {
       cwd: opts.parentConfig.cwd,
       status: 'queued',
       outputPaths: opts.outputPaths,
+      llm: buildJobLlmMeta(opts.parentConfig, opts.preset.name),
     });
     ensureSpawnOutputPaths(opts.parentConfig.cwd, meta.output_paths);
     writeJobMeta(meta);

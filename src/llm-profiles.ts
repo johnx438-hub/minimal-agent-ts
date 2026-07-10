@@ -1,4 +1,5 @@
 import type { RunStartLlmMeta } from './events.js';
+import type { SpawnJobLlmSnapshot } from './spawn/job-store.js';
 import type {
   AgentPluginConfig,
   ApiProfileConfig,
@@ -381,6 +382,70 @@ export function llmBaseUrlHost(baseUrl: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function jobLlmSnapshotFromBinding(binding: ResolvedLlmBinding): SpawnJobLlmSnapshot {
+  const snap: SpawnJobLlmSnapshot = {
+    api_profile: binding.profileName,
+    model: binding.model,
+    cache_mode: binding.cache?.mode ?? 'off',
+  };
+  if (binding.baseUrl.trim()) {
+    snap.llm_base_url = normalizeBaseUrl(binding.baseUrl);
+  }
+  return snap;
+}
+
+function jobLlmSnapshotFromProfile(llm: LlmProfile): SpawnJobLlmSnapshot {
+  const snap: SpawnJobLlmSnapshot = {
+    api_profile: llm.profileName,
+    model: llm.model,
+    cache_mode: llm.cache?.mode ?? 'off',
+  };
+  if (llm.baseUrl.trim()) {
+    snap.llm_base_url = normalizeBaseUrl(llm.baseUrl);
+  }
+  return snap;
+}
+
+/**
+ * Resolve preset/parent LLM binding for job meta.json (G2-b).
+ * Matches spawn runner preset binding when preset exists in agent.json.
+ */
+export function buildJobLlmMeta(
+  parentConfig: AgentConfig,
+  presetName: string,
+  opts: ResolveLlmBindingOptions = {},
+): SpawnJobLlmSnapshot | undefined {
+  const pluginConfig = parentConfig.llmPluginConfig;
+  const parentLlm = parentConfig.llm;
+
+  if (pluginConfig?.spawn_presets?.some((p) => p.name === presetName)) {
+    const binding = resolvePresetLlmBinding(
+      pluginConfig,
+      presetName,
+      parentLlm ?? null,
+      opts,
+    );
+    return jobLlmSnapshotFromBinding(binding);
+  }
+
+  if (parentLlm) {
+    return jobLlmSnapshotFromProfile(parentLlm);
+  }
+
+  const model = parentConfig.model?.trim();
+  if (!model) return undefined;
+
+  const snap: SpawnJobLlmSnapshot = {
+    api_profile: '__env__',
+    model,
+    cache_mode: 'off',
+  };
+  if (parentConfig.baseUrl?.trim()) {
+    snap.llm_base_url = normalizeBaseUrl(parentConfig.baseUrl);
+  }
+  return snap;
 }
 
 /** Build run_start.llm from the same LlmProfile used by buildRunConfig. */
