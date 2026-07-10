@@ -31,6 +31,7 @@ import {
   formatLiveToolPreview,
 } from './action-preview.js';
 import { buildSystemPrompt } from './agent-prompt.js';
+import { buildLlmDoneStepEvent, buildLlmTurnRequest } from './llm-cache.js';
 import { isAbortError, type AgentStepEvent } from './events.js';
 import { materializePriorTurnTools } from './pointerize.js';
 import { parseAgentSummary, extractCleanAnswer } from './summary.js';
@@ -307,23 +308,20 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         onStep,
       });
 
-      const apiMessages = assembleApiMessages(messages);
+      const llmTurn = buildLlmTurnRequest(config, assembleApiMessages(messages), {
+        stream,
+        signal: abortSignal,
+      });
       const { message, finishReason, usage } = await invokeLlmTurn({
         turn,
-        apiMessages,
+        apiMessages: llmTurn.apiMessages,
         tools: [],
         stream,
         onStep,
-        chatOpts: {
-          apiKey: config.apiKey,
-          baseUrl: config.baseUrl,
-          model: config.model,
-          stream,
-          signal: abortSignal,
-        },
+        chatOpts: llmTurn.chatOpts,
       });
 
-      onStep?.({ type: 'llm_done', turn, finishReason, usage });
+      onStep?.(buildLlmDoneStepEvent(turn, finishReason, usage, config));
 
       if (message.tool_calls && message.tool_calls.length > 0) {
         const violationMsg: ChatMessage = {
@@ -369,25 +367,22 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
       onStep,
     });
 
-    const apiMessages = assembleApiMessages(messages);
     const toolDefs = getToolDefinitions(toolConfig);
+    const llmTurn = buildLlmTurnRequest(config, assembleApiMessages(messages), {
+      stream,
+      signal: abortSignal,
+    });
 
     const { message, finishReason, usage } = await invokeLlmTurn({
       turn,
-      apiMessages,
+      apiMessages: llmTurn.apiMessages,
       tools: toolDefs,
       stream,
       onStep,
-      chatOpts: {
-        apiKey: config.apiKey,
-        baseUrl: config.baseUrl,
-        model: config.model,
-        stream,
-        signal: abortSignal,
-      },
+      chatOpts: llmTurn.chatOpts,
     });
 
-    onStep?.({ type: 'llm_done', turn, finishReason, usage });
+    onStep?.(buildLlmDoneStepEvent(turn, finishReason, usage, config));
 
     if (message.tool_calls && message.tool_calls.length > 0) {
       throwIfAborted(abortSignal);

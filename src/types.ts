@@ -4,7 +4,29 @@ import type { WorkspaceMemoryInjection } from './workspace-memory.js';
 import type { AgentStepEvent } from './events.js';
 import type { PermissionGate } from './permission-gate.js';
 import type { LoopGuardConfig } from './loop-guard.js';
-import type { SpawnPolicy, WebFetchPolicy } from './plugins/types.js';
+import type {
+  AgentPluginConfig,
+  CachePolicyConfig,
+  LlmWire,
+  SpawnPolicy,
+  WebFetchPolicy,
+} from './plugins/types.js';
+
+/** Resolved LLM connection for one agent run (轨 G). */
+export interface LlmProfile {
+  profileName: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  wire: LlmWire;
+  cache?: CachePolicyConfig;
+  extraBody?: Record<string, unknown>;
+  displayName?: string;
+  fallbackProfiles?: string[];
+  reasoningMap?: Record<string, Record<string, unknown>>;
+  available: boolean;
+  unavailableReason?: string;
+}
 
 /** OpenAI-compatible chat message (subset we need for the loop). */
 export type Role = 'system' | 'user' | 'assistant' | 'tool';
@@ -105,6 +127,10 @@ export interface AgentConfig {
   spawnParentSessionId?: string;
   /** Pre-loaded Agent.md + memory so run_start metadata matches the system prompt. */
   workspacePrompt?: WorkspacePromptBundle;
+  /** Resolved api profile binding (轨 G); mirrors apiKey/baseUrl/model when set. */
+  llm?: LlmProfile;
+  /** agent.json snapshot for spawn/workflow per-preset LLM resolution. */
+  llmPluginConfig?: AgentPluginConfig;
 }
 
 export type SpawnLifecycleEvent =

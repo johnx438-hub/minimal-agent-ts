@@ -60,12 +60,44 @@ export interface WebFetchPolicy {
   cloak_browser_python?: string;
 }
 
+export type LlmWire = 'openai_chat';
+
+export type CacheMode =
+  | 'off'
+  | 'implicit'
+  | 'openrouter_sticky'
+  | 'anthropic_breakpoints';
+
+export interface CachePolicyConfig {
+  mode?: CacheMode;
+  session_id_from?: 'session_id' | 'fixed';
+  session_id?: string;
+  breakpoints?: Array<'system' | 'tools' | 'first_user'>;
+  telemetry?: boolean;
+}
+
+export interface ApiProfileConfig {
+  base_url: string;
+  api_key_env: string;
+  default_model: string;
+  models?: string[];
+  wire?: LlmWire;
+  cache?: CachePolicyConfig;
+  extra_body?: Record<string, unknown>;
+  fallback_profiles?: string[];
+  display_name?: string;
+  reasoning_map?: Record<string, Record<string, unknown>>;
+}
+
 export interface SpawnPresetConfig {
   name: string;
   description?: string;
   prompt_file: string;
   tools: string[];
   max_turns?: number;
+  /** G1-c: optional LLM profile + model override for this preset. */
+  api_profile?: string;
+  model?: string;
 }
 
 export interface SpawnPolicy {
@@ -90,6 +122,9 @@ export interface TranscriptPolicy {
 
 export interface AgentPluginConfig {
   builtin_tools?: string[];
+  /** Default main-agent api profile; `__env__` or first profile when omitted. */
+  default_api_profile?: string;
+  api_profiles?: Record<string, ApiProfileConfig>;
   /** User-defined spawn presets (MD prompts under e.g. agents/). */
   spawn_presets?: SpawnPresetConfig[];
   spawn_policy?: SpawnPolicy;

@@ -78,6 +78,11 @@ import {
   loadWorkspacePromptBundle,
   workspacePromptRunStartMeta,
 } from './agent-prompt.js';
+import {
+  applyLlmBindingToAgentConfig,
+  requireAvailableLlmBinding,
+  resolveLlmBinding,
+} from './llm-profiles.js';
 
 function env(name: string, fallback?: string): string | undefined {
   const v = process.env[name]?.trim();
@@ -95,11 +100,6 @@ export function buildAgentConfig(opts: BuildConfigOptions): {
   config: AgentConfig;
   pluginConfig: AgentPluginConfig;
 } {
-  const apiKey = env('OPENAI_API_KEY') ?? env('OPENROUTER_API_KEY');
-  if (!apiKey) {
-    throw new Error('Missing OPENAI_API_KEY or OPENROUTER_API_KEY');
-  }
-
   const pluginConfig = loadAgentPluginConfig(opts.cwd);
   if (opts.loadSkills && opts.loadSkills.length > 0) {
     pluginConfig.loaded_skills = [
@@ -107,15 +107,17 @@ export function buildAgentConfig(opts: BuildConfigOptions): {
     ];
   }
 
+  const llmBinding = requireAvailableLlmBinding(resolveLlmBinding(pluginConfig));
+
   const keepInlineTurns = pluginConfig.pointerize_policy?.keep_inline_turns ?? 2;
   const recallAutoFullMaxChars = pluginConfig.recall_policy?.auto_full_max_chars ?? 24_000;
   const previewPolicy = previewPolicyFromPointerize(pluginConfig.pointerize_policy);
   const loopGuardMode = parseLoopGuardMode(env('LOOP_GUARD', 'inject'));
 
   const config: AgentConfig = {
-    apiKey,
-    baseUrl: env('OPENAI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta/openai')!,
-    model: env('MODEL', 'gemini-2.0-flash')!,
+    apiKey: '',
+    baseUrl: '',
+    model: '',
     maxTurns: Number(env('MAX_TURNS', '0')),
     cwd: opts.cwd,
     allowShell: opts.allowShell ?? false,
@@ -130,7 +132,10 @@ export function buildAgentConfig(opts: BuildConfigOptions): {
     recallAutoFullMaxChars,
     previewPolicy,
     spawnPolicy: pluginConfig.spawn_policy,
+    llmPluginConfig: pluginConfig,
   };
+
+  applyLlmBindingToAgentConfig(config, llmBinding);
 
   return { config, pluginConfig };
 }
@@ -822,11 +827,13 @@ export function printStepEvent(event: AgentStepEvent): void {
     case 'token':
       process.stdout.write(event.delta);
       break;
-    case 'llm_done':
+    case 'llm_done': {
+      const cachePart = event.cache ? ` cache=${JSON.stringify(event.cache)}` : '';
       console.log(
-        `\n  finish=${event.finishReason ?? 'null'} tokens=${JSON.stringify(event.usage ?? {})}`,
+        `\n  finish=${event.finishReason ?? 'null'} tokens=${JSON.stringify(event.usage ?? {})}${cachePart}`,
       );
       break;
+    }
     case 'llm_retry':
       console.log(`  ${formatLlmRetrySummary(event)}`);
       break;

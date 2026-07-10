@@ -3,6 +3,19 @@ import type { ChatMessage, ToolCall, ToolDefinition } from './types.js';
 
 export { LlmHttpError } from './llm-retry.js';
 
+/** OpenAI base usage + vendor extensions (DeepSeek / GLM / xAI / OpenRouter). */
+export type LlmUsage = Record<string, unknown> & {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  prompt_cache_hit_tokens?: number;
+  prompt_cache_miss_tokens?: number;
+  prompt_tokens_details?: {
+    cached_tokens?: number;
+    cache_write_tokens?: number;
+  };
+};
+
 interface ChatCompletionResponse {
   choices: Array<{
     message: {
@@ -12,17 +25,13 @@ interface ChatCompletionResponse {
     };
     finish_reason: string | null;
   }>;
-  usage?: {
-    prompt_tokens: number;
-    completion_tokens: number;
-    total_tokens: number;
-  };
+  usage?: LlmUsage;
 }
 
 export interface LlmResult {
   message: ChatMessage;
   finishReason: string | null;
-  usage?: ChatCompletionResponse['usage'];
+  usage?: LlmUsage;
 }
 
 export interface ChatOptions {
@@ -32,6 +41,8 @@ export interface ChatOptions {
   stream?: boolean;
   onToken?: (delta: string) => void;
   signal?: AbortSignal;
+  /** Shallow-merged into chat/completions body after defaults (profile + cache adapter). */
+  extraBody?: Record<string, unknown>;
 }
 
 export async function chat(
@@ -51,7 +62,7 @@ async function chatBlocking(
   opts: ChatOptions,
 ): Promise<LlmResult> {
   const url = `${opts.baseUrl.replace(/\/$/, '')}/chat/completions`;
-  const body = buildChatBody(opts.model, messages, tools, false);
+  const body = buildChatBody(opts.model, messages, tools, false, opts.extraBody);
   const bodyText = await postChat(url, opts.apiKey, body, opts.signal);
 
   const data = JSON.parse(bodyText) as ChatCompletionResponse;
@@ -70,7 +81,7 @@ async function chatStream(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${opts.apiKey}`,
     },
-    body: JSON.stringify(buildChatBody(opts.model, messages, tools, true)),
+    body: JSON.stringify(buildChatBody(opts.model, messages, tools, true, opts.extraBody)),
     signal: opts.signal,
   });
 
@@ -184,11 +195,12 @@ async function chatStream(
   };
 }
 
-function buildChatBody(
+export function buildChatBody(
   model: string,
   messages: ChatMessage[],
   tools: ToolDefinition[],
   stream: boolean,
+  extraBody?: Record<string, unknown>,
 ): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model,
@@ -200,6 +212,9 @@ function buildChatBody(
     body.tool_choice = 'auto';
   } else {
     body.tool_choice = 'none';
+  }
+  if (extraBody) {
+    Object.assign(body, extraBody);
   }
   return body;
 }

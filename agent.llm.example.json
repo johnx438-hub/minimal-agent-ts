@@ -1,0 +1,109 @@
+{
+  "_comment": "Copy api_profiles / default_api_profile / spawn_presets overrides into agent.json. Keys only from env (never put secrets here). See SPEC_LLM_ROUTER.md §6.3.",
+  "default_api_profile": "deepseek-main",
+  "api_profiles": {
+    "deepseek-main": {
+      "display_name": "DeepSeek V4",
+      "base_url": "https://api.deepseek.com",
+      "api_key_env": "DEEPSEEK_API_KEY",
+      "default_model": "deepseek-v4-flash",
+      "models": ["deepseek-v4-flash", "deepseek-v4-pro"],
+      "cache": { "mode": "implicit", "telemetry": true },
+      "reasoning_map": {
+        "low": {
+          "thinking": { "type": "enabled" },
+          "reasoning_effort": "low"
+        },
+        "medium": {
+          "thinking": { "type": "enabled" },
+          "reasoning_effort": "medium"
+        },
+        "high": {
+          "thinking": { "type": "enabled" },
+          "reasoning_effort": "high"
+        }
+      }
+    },
+    "glm-main": {
+      "display_name": "智谱 GLM",
+      "base_url": "https://open.bigmodel.cn/api/paas/v4",
+      "api_key_env": "ZAI_API_KEY",
+      "default_model": "glm-5.2",
+      "models": ["glm-5.2", "glm-5-turbo", "glm-4.7"],
+      "cache": { "mode": "implicit" },
+      "extra_body": { "thinking": { "type": "enabled" } },
+      "reasoning_map": {
+        "low": {
+          "thinking": { "type": "enabled" },
+          "reasoning_effort": "low"
+        },
+        "high": {
+          "thinking": { "type": "enabled" },
+          "reasoning_effort": "max"
+        }
+      }
+    },
+    "xai-test": {
+      "display_name": "xAI Grok（个人测试）",
+      "base_url": "https://api.x.ai/v1",
+      "api_key_env": "XAI_API_KEY",
+      "default_model": "grok-4.3",
+      "models": ["grok-4.3"],
+      "cache": { "mode": "implicit" },
+      "extra_body": { "reasoning_effort": "low" }
+    },
+    "openrouter-test": {
+      "display_name": "OpenRouter（个人测试）",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "default_model": "x-ai/grok-4.5",
+      "models": [
+        "x-ai/grok-4.5",
+        "deepseek/deepseek-v4-flash",
+        "z-ai/glm-5.2"
+      ],
+      "cache": {
+        "mode": "openrouter_sticky",
+        "session_id_from": "session_id"
+      },
+      "extra_body": {
+        "provider": {
+          "order": ["DeepSeek", "xAI"],
+          "allow_fallbacks": true
+        }
+      }
+    },
+    "review-cheap": {
+      "display_name": "GLM Flash 审查",
+      "base_url": "https://open.bigmodel.cn/api/paas/v4",
+      "api_key_env": "ZAI_API_KEY",
+      "default_model": "glm-4.7-flash",
+      "models": ["glm-4.7-flash"]
+    }
+  },
+  "spawn_presets": [
+    {
+      "name": "code-review-bug",
+      "description": "Fast diff-first bug pass — uses cheap GLM profile",
+      "api_profile": "review-cheap",
+      "model": "glm-4.7-flash",
+      "prompt_file": "agents/code-review-bug.md",
+      "tools": ["read_file", "grep_search", "write_file"],
+      "max_turns": 12
+    },
+    {
+      "name": "code-review-security",
+      "description": "Security review — inherits main agent profile",
+      "prompt_file": "agents/code-review-security.md",
+      "tools": ["read_file", "grep_search", "write_file"],
+      "max_turns": 12
+    },
+    {
+      "name": "code-review-quality",
+      "description": "Quality review — inherits main agent profile",
+      "prompt_file": "agents/code-review-quality.md",
+      "tools": ["read_file", "grep_search", "write_file"],
+      "max_turns": 12
+    }
+  ]
+}

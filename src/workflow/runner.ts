@@ -1,6 +1,11 @@
 import { saveSessionThrottled } from '../session.js';
 import { runAgent } from '../agent.js';
 import type { AgentStepEvent } from '../events.js';
+import {
+  applyLlmBindingToAgentConfig,
+  requireAvailableLlmBinding,
+  resolveWorkflowRoleLlmBinding,
+} from '../llm-profiles.js';
 
 import type { TaskBlock } from '../task-tracker.js';
 import type { AgentConfig, SessionFile, TaskSummaryDoc } from '../types.js';
@@ -126,11 +131,19 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
 
     const roleConfig: AgentConfig = {
       ...config,
-      model: role.model ?? config.model,
       maxTurns: role.maxTurns ?? config.maxTurns,
       toolAllowlist: role.tools.length > 0 ? role.tools : undefined,
       sessionId: session.session_id,
     };
+
+    if (config.llmPluginConfig) {
+      const binding = requireAvailableLlmBinding(
+        resolveWorkflowRoleLlmBinding(config.llmPluginConfig, role, config.llm),
+      );
+      applyLlmBindingToAgentConfig(roleConfig, binding);
+    } else {
+      roleConfig.model = role.model ?? config.model;
+    }
 
     const isolated = !shareSession;
     const priorMessages = session.current_messages;

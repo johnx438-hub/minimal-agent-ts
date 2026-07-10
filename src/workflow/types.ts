@@ -4,6 +4,8 @@ export interface WorkflowRoleConfig {
   prompt?: string;
   tools?: string[];
   model?: string;
+  /** Optional api_profiles key; inherits main agent profile when omitted. */
+  api_profile?: string;
   max_turns?: number;
 }
 
@@ -33,6 +35,7 @@ export interface ResolvedWorkflowRole {
   systemPrompt: string;
   tools: string[];
   model?: string;
+  api_profile?: string;
   maxTurns?: number;
 }
 

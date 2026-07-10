@@ -1,3 +1,5 @@
+import type { LlmCacheStats } from './llm-cache.js';
+
 export type ToolPlanReason =
   | 'parallel_safe'
   | 'serial_only_tool'
@@ -18,7 +20,13 @@ export interface ToolPlanEntry {
 export type AgentStepEvent =
   | { type: 'turn_start'; turn: number }
   | { type: 'token'; turn: number; delta: string }
-  | { type: 'llm_done'; turn: number; finishReason: string | null; usage?: object }
+  | {
+      type: 'llm_done';
+      turn: number;
+      finishReason: string | null;
+      usage?: object;
+      cache?: LlmCacheStats;
+    }
   | {
       type: 'llm_retry';
       turn: number;

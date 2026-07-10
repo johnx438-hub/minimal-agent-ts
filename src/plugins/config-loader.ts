@@ -56,6 +56,8 @@ function mergeConfig(base: AgentPluginConfig, patch: Partial<AgentPluginConfig>)
     spawn_presets: patch.spawn_presets ?? base.spawn_presets,
     spawn_policy: { ...base.spawn_policy, ...patch.spawn_policy },
     transcript_policy: { ...base.transcript_policy, ...patch.transcript_policy },
+    default_api_profile: patch.default_api_profile ?? base.default_api_profile,
+    api_profiles: patch.api_profiles ?? base.api_profiles,
   };
 }
 
@@ -72,10 +74,10 @@ function readJsonFile(path: string): Partial<AgentPluginConfig> | null {
 export function loadAgentPluginConfig(cwd: string): AgentPluginConfig {
   let config = defaultAgentPluginConfig();
 
-  const paths = [
-    resolve(cwd, 'agent.json'),
-    resolve(homedir(), '.minimal-agent/agent.json'),
-  ];
+  const paths = [resolve(cwd, 'agent.json')];
+  if (process.env.NODE_ENV !== 'test') {
+    paths.push(resolve(homedir(), '.minimal-agent/agent.json'));
+  }
 
   for (const path of paths) {
     const patch = readJsonFile(path);

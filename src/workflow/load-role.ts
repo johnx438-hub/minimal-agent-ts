@@ -45,6 +45,7 @@ export function resolveWorkflowRole(
   let body = config.prompt?.trim() ?? '';
   let tools = config.tools;
   let model = config.model;
+  let apiProfile = config.api_profile;
   let maxTurns = config.max_turns;
 
   if (config.prompt_file) {
@@ -57,6 +58,7 @@ export function resolveWorkflowRole(
     if (mdBody) body = mdBody;
     tools = tools ?? parseToolsList(meta.tools);
     model = model ?? meta.model;
+    apiProfile = apiProfile ?? meta.api_profile;
     if (maxTurns === undefined && meta.max_turns) {
       maxTurns = Number(meta.max_turns);
     }
@@ -76,6 +78,7 @@ export function resolveWorkflowRole(
     systemPrompt: `${body}${toolLine}`,
     tools: tools ?? [],
     model,
+    api_profile: apiProfile,
     maxTurns,
   };
 }
