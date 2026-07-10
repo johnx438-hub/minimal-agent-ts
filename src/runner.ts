@@ -84,7 +84,6 @@ import {
   listModelsForProfile,
   listProfileNames,
   requireAvailableLlmBinding,
-  resolveDefaultProfileName,
   resolveLlmBinding,
   type ResolvedLlmBinding,
 } from './llm-profiles.js';
@@ -366,7 +365,8 @@ export class AgentRuntime {
   }
 
   hasSessionLlmOverride(): boolean {
-    return Boolean(this.sessionLlmOverride.profileName || this.sessionLlmOverride.model);
+    const { profileName, model } = this.sessionLlmOverride;
+    return (profileName?.trim() ?? '') !== '' || (model?.trim() ?? '') !== '';
   }
 
   getSessionLlmOverride(): Readonly<SessionLlmOverride> {
@@ -379,11 +379,13 @@ export class AgentRuntime {
 
   private resolveRunLlmBinding(): ResolvedLlmBinding {
     const opts: { profileName?: string; model?: string } = {};
-    if (this.sessionLlmOverride.profileName) {
-      opts.profileName = this.sessionLlmOverride.profileName;
+    const profileName = this.sessionLlmOverride.profileName?.trim();
+    const model = this.sessionLlmOverride.model?.trim();
+    if (profileName) {
+      opts.profileName = profileName;
     }
-    if (this.sessionLlmOverride.model) {
-      opts.model = this.sessionLlmOverride.model;
+    if (model) {
+      opts.model = model;
     }
     return resolveLlmBinding(this.pluginConfig, opts);
   }
@@ -410,10 +412,7 @@ export class AgentRuntime {
   }
 
   listSessionProfileChoices(): SessionProfileChoice[] {
-    const effectiveProfile =
-      this.sessionLlmOverride.profileName ??
-      this.config.llm?.profileName ??
-      resolveDefaultProfileName(this.pluginConfig);
+    const effectiveProfile = this.getEffectiveProfileName();
     const names = listProfileNames(this.pluginConfig);
     return names.map((name) => {
       const binding = resolveLlmBinding(this.pluginConfig, { profileName: name });
@@ -450,15 +449,21 @@ export class AgentRuntime {
           message: `error: ${binding.unavailableReason ?? `profile "${trimmed}" unavailable`}`,
         };
       }
-      this.sessionLlmOverride = { profileName: trimmed };
+      const profileChanged = this.getEffectiveProfileName() !== trimmed;
+      const preservedModel = profileChanged ? undefined : this.sessionLlmOverride.model?.trim();
+      this.sessionLlmOverride = {
+        profileName: trimmed,
+        ...(preservedModel ? { model: preservedModel } : {}),
+      };
       const models = listModelsForProfile(this.pluginConfig, trimmed);
       const hint =
         models.length > 1
           ? ` Models: ${models.join(', ')} (use /model)`
           : '';
+      const displayModel = preservedModel ?? binding.model;
       return {
         ok: true,
-        message: `profile → ${trimmed}/${binding.model} (next task)${hint}`,
+        message: `profile → ${trimmed}/${displayModel} (next task)${hint}`,
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -503,7 +508,7 @@ export class AgentRuntime {
 
   resetSessionLlmModel(): void {
     delete this.sessionLlmOverride.model;
-    if (!this.sessionLlmOverride.profileName) {
+    if (!(this.sessionLlmOverride.profileName?.trim())) {
       this.clearSessionLlmOverride();
     }
   }

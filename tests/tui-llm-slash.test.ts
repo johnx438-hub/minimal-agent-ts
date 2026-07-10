@@ -64,6 +64,39 @@ describe('TUI llm slash (G2-c)', () => {
     });
   });
 
+  it('re-selecting the same profile keeps model override', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ma-tui-llm-slash-same-'));
+    writeFileSync(
+      join(dir, 'agent.json'),
+      JSON.stringify({
+        default_api_profile: 'deepseek-main',
+        api_profiles: {
+          'deepseek-main': {
+            base_url: 'https://api.deepseek.com',
+            api_key_env: 'DEEPSEEK_API_KEY',
+            default_model: 'deepseek-v4-flash',
+            models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+          },
+        },
+      }),
+    );
+
+    process.env.DEEPSEEK_API_KEY = 'ds-key';
+    delete process.env.OPENAI_API_KEY;
+
+    const runtime = new AgentRuntime({ cwd: dir, deferSession: true });
+    runtime.newSession();
+
+    runtime.setSessionLlmModel('deepseek-v4-pro');
+    assert.match(runtime.formatSessionLlmShortLine(), /deepseek-v4-pro\*$/);
+
+    const setSameProfile = runtime.setSessionLlmProfile('deepseek-main');
+    assert.equal(setSameProfile.ok, true);
+    assert.match(setSameProfile.message, /deepseek-main\/deepseek-v4-pro/);
+    assert.equal(runtime.getSessionLlmOverride().model, 'deepseek-v4-pro');
+    assert.match(runtime.formatSessionLlmShortLine(), /deepseek-v4-pro\*$/);
+  });
+
   it('session override applies in buildRunConfig and clears model on profile switch', () => {
     const dir = mkdtempSync(join(tmpdir(), 'ma-tui-llm-slash-'));
     writeFileSync(
@@ -114,6 +147,85 @@ describe('TUI llm slash (G2-c)', () => {
     assert.equal(runtime.hasSessionLlmOverride(), false);
     assert.match(runtime.formatSessionLlmShortLine(), /deepseek-v4-flash$/);
     assert.equal(runtime.formatSessionLlmShortLine().includes('*'), false);
+  });
+
+  it('listSessionProfileChoices marks effective profile active, not stale config.llm', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ma-tui-llm-slash-active-'));
+    writeFileSync(
+      join(dir, 'agent.json'),
+      JSON.stringify({
+        default_api_profile: 'deepseek-main',
+        api_profiles: {
+          'deepseek-main': {
+            base_url: 'https://api.deepseek.com',
+            api_key_env: 'DEEPSEEK_API_KEY',
+            default_model: 'deepseek-v4-flash',
+            models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+          },
+          'glm-main': {
+            base_url: 'https://open.bigmodel.cn/api/paas/v4',
+            api_key_env: 'ZAI_API_KEY',
+            default_model: 'glm-5.2',
+            models: ['glm-5.2'],
+          },
+        },
+      }),
+    );
+
+    process.env.DEEPSEEK_API_KEY = 'ds-key';
+    process.env.ZAI_API_KEY = 'glm-key';
+    delete process.env.OPENAI_API_KEY;
+
+    const runtime = new AgentRuntime({ cwd: dir, deferSession: true });
+    runtime.newSession();
+    runtime.setSessionLlmModel('deepseek-v4-pro');
+    runtime.config.llm = {
+      profileName: 'glm-main',
+      baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+      apiKey: 'glm-key',
+      model: 'glm-5.2',
+      wire: 'openai',
+      available: true,
+    };
+
+    const choices = runtime.listSessionProfileChoices();
+    assert.equal(
+      choices.find((c) => c.name === 'deepseek-main')?.active,
+      true,
+    );
+    assert.equal(choices.find((c) => c.name === 'glm-main')?.active, false);
+  });
+
+  it('hasSessionLlmOverride ignores whitespace-only override fields', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ma-tui-llm-slash-empty-'));
+    writeFileSync(
+      join(dir, 'agent.json'),
+      JSON.stringify({
+        default_api_profile: 'deepseek-main',
+        api_profiles: {
+          'deepseek-main': {
+            base_url: 'https://api.deepseek.com',
+            api_key_env: 'DEEPSEEK_API_KEY',
+            default_model: 'deepseek-v4-flash',
+            models: ['deepseek-v4-flash'],
+          },
+        },
+      }),
+    );
+
+    process.env.DEEPSEEK_API_KEY = 'ds-key';
+    delete process.env.OPENAI_API_KEY;
+
+    const runtime = new AgentRuntime({ cwd: dir, deferSession: true });
+    runtime.newSession();
+
+    const rejected = runtime.setSessionLlmProfile('   ');
+    assert.equal(rejected.ok, false);
+    assert.equal(runtime.hasSessionLlmOverride(), false);
+
+    runtime.setSessionLlmModel('deepseek-v4-flash');
+    runtime.resetSessionLlmModel();
+    assert.equal(runtime.hasSessionLlmOverride(), false);
   });
 
   it('formatRunStartLlmSummary marks session_override', () => {
