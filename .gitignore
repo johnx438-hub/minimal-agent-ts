@@ -9,6 +9,7 @@ out/
 .env
 .env.*
 !.env.example
+agent.llm.prepare.json
 
 # Session runtime: conversations, cold storage, vector index
 .sessions/

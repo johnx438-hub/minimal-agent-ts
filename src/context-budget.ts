@@ -16,23 +16,30 @@ export interface BudgetConfig {
   mid_max_summaries: number;   // Max number of task summaries in mid layer
 }
 
+/** Default budget when model unknown and MAX_CONTEXT_TOKENS unset. */
+export const DEFAULT_CONTEXT_TOKENS = 200_000;
+
 /** Default budget configuration. */
 export const DEFAULT_BUDGET: BudgetConfig = {
-  total: 32_000,           // Safe default fallback
+  total: DEFAULT_CONTEXT_TOKENS,
   system_pct: 0.05,        // 5%
   current_pct: 0.1,        // 10%
   recent_pct: 0.4,         // 40%
   mid_pct: 0.35,           // 35%
   early_pct: 0.1,          // 10%
-  recent_max_tokens: 32_000,
+  recent_max_tokens: 80_000,
   mid_max_summaries: 20,
 };
 
-/** Model context limits mapping. */
+/** Model context limits mapping (no API probe; see api-docs.deepseek.com). */
 const MODEL_CONTEXT_LIMITS: Record<string, number> = {
-  // DeepSeek
-  'deepseek/deepseek-chat': 128_000,
-  'deepseek/deepseek-reasoner': 256_000,
+  // DeepSeek V4 — official CONTEXT LENGTH 1M (flash + pro)
+  'deepseek-v4-flash': 1_000_000,
+  'deepseek-v4-pro': 1_000_000,
+  'deepseek/deepseek-v4-flash': 1_000_000,
+  'deepseek/deepseek-v4-pro': 1_000_000,
+  'deepseek/deepseek-chat': 1_000_000,
+  'deepseek/deepseek-reasoner': 1_000_000,
   
   // Qwen series
   'qwen3.6-27b': 262_000,
@@ -72,9 +79,11 @@ export function getMaxContextTokens(model: string): number {
  */
 export function createBudgetConfig(model: string): BudgetConfig {
   const total = getMaxContextTokens(model);
+  const recentCap = Math.floor(total * DEFAULT_BUDGET.recent_pct);
   return {
     ...DEFAULT_BUDGET,
     total,
+    recent_max_tokens: Math.max(DEFAULT_BUDGET.recent_max_tokens, recentCap),
   };
 }
 
