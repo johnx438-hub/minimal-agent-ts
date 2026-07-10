@@ -53,6 +53,10 @@ describe('parseCacheUsage', () => {
     assert.equal(parseCacheUsage({ prompt_tokens: 100 }), undefined);
     assert.equal(parseCacheUsage(null), undefined);
   });
+
+  it('omits prompt_tokens-only usage without cache fields', () => {
+    assert.equal(parseCacheUsage({ prompt_tokens: 500, completion_tokens: 12 }), undefined);
+  });
 });
 
 describe('applyCacheAdapter', () => {

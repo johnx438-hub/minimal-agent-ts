@@ -338,18 +338,18 @@ export interface AgentPluginConfig {
       "models": ["glm-4.7-flash"]
     }
   },
-  "spawn_presets": [
+  "_spawn_preset_llm_overrides": [
     {
       "name": "code-review-bug",
       "api_profile": "review-cheap",
       "model": "glm-4.7-flash",
-      "prompt_file": "agents/code-review-bug.md",
-      "tools": ["read_file", "grep_search", "write_file"],
-      "max_turns": 12
+      "_note": "Merge api_profile + model into existing spawn_presets[] entry"
     }
   ]
 }
 ```
+
+`agent.llm.example.json` 仅含 LLM 配置；**不要**整段覆盖 `agent.json` 的 `spawn_presets`，只把 `_spawn_preset_llm_overrides` 中的字段合并进已有 preset。
 
 ### 6.4 解析优先级（单字段 `model`）
 

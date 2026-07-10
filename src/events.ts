@@ -24,7 +24,7 @@ export type AgentStepEvent =
       type: 'llm_done';
       turn: number;
       finishReason: string | null;
-      usage?: object;
+      usage?: Record<string, unknown>;
       cache?: LlmCacheStats;
     }
   | {

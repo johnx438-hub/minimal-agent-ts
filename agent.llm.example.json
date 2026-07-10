@@ -1,5 +1,5 @@
 {
-  "_comment": "Copy api_profiles / default_api_profile / spawn_presets overrides into agent.json. Keys only from env (never put secrets here). See SPEC_LLM_ROUTER.md §6.3.",
+  "_comment": "LLM-only template: merge default_api_profile + api_profiles into agent.json. API keys via env only. For spawn presets, merge _spawn_preset_llm_overrides fields into your existing spawn_presets[] entries (do not replace whole presets). See SPEC_LLM_ROUTER.md §6.3.",
   "default_api_profile": "deepseek-main",
   "api_profiles": {
     "deepseek-main": {
@@ -81,29 +81,20 @@
       "models": ["glm-4.7-flash"]
     }
   },
-  "spawn_presets": [
+  "_spawn_preset_llm_overrides": [
     {
       "name": "code-review-bug",
-      "description": "Fast diff-first bug pass — uses cheap GLM profile",
       "api_profile": "review-cheap",
       "model": "glm-4.7-flash",
-      "prompt_file": "agents/code-review-bug.md",
-      "tools": ["read_file", "grep_search", "write_file"],
-      "max_turns": 12
+      "_note": "Add api_profile + model to the existing code-review-bug preset in agent.json."
     },
     {
       "name": "code-review-security",
-      "description": "Security review — inherits main agent profile",
-      "prompt_file": "agents/code-review-security.md",
-      "tools": ["read_file", "grep_search", "write_file"],
-      "max_turns": 12
+      "_note": "Omit api_profile to inherit main agent (deepseek-main)."
     },
     {
       "name": "code-review-quality",
-      "description": "Quality review — inherits main agent profile",
-      "prompt_file": "agents/code-review-quality.md",
-      "tools": ["read_file", "grep_search", "write_file"],
-      "max_turns": 12
+      "_note": "Omit api_profile to inherit main agent (deepseek-main)."
     }
   ]
 }

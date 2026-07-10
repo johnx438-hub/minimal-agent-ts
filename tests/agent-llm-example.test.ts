@@ -37,13 +37,41 @@ describe('agent.llm.example.json', () => {
     assert.equal(binding.available, true);
   });
 
-  it('binds code-review-bug preset to review-cheap profile', () => {
+  it('documents spawn preset LLM overrides separately from full presets', () => {
+    const raw = JSON.parse(readFileSync(EXAMPLE_PATH, 'utf8')) as Record<string, unknown>;
+    const overrides = raw._spawn_preset_llm_overrides as Array<Record<string, unknown>>;
+    assert.ok(Array.isArray(overrides));
+    assert.equal(overrides[0]?.name, 'code-review-bug');
+    assert.equal(overrides[0]?.api_profile, 'review-cheap');
+    assert.equal(raw.spawn_presets, undefined);
+  });
+
+  it('binds code-review-bug when overrides are merged into spawn_presets', () => {
     const example = loadExample();
-    const main = resolveLlmBinding(example, {
+    const override = (
+      JSON.parse(readFileSync(EXAMPLE_PATH, 'utf8')) as {
+        _spawn_preset_llm_overrides: Array<{ name: string; api_profile?: string; model?: string }>;
+      }
+    )._spawn_preset_llm_overrides.find((o) => o.name === 'code-review-bug')!;
+
+    const pluginConfig: AgentPluginConfig = {
+      ...example,
+      spawn_presets: [
+        {
+          name: 'code-review-bug',
+          prompt_file: 'agents/code-review-bug.md',
+          tools: ['read_file', 'grep_search', 'write_file'],
+          api_profile: override.api_profile,
+          model: override.model,
+        },
+      ],
+    };
+
+    const main = resolveLlmBinding(pluginConfig, {
       env: { DEEPSEEK_API_KEY: 'ds-test' },
     });
 
-    const review = resolvePresetLlmBinding(example, 'code-review-bug', main, {
+    const review = resolvePresetLlmBinding(pluginConfig, 'code-review-bug', main, {
       env: { ZAI_API_KEY: 'glm-test' },
     });
 

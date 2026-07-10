@@ -109,10 +109,6 @@ export function parseCacheUsage(
     stats.cache_miss_tokens !== undefined ||
     stats.cache_write_tokens !== undefined;
 
-  if (!hasCacheSignal && stats.prompt_tokens === undefined) {
-    return undefined;
-  }
-
   if (!hasCacheSignal) {
     return undefined;
   }
@@ -174,14 +170,14 @@ export function buildLlmDoneStepEvent(
   type: 'llm_done';
   turn: number;
   finishReason: string | null;
-  usage?: object;
+  usage?: Record<string, unknown>;
   cache?: LlmCacheStats;
 } {
   const event: {
     type: 'llm_done';
     turn: number;
     finishReason: string | null;
-    usage?: object;
+    usage?: Record<string, unknown>;
     cache?: LlmCacheStats;
   } = {
     type: 'llm_done',
@@ -189,8 +185,8 @@ export function buildLlmDoneStepEvent(
     finishReason,
   };
 
-  if (usage && typeof usage === 'object') {
-    event.usage = usage as object;
+  if (usage && typeof usage === 'object' && !Array.isArray(usage)) {
+    event.usage = usage as Record<string, unknown>;
   }
 
   if (shouldReportCacheStats(config.llm?.cache)) {
