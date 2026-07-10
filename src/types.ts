@@ -92,8 +92,11 @@ export interface ToolDefinition {
 }
 
 export interface AgentConfig {
+  /** @deprecated Prefer `config.llm.apiKey` after `configureAgentLlmBinding()`. */
   apiKey: string;
+  /** @deprecated Prefer `config.llm.baseUrl` after `configureAgentLlmBinding()`. */
   baseUrl: string;
+  /** @deprecated Prefer `config.llm.model` after `configureAgentLlmBinding()`. */
   model: string;
   /** 0 = unlimited (loop guard + hard ceiling apply). */
   maxTurns: number;
@@ -133,6 +136,8 @@ export interface AgentConfig {
   llmBindingChain?: import('./llm-profiles.js').ResolvedLlmBinding[];
   /** When false, only the effective profile is used (explicit model or FALLBACK=0). */
   llmProfileFallbackEnabled?: boolean;
+  /** Set when profile-chain fallback is disabled (surfaced on run_start.llm). */
+  llmProfileFallbackDisabledReason?: 'FALLBACK=0' | 'explicit_model';
   /** Session /reasoning level key into profile reasoning_map (G4); main agent only. */
   sessionReasoningLevel?: string;
   /** agent.json snapshot for spawn/workflow per-preset LLM resolution. */

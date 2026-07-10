@@ -136,7 +136,10 @@ describe('invokeLlmTurnWithFallback (G3-b)', () => {
     assert.equal(result.message.content, 'ok');
     assert.equal(primaryCalls, 3);
     assert.equal(fallbackCalls, 1);
-    assert.equal(events.some((e) => e.type === 'llm_fallback'), true);
+    const fallback = events.find((e) => e.type === 'llm_fallback');
+    assert.ok(fallback);
+    if (!fallback || fallback.type !== 'llm_fallback') return;
+    assert.equal(fallback.http_retries_exhausted, 3);
     assert.equal(events.filter((e) => e.type === 'llm_retry').length, 2);
   });
 

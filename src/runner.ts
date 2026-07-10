@@ -85,6 +85,7 @@ import {
   listModelsForProfile,
   listProfileNames,
   resolveLlmBinding,
+  validateModelForProfile,
   type ResolvedLlmBinding,
 } from './llm-profiles.js';
 import { configureAgentLlmBinding } from './llm-fallback.js';
@@ -580,6 +581,16 @@ export class AgentRuntime {
     }
     try {
       const profileName = this.getEffectiveProfileName();
+      const catalogBinding = resolveLlmBinding(this.pluginConfig, { profileName });
+      const validation = validateModelForProfile(
+        this.pluginConfig,
+        profileName,
+        trimmed,
+        { binding: catalogBinding },
+      );
+      if (!validation.ok) {
+        return { ok: false, message: validation.message };
+      }
       const binding = resolveLlmBinding(this.pluginConfig, {
         profileName,
         model: trimmed,
@@ -610,15 +621,7 @@ export class AgentRuntime {
   }
 
   resetSessionLlmModel(): void {
-    delete this.sessionLlmOverride.model;
-    if (
-      !(this.sessionLlmOverride.profileName?.trim()) &&
-      !(this.sessionLlmOverride.reasoningLevel?.trim())
-    ) {
-      this.clearSessionLlmOverride();
-      return;
-    }
-    this.persistSessionLlmOverride();
+    this.pruneSessionLlmOverrideField('model');
   }
 
   listSessionReasoningChoices(): SessionReasoningChoice[] {
@@ -662,11 +665,12 @@ export class AgentRuntime {
   }
 
   resetSessionReasoningLevel(): void {
-    delete this.sessionLlmOverride.reasoningLevel;
-    if (
-      !(this.sessionLlmOverride.profileName?.trim()) &&
-      !(this.sessionLlmOverride.model?.trim())
-    ) {
+    this.pruneSessionLlmOverrideField('reasoningLevel');
+  }
+
+  private pruneSessionLlmOverrideField(field: 'model' | 'reasoningLevel'): void {
+    delete this.sessionLlmOverride[field];
+    if (!this.hasSessionLlmOverride()) {
       this.clearSessionLlmOverride();
       return;
     }
@@ -702,7 +706,14 @@ export class AgentRuntime {
     wsMeta: ReturnType<typeof workspacePromptRunStartMeta>,
   ): void {
     const runConfig = this.buildRunConfig(signal);
-    const llmMeta = buildRunStartLlmMeta(runConfig.llm, runConfig.sessionReasoningLevel);
+    const llmMeta = buildRunStartLlmMeta(
+      runConfig.llm,
+      runConfig.sessionReasoningLevel,
+      {
+        enabled: runConfig.llmProfileFallbackEnabled !== false,
+        disabledReason: runConfig.llmProfileFallbackDisabledReason,
+      },
+    );
     const llm =
       llmMeta && this.hasSessionLlmOverride()
         ? { ...llmMeta, session_override: true }

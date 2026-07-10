@@ -163,4 +163,27 @@ describe('configureAgentLlmBinding (G3-a)', () => {
     assert.equal(isLlmProfileFallbackEnabled('deepseek-v4-pro'), false);
     assert.equal(isLlmProfileFallbackEnabled(undefined), true);
   });
+
+  it('records disabled reason on config when explicit model is set', () => {
+    const pluginConfig = basePluginConfig({
+      default_api_profile: 'deepseek-main',
+      api_profiles: {
+        'deepseek-main': {
+          ...DEEPSEEK_PROFILE,
+          fallback_profiles: ['glm-main'],
+        },
+        'glm-main': GLM_PROFILE,
+      },
+    });
+
+    const config = { apiKey: '', baseUrl: '', model: '', cwd: '/tmp' } as AgentConfig;
+    configureAgentLlmBinding(config, pluginConfig, {
+      env: { DEEPSEEK_API_KEY: 'ds-key', ZAI_API_KEY: 'glm-key' },
+      model: 'deepseek-v4-pro',
+    });
+
+    assert.equal(config.llmProfileFallbackEnabled, false);
+    assert.equal(config.llmProfileFallbackDisabledReason, 'explicit_model');
+    assert.equal(config.llm?.model, 'deepseek-v4-pro');
+  });
 });

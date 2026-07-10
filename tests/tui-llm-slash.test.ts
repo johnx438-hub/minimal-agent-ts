@@ -240,6 +240,36 @@ describe('TUI llm slash (G2-c)', () => {
     );
   });
 
+  it('rejects /model when id is not in profile catalog', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ma-tui-llm-slash-invalid-'));
+    writeFileSync(
+      join(dir, 'agent.json'),
+      JSON.stringify({
+        default_api_profile: 'deepseek-main',
+        api_profiles: {
+          'deepseek-main': {
+            base_url: 'https://api.deepseek.com',
+            api_key_env: 'DEEPSEEK_API_KEY',
+            default_model: 'deepseek-v4-flash',
+            models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+          },
+        },
+      }),
+    );
+
+    process.env.DEEPSEEK_API_KEY = 'ds-key';
+    delete process.env.OPENAI_API_KEY;
+
+    const runtime = new AgentRuntime({ cwd: dir, deferSession: true });
+    runtime.newSession();
+
+    const rejected = runtime.setSessionLlmModel('deepseek-v4-typo');
+    assert.equal(rejected.ok, false);
+    assert.match(rejected.message, /not in profile/);
+    assert.match(runtime.formatSessionLlmShortLine(), /deepseek-v4-flash$/);
+    assert.equal(runtime.formatSessionLlmShortLine().includes('*'), false);
+  });
+
   it('persists model override across resume and process restart', () => {
     const dir = mkdtempSync(join(tmpdir(), 'ma-tui-llm-slash-resume-'));
     writeFileSync(

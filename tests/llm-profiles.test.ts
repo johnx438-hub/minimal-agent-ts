@@ -5,6 +5,7 @@ import {
   ENV_PROFILE_NAME,
   getEnvApiKey,
   listModelsForProfile,
+  validateModelForProfile,
   listProfileNames,
   LlmProfileError,
   normalizeBaseUrl,
@@ -260,6 +261,45 @@ describe('listProfileNames / listModelsForProfile', () => {
     );
 
     assert.deepEqual(models, ['deepseek-v4-flash', 'deepseek-v4-pro']);
+  });
+});
+
+describe('validateModelForProfile', () => {
+  it('accepts models in profile catalog', () => {
+    const pluginConfig = basePluginConfig({
+      api_profiles: { 'deepseek-main': DEEPSEEK_PROFILE },
+    });
+    const binding = resolveLlmBinding(pluginConfig, {
+      profileName: 'deepseek-main',
+      env: { DEEPSEEK_API_KEY: 'ds-key' },
+    });
+    assert.deepEqual(
+      validateModelForProfile(pluginConfig, 'deepseek-main', 'deepseek-v4-pro', {
+        binding,
+      }),
+      { ok: true },
+    );
+  });
+
+  it('rejects unknown model with catalog hint', () => {
+    const pluginConfig = basePluginConfig({
+      api_profiles: { 'deepseek-main': DEEPSEEK_PROFILE },
+    });
+    const binding = resolveLlmBinding(pluginConfig, {
+      profileName: 'deepseek-main',
+      env: { DEEPSEEK_API_KEY: 'ds-key' },
+    });
+    const result = validateModelForProfile(
+      pluginConfig,
+      'deepseek-main',
+      'deepseek-v4-typo',
+      { binding },
+    );
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.match(result.message, /not in profile/);
+    assert.match(result.message, /deepseek-v4-flash/);
+    assert.match(result.message, /deepseek-v4-pro/);
   });
 });
 

@@ -1,4 +1,9 @@
 import type { RunStartLlmMeta } from './events.js';
+import {
+  getCachedRemoteModelIds,
+  isRemoteModelsEnabled,
+  mergeStaticAndRemoteModels,
+} from './llm-models-remote.js';
 import type { SpawnJobLlmSnapshot } from './spawn/job-store.js';
 import type {
   AgentPluginConfig,
@@ -242,6 +247,47 @@ export function listProfileNames(
     }
   }
   return names.sort();
+}
+
+/** Static catalog + optional cached remote ids (G2-d); used by /model validation. */
+export function knownModelsForProfile(
+  pluginConfig: AgentPluginConfig,
+  profileName: string,
+  opts: { binding?: ResolvedLlmBinding; env?: EnvSnapshot } = {},
+): string[] {
+  const staticModels = listModelsForProfile(pluginConfig, profileName, opts.env);
+  const binding = opts.binding;
+  if (
+    !binding ||
+    !isRemoteModelsEnabled() ||
+    binding.profileName !== profileName ||
+    !binding.available
+  ) {
+    return staticModels;
+  }
+  const cached = getCachedRemoteModelIds(binding);
+  if (!cached?.length) return staticModels;
+  return mergeStaticAndRemoteModels(staticModels, cached);
+}
+
+export function validateModelForProfile(
+  pluginConfig: AgentPluginConfig,
+  profileName: string,
+  model: string,
+  opts: { binding?: ResolvedLlmBinding; env?: EnvSnapshot } = {},
+): { ok: true } | { ok: false; message: string } {
+  const trimmed = model.trim();
+  const known = knownModelsForProfile(pluginConfig, profileName, opts);
+  if (known.includes(trimmed)) {
+    return { ok: true };
+  }
+  const remoteHint = isRemoteModelsEnabled()
+    ? ' — use /model picker after remote list loads, or add to agent.json models'
+    : '';
+  return {
+    ok: false,
+    message: `error: model "${trimmed}" not in profile "${profileName}" catalog (${known.join(', ')})${remoteHint}`,
+  };
 }
 
 export function listModelsForProfile(
@@ -491,10 +537,16 @@ export function buildJobLlmMeta(
   return snap;
 }
 
+export interface RunStartLlmFallbackMeta {
+  enabled: boolean;
+  disabledReason?: 'FALLBACK=0' | 'explicit_model';
+}
+
 /** Build run_start.llm from the same LlmProfile used by buildRunConfig. */
 export function buildRunStartLlmMeta(
   llm: LlmProfile | undefined,
   sessionReasoningLevel?: string,
+  fallback?: RunStartLlmFallbackMeta,
 ): RunStartLlmMeta | undefined {
   if (!llm) return undefined;
   const host = llmBaseUrlHost(llm.baseUrl);
@@ -506,5 +558,11 @@ export function buildRunStartLlmMeta(
   if (host) meta.base_url_host = host;
   const reasoning = sessionReasoningLevel?.trim();
   if (reasoning) meta.reasoning = reasoning;
+  if (fallback && !fallback.enabled) {
+    meta.profile_fallback_enabled = false;
+    if (fallback.disabledReason) {
+      meta.profile_fallback_disabled_reason = fallback.disabledReason;
+    }
+  }
   return meta;
 }

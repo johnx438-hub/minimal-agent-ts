@@ -140,6 +140,12 @@ function readCache(key: string): string[] | undefined {
   return entry.models;
 }
 
+/** Sync read of cached GET /models ids (for /model validation without a network round-trip). */
+export function getCachedRemoteModelIds(binding: ResolvedLlmBinding): string[] | undefined {
+  if (!isRemoteModelsEnabled() || !binding.available) return undefined;
+  return readCache(remoteModelsCacheKey(binding));
+}
+
 function writeCache(key: string, models: string[]): void {
   remoteModelsCache.set(key, {
     models,

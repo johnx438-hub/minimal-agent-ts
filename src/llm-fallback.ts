@@ -21,11 +21,28 @@ import {
 import type { AgentConfig, ChatMessage, ToolDefinition } from './types.js';
 import type { LlmResult } from './llm.js';
 
+export type LlmProfileFallbackDisableReason = 'FALLBACK=0' | 'explicit_model';
+
+export interface LlmProfileFallbackState {
+  enabled: boolean;
+  disabledReason?: LlmProfileFallbackDisableReason;
+}
+
 /** Profile-chain fallback disabled when FALLBACK=0 or an explicit model override is set. */
+export function resolveLlmProfileFallbackState(
+  explicitModel?: string,
+): LlmProfileFallbackState {
+  if (process.env.FALLBACK === '0') {
+    return { enabled: false, disabledReason: 'FALLBACK=0' };
+  }
+  if (explicitModel?.trim()) {
+    return { enabled: false, disabledReason: 'explicit_model' };
+  }
+  return { enabled: true };
+}
+
 export function isLlmProfileFallbackEnabled(explicitModel?: string): boolean {
-  if (process.env.FALLBACK === '0') return false;
-  if (explicitModel?.trim()) return false;
-  return true;
+  return resolveLlmProfileFallbackState(explicitModel).enabled;
 }
 
 /** Conservative: same retriable set as HTTP retry (429/5xx/network); no 401 fallback. */
@@ -88,8 +105,6 @@ export async function invokeLlmTurnWithFallback(
     throw new Error('No available LLM profile in binding chain');
   }
 
-  let lastError: unknown = new Error('invokeLlmTurnWithFallback: no attempt made');
-
   for (let i = 0; i < bindings.length; i++) {
     const binding = bindings[i]!;
     const llmTurn = buildLlmTurnRequestForBinding(config, binding, apiMessages, {
@@ -111,7 +126,6 @@ export async function invokeLlmTurnWithFallback(
     } catch (err) {
       const tokensEmitted = err instanceof LlmTurnFailedError ? err.tokensEmitted : false;
       const cause = err instanceof LlmTurnFailedError ? err.cause : err;
-      lastError = cause;
 
       const hasNext = i < bindings.length - 1;
       if (
@@ -131,12 +145,12 @@ export async function invokeLlmTurnWithFallback(
         from_model: binding.model,
         to_model: next.model,
         reason: formatLlmRetryReason(cause),
-        attempt: DEFAULT_LLM_RETRY_CONFIG.maxAttempts,
+        http_retries_exhausted: DEFAULT_LLM_RETRY_CONFIG.maxAttempts,
       });
     }
   }
 
-  throw lastError;
+  throw new Error('invokeLlmTurnWithFallback: exhausted bindings without result');
 }
 
 /** First available binding for pre-flight / run_start (effective profile). */
@@ -162,5 +176,19 @@ export function configureAgentLlmBinding(
   const effective = resolveEffectiveBindingFromChain(chain);
   applyLlmBindingToAgentConfig(config, effective);
   config.llmBindingChain = chain;
-  config.llmProfileFallbackEnabled = isLlmProfileFallbackEnabled(opts.model);
+  const fallbackState = resolveLlmProfileFallbackState(opts.model);
+  config.llmProfileFallbackEnabled = fallbackState.enabled;
+  config.llmProfileFallbackDisabledReason = fallbackState.disabledReason;
+
+  const availableInChain = chain.filter((b) => b.available);
+  if (!fallbackState.enabled && availableInChain.length > 1) {
+    const skipped = availableInChain
+      .slice(1)
+      .map((b) => b.profileName)
+      .join(' → ');
+    console.warn(
+      `llm: profile fallback disabled (${fallbackState.disabledReason}); ` +
+        `using ${effective.profileName} only (skipped: ${skipped})`,
+    );
+  }
 }

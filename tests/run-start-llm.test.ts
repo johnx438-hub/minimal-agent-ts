@@ -48,6 +48,19 @@ describe('run_start.llm (G2-a)', () => {
     assert.equal(meta?.cache_mode, 'off');
   });
 
+  it('buildRunStartLlmMeta surfaces disabled profile fallback', () => {
+    const meta = buildRunStartLlmMeta(sampleLlm(), undefined, {
+      enabled: false,
+      disabledReason: 'explicit_model',
+    });
+    assert.equal(meta?.profile_fallback_enabled, false);
+    assert.equal(meta?.profile_fallback_disabled_reason, 'explicit_model');
+    assert.equal(
+      formatRunStartLlmSummary(meta!),
+      'deepseek-main/deepseek-v4-flash cache=implicit host=api.deepseek.com fallback=off(explicit_model)',
+    );
+  });
+
   it('formatRunStartLlmSummary skips off cache and includes host', () => {
     assert.equal(
       formatRunStartLlmSummary({

@@ -43,7 +43,8 @@ export type AgentStepEvent =
       from_model: string;
       to_model: string;
       reason: string;
-      attempt: number;
+      /** HTTP retries exhausted on from_profile before switching (not fallback hop index). */
+      http_retries_exhausted: number;
     }
   | {
       type: 'tool_plan';
@@ -94,6 +95,9 @@ export interface RunStartLlmMeta {
   reasoning?: string;
   /** True when TUI session override is active (G2-c). */
   session_override?: boolean;
+  /** False when FALLBACK=0 or explicit model disables profile chain (G3). */
+  profile_fallback_enabled?: boolean;
+  profile_fallback_disabled_reason?: 'FALLBACK=0' | 'explicit_model';
 }
 
 /** Agent step events plus runtime lifecycle events (TUI / --json-events). */
@@ -177,6 +181,10 @@ export function formatRunStartLlmSummary(llm: RunStartLlmMeta): string {
   }
   if (llm.session_override) {
     parts.push('(override)');
+  }
+  if (llm.profile_fallback_enabled === false) {
+    const reason = llm.profile_fallback_disabled_reason ?? 'disabled';
+    parts.push(`fallback=off(${reason})`);
   }
   return parts.join(' ');
 }
