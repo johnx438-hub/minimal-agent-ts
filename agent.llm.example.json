@@ -8,6 +8,7 @@
       "api_key_env": "DEEPSEEK_API_KEY",
       "default_model": "deepseek-v4-flash",
       "models": ["deepseek-v4-flash", "deepseek-v4-pro"],
+      "fallback_profiles": ["glm-main"],
       "cache": { "mode": "implicit", "telemetry": true },
       "reasoning_map": {
         "low": {

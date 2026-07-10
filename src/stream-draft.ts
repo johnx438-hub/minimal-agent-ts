@@ -44,6 +44,19 @@ export function commitAssistantToolCalls(
   });
 }
 
+export class LlmTurnFailedError extends Error {
+  readonly cause: unknown;
+  readonly tokensEmitted: boolean;
+
+  constructor(cause: unknown, tokensEmitted: boolean) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    super(message);
+    this.name = 'LlmTurnFailedError';
+    this.cause = cause;
+    this.tokensEmitted = tokensEmitted;
+  }
+}
+
 export interface LlmTurnOptions {
   turn: number;
   apiMessages: ChatMessage[];
@@ -99,7 +112,7 @@ export async function invokeLlmTurn(opts: LlmTurnOptions): Promise<LlmResult> {
         if (tokensEmitted) {
           onStep?.({ type: 'draft_discarded', turn, chars: draft.text.length });
         }
-        throw err;
+        throw new LlmTurnFailedError(err, tokensEmitted);
       }
 
       const delayMs = computeRetryDelayMs(err, attempt);

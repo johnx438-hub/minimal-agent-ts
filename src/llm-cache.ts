@@ -1,4 +1,5 @@
 import type { ChatOptions } from './llm.js';
+import type { ResolvedLlmBinding } from './llm-profiles.js';
 import type { CachePolicyConfig } from './plugins/types.js';
 import type { AgentConfig, ChatMessage } from './types.js';
 
@@ -143,17 +144,30 @@ export function buildLlmTurnRequest(
   apiMessages: ChatMessage[],
   opts: { stream: boolean; signal?: AbortSignal },
 ): LlmTurnRequest {
-  const adapted = applyCacheAdapter(apiMessages, config.llm?.cache, {
+  return buildLlmTurnRequestForBinding(config, null, apiMessages, opts);
+}
+
+/** Build turn request from a specific binding (G3 profile fallback). */
+export function buildLlmTurnRequestForBinding(
+  config: AgentConfig,
+  binding: ResolvedLlmBinding | null,
+  apiMessages: ChatMessage[],
+  opts: { stream: boolean; signal?: AbortSignal },
+): LlmTurnRequest {
+  const cache = binding?.cache ?? config.llm?.cache;
+  const profileExtra = binding?.extraBody ?? config.llm?.extraBody;
+
+  const adapted = applyCacheAdapter(apiMessages, cache, {
     sessionId: config.sessionId,
   });
-  const extraBody = mergeExtraBody(config.llm?.extraBody, adapted.extraBody);
+  const extraBody = mergeExtraBody(profileExtra, adapted.extraBody);
 
   return {
     apiMessages: adapted.messages,
     chatOpts: {
-      apiKey: config.apiKey,
-      baseUrl: config.baseUrl,
-      model: config.model,
+      apiKey: binding?.apiKey ?? config.apiKey,
+      baseUrl: binding?.baseUrl ?? config.baseUrl,
+      model: binding?.model ?? config.model,
       stream: opts.stream,
       signal: opts.signal,
       extraBody,

@@ -1,11 +1,8 @@
 import { saveSessionThrottled } from '../session.js';
 import { runAgent } from '../agent.js';
 import type { AgentStepEvent } from '../events.js';
-import {
-  applyLlmBindingToAgentConfig,
-  requireAvailableLlmBinding,
-  resolveWorkflowRoleLlmBinding,
-} from '../llm-profiles.js';
+import { configureAgentLlmBinding } from '../llm-fallback.js';
+import { resolveWorkflowRoleLlmBinding } from '../llm-profiles.js';
 
 import type { TaskBlock } from '../task-tracker.js';
 import type { AgentConfig, SessionFile, TaskSummaryDoc } from '../types.js';
@@ -137,10 +134,15 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
     };
 
     if (config.llmPluginConfig) {
-      const binding = requireAvailableLlmBinding(
-        resolveWorkflowRoleLlmBinding(config.llmPluginConfig, role, config.llm),
+      const roleBinding = resolveWorkflowRoleLlmBinding(
+        config.llmPluginConfig,
+        role,
+        config.llm,
       );
-      applyLlmBindingToAgentConfig(roleConfig, binding);
+      configureAgentLlmBinding(roleConfig, config.llmPluginConfig, {
+        profileName: roleBinding.profileName,
+        model: role.model?.trim(),
+      });
     } else {
       roleConfig.model = role.model ?? config.model;
     }

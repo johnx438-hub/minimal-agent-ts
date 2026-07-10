@@ -108,6 +108,43 @@ describe('buildAgentConfig llm integration', () => {
     delete process.env.OPENROUTER_API_KEY;
     delete process.env.DEEPSEEK_API_KEY;
 
-    assert.throws(() => buildAgentConfig({ cwd: tempDir }), /DEEPSEEK_API_KEY/);
+    assert.throws(
+      () => buildAgentConfig({ cwd: tempDir }),
+      /No available LLM profile in chain: deepseek-main/,
+    );
+  });
+
+  it('uses first available profile in fallback chain at startup (G3)', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'ma-build-config-fallback-'));
+    writeFileSync(
+      join(tempDir, 'agent.json'),
+      JSON.stringify({
+        default_api_profile: 'deepseek-main',
+        api_profiles: {
+          'deepseek-main': {
+            base_url: 'https://api.deepseek.com',
+            api_key_env: 'DEEPSEEK_API_KEY',
+            default_model: 'deepseek-v4-flash',
+            fallback_profiles: ['glm-main'],
+          },
+          'glm-main': {
+            base_url: 'https://open.bigmodel.cn/api/paas/v4',
+            api_key_env: 'ZAI_API_KEY',
+            default_model: 'glm-5.2',
+          },
+        },
+      }),
+    );
+
+    delete process.env.DEEPSEEK_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+    process.env.ZAI_API_KEY = 'glm-key';
+
+    const { config } = buildAgentConfig({ cwd: tempDir });
+
+    assert.equal(config.llm?.profileName, 'glm-main');
+    assert.equal(config.llmBindingChain?.length, 2);
+    assert.equal(config.llmProfileFallbackEnabled, true);
   });
 });

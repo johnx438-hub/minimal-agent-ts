@@ -36,6 +36,16 @@ export type AgentStepEvent =
       delay_ms: number;
     }
   | {
+      type: 'llm_fallback';
+      turn: number;
+      from_profile: string;
+      to_profile: string;
+      from_model: string;
+      to_model: string;
+      reason: string;
+      attempt: number;
+    }
+  | {
       type: 'tool_plan';
       turn: number;
       total: number;
@@ -174,6 +184,16 @@ export function formatLlmRetrySummary(event: {
 }): string {
   const delaySec = (event.delay_ms / 1000).toFixed(1).replace(/\.0$/, '');
   return `↻ LLM retry ${event.attempt}/${event.max_attempts} (${event.reason}, ${delaySec}s)`;
+}
+
+export function formatLlmFallbackSummary(event: {
+  from_profile: string;
+  to_profile: string;
+  from_model: string;
+  to_model: string;
+  reason: string;
+}): string {
+  return `⇢ LLM fallback ${event.from_profile}/${event.from_model} → ${event.to_profile}/${event.to_model} (${event.reason})`;
 }
 
 export function formatToolPlanSummary(event: {

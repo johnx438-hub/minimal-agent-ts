@@ -129,6 +129,10 @@ export interface AgentConfig {
   workspacePrompt?: WorkspacePromptBundle;
   /** Resolved api profile binding (轨 G); mirrors apiKey/baseUrl/model when set. */
   llm?: LlmProfile;
+  /** Full profile fallback chain for this run (G3); primary first. */
+  llmBindingChain?: import('./llm-profiles.js').ResolvedLlmBinding[];
+  /** When false, only the effective profile is used (explicit model or FALLBACK=0). */
+  llmProfileFallbackEnabled?: boolean;
   /** agent.json snapshot for spawn/workflow per-preset LLM resolution. */
   llmPluginConfig?: AgentPluginConfig;
 }

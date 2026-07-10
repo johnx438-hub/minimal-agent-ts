@@ -1,10 +1,8 @@
 import type { AgentStepEvent } from '../events.js';
 import { isAbortError } from '../events.js';
 import { isCapabilityEnabled } from '../permission-gate.js';
-import {
-  applyLlmBindingToAgentConfig,
-  resolvePresetLlmBinding,
-} from '../llm-profiles.js';
+import { configureAgentLlmBinding } from '../llm-fallback.js';
+import { resolvePresetLlmBinding } from '../llm-profiles.js';
 import type { AgentConfig } from '../types.js';
 import type { SpawnLifecycleEvent } from '../types.js';
 import { getSpawnSemaphore } from './semaphore.js';
@@ -150,13 +148,19 @@ async function runSpawnAgentInner(opts: {
   };
 
   if (parentConfig.llmPluginConfig) {
-    const binding = resolvePresetLlmBinding(
+    const presetBinding = resolvePresetLlmBinding(
       parentConfig.llmPluginConfig,
       preset.name,
       parentConfig.llm,
     );
-    if (!binding.available) {
-      const msg = binding.unavailableReason ?? `LLM profile "${binding.profileName}" unavailable`;
+    const presetModel = preset.model?.trim();
+    try {
+      configureAgentLlmBinding(childConfig, parentConfig.llmPluginConfig, {
+        profileName: presetBinding.profileName,
+        model: presetModel,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       emitSpawnLifecycle(parentConfig, {
         phase: 'end',
         preset: preset.name,
@@ -165,7 +169,6 @@ async function runSpawnAgentInner(opts: {
       });
       return `error: ${msg}`;
     }
-    applyLlmBindingToAgentConfig(childConfig, binding);
   }
 
   const sink = parentConfig.nestedStepSink;

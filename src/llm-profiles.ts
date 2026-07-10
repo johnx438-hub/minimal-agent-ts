@@ -318,6 +318,49 @@ export function requireAvailableLlmBinding(binding: ResolvedLlmBinding): Resolve
   return binding;
 }
 
+/** Flatten primary + fallback_profiles[] (deduped; missing names skipped with warn). */
+export function resolveLlmBindingChain(
+  pluginConfig: AgentPluginConfig,
+  opts: ResolveLlmBindingOptions = {},
+): ResolvedLlmBinding[] {
+  const primary = resolveLlmBinding(pluginConfig, opts);
+  const chain: ResolvedLlmBinding[] = [primary];
+  const seen = new Set<string>([primary.profileName]);
+
+  for (const raw of primary.fallbackProfiles ?? []) {
+    const name = raw.trim();
+    if (!name) continue;
+    if (seen.has(name)) {
+      console.warn(`llm: duplicate fallback profile "${name}", skipping`);
+      continue;
+    }
+    seen.add(name);
+    try {
+      chain.push(
+        resolveLlmBinding(pluginConfig, {
+          profileName: name,
+          env: opts.env,
+        }),
+      );
+    } catch (err) {
+      if (err instanceof LlmProfileError) {
+        console.warn(`llm: fallback profile "${name}" not found, skipping`);
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  return chain;
+}
+
+/** First available entry in a binding chain (G3 pre-flight / run_start effective profile). */
+export function pickFirstAvailableBinding(
+  chain: ResolvedLlmBinding[],
+): ResolvedLlmBinding | undefined {
+  return chain.find((b) => b.available);
+}
+
 /** Copy resolved binding onto AgentConfig (llm + legacy apiKey/baseUrl/model fields). */
 export function applyLlmBindingToAgentConfig(
   config: AgentConfig,

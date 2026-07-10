@@ -1,6 +1,7 @@
 import { CancellableLoader, Markdown, Text, type TUI } from '@earendil-works/pi-tui';
 
 import {
+  formatLlmFallbackSummary,
   formatLlmRetrySummary,
   formatRunStartLlmSummary,
   formatToolPlanSummary,
@@ -25,6 +26,7 @@ function isAgentStep(event: RuntimeEvent): event is AgentStepEvent {
     event.type === 'token' ||
     event.type === 'llm_done' ||
     event.type === 'llm_retry' ||
+    event.type === 'llm_fallback' ||
     event.type === 'tool_plan' ||
     event.type === 'tool_batch' ||
     event.type === 'tool_call' ||
@@ -253,6 +255,9 @@ export class PiEventPresenter {
         break;
       case 'llm_retry':
         this.appendRunMeta(formatLlmRetrySummary(event));
+        break;
+      case 'llm_fallback':
+        this.appendRunMeta(formatLlmFallbackSummary(event));
         break;
       case 'compression':
         this.appendRunMeta(

@@ -496,7 +496,40 @@ function buildChatBody(model, messages, tools, stream, extraBody?) {
 ### 10.2 不宜 fallback 的场景
 
 - 流式已输出 token 后 → **不**切 profile
-- `FALLBACK=0` + 用户显式 `--model` → 不自动切
+- `FALLBACK=0` → 不自动切 profile 链
+- 显式 **model** 绑定（TUI `/model`、spawn `model`、workflow role `model`）→ 不自动切
+- `401` / `403` 等鉴权错误 → **不**切（保守策略；仅 429/5xx/network）
+
+### 10.3 实现（G3 落地）
+
+| 模块 | 职责 |
+|------|------|
+| `resolveLlmBindingChain()` | primary + `fallback_profiles[]` 扁平链；去重；缺名 warn 跳过 |
+| `pickFirstAvailableBinding()` | pre-flight / `run_start.llm` **effective** profile（首个有 key 的项） |
+| `configureAgentLlmBinding()` | 写入 `AgentConfig.llm`（effective）+ `llmBindingChain` + `llmProfileFallbackEnabled` |
+| `invokeLlmTurnWithFallback()` | 每 profile 内 HTTP retry → 失败且 eligible → 下一 profile |
+| `llm_fallback` 事件 | `from_profile/to_profile/from_model/to_model/reason` |
+
+**不变量**
+
+1. fallback profile 使用各自 `default_model`（**不**继承 primary 的 model override）
+2. job `meta.json` 仍写 preset **意图** profile；实际切换仅 `llm_fallback` 事件可追溯
+3. OpenRouter `extra_body.provider` 与 profile 链 **分层**（单请求内 vendor 路由不变）
+
+**`llm_fallback` 事件（草案）**
+
+```typescript
+{
+  type: 'llm_fallback';
+  turn: number;
+  from_profile: string;
+  to_profile: string;
+  from_model: string;
+  to_model: string;
+  reason: string;
+  attempt: number; // 上一 profile HTTP retry 用尽时的 attempt
+}
+```
 
 ---
 
@@ -675,10 +708,19 @@ function buildChatBody(model, messages, tools, stream, extraBody?) {
 
 ### G3 — Fallback 链（P1，~1 天）
 
+| 任务 | 说明 |
+|------|------|
+| G3-a | `resolveLlmBindingChain` / `pickFirstAvailableBinding` / `configureAgentLlmBinding` |
+| G3-b | `invokeLlmTurnWithFallback`；`agent.ts` 接线；spawn/workflow/runner |
+| G3-c | `llm_fallback` 事件；`FALLBACK=0` + 显式 model 禁用 |
+| G3-d | `agent.llm.example.json` `fallback_profiles`；§10.3 |
+
 **验收**
 
-- [ ] profile 链 fallback；流式 partial 不切
-- [ ] 可选 `llm_fallback` 事件
+- [x] profile 链 fallback；流式 partial 不切
+- [x] `llm_fallback` 事件（TUI + `--json-events`）
+- [x] pre-flight effective profile（`run_start.llm` 与首个可用 binding 一致）
+- [x] 401 不 fallback；429/5xx/network 可 fallback
 
 ### G4 — Reasoning（P1，1 天）
 
@@ -741,6 +783,7 @@ cc-connect provider-presets.json
 | 2026-07-10 | v0.1 初稿：轨 G 范围、schema、绑定、G1–G5 验收 |
 | 2026-07-10 | v0.2：厂商调研（DeepSeek/GLM 主力，xAI/OR 测试，Anthropic 最后）；缓存提前至 G1-cache；难度表；`agent.llm.example.json` |
 | 2026-07-11 | v0.3：§11 模型列表 + G2-c TUI slash/picker 交互；§11.3 不变量；§11.4 picker/API 联动陷阱与 checklist；G2 任务表 |
+| 2026-07-11 | v0.4：G3 fallback 链落地；§10.2–10.3；`llm_fallback` 事件；effective pre-flight |
 
 ---
 

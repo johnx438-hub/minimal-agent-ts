@@ -10,10 +10,10 @@ import {
   maybePrune,
   runCompressionEvent,
 } from './context-policy.js';
+import { invokeLlmTurnWithFallback } from './llm-fallback.js';
 import {
   commitAssistantText,
   commitAssistantToolCalls,
-  invokeLlmTurn,
 } from './stream-draft.js';
 import {
   EMPTY_CONTINUE_NUDGE,
@@ -31,7 +31,7 @@ import {
   formatLiveToolPreview,
 } from './action-preview.js';
 import { buildSystemPrompt } from './agent-prompt.js';
-import { buildLlmDoneStepEvent, buildLlmTurnRequest } from './llm-cache.js';
+import { buildLlmDoneStepEvent } from './llm-cache.js';
 import { isAbortError, type AgentStepEvent } from './events.js';
 import { materializePriorTurnTools } from './pointerize.js';
 import { parseAgentSummary, extractCleanAnswer } from './summary.js';
@@ -308,17 +308,13 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         onStep,
       });
 
-      const llmTurn = buildLlmTurnRequest(config, assembleApiMessages(messages), {
-        stream,
-        signal: abortSignal,
-      });
-      const { message, finishReason, usage } = await invokeLlmTurn({
+      const { message, finishReason, usage } = await invokeLlmTurnWithFallback({
         turn,
-        apiMessages: llmTurn.apiMessages,
+        config: toolConfig,
+        apiMessages: assembleApiMessages(messages),
         tools: [],
         stream,
         onStep,
-        chatOpts: llmTurn.chatOpts,
       });
 
       onStep?.(buildLlmDoneStepEvent(turn, finishReason, usage, config));
@@ -368,18 +364,13 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
     });
 
     const toolDefs = getToolDefinitions(toolConfig);
-    const llmTurn = buildLlmTurnRequest(config, assembleApiMessages(messages), {
-      stream,
-      signal: abortSignal,
-    });
-
-    const { message, finishReason, usage } = await invokeLlmTurn({
+    const { message, finishReason, usage } = await invokeLlmTurnWithFallback({
       turn,
-      apiMessages: llmTurn.apiMessages,
+      config: toolConfig,
+      apiMessages: assembleApiMessages(messages),
       tools: toolDefs,
       stream,
       onStep,
-      chatOpts: llmTurn.chatOpts,
     });
 
     onStep?.(buildLlmDoneStepEvent(turn, finishReason, usage, config));

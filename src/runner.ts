@@ -8,6 +8,7 @@ import type { AgentStepEvent } from './events.js';
 import { previewPolicyFromPointerize } from './action-preview.js';
 import {
   emitJsonEvent,
+  formatLlmFallbackSummary,
   formatLlmRetrySummary,
   formatToolPlanSummary,
   isAbortError,
@@ -79,14 +80,13 @@ import {
   workspacePromptRunStartMeta,
 } from './agent-prompt.js';
 import {
-  applyLlmBindingToAgentConfig,
   buildRunStartLlmMeta,
   listModelsForProfile,
   listProfileNames,
-  requireAvailableLlmBinding,
   resolveLlmBinding,
   type ResolvedLlmBinding,
 } from './llm-profiles.js';
+import { configureAgentLlmBinding } from './llm-fallback.js';
 
 export interface SessionLlmOverride {
   profileName?: string;
@@ -129,8 +129,6 @@ export function buildAgentConfig(opts: BuildConfigOptions): {
     ];
   }
 
-  const llmBinding = requireAvailableLlmBinding(resolveLlmBinding(pluginConfig));
-
   const keepInlineTurns = pluginConfig.pointerize_policy?.keep_inline_turns ?? 2;
   const recallAutoFullMaxChars = pluginConfig.recall_policy?.auto_full_max_chars ?? 24_000;
   const previewPolicy = previewPolicyFromPointerize(pluginConfig.pointerize_policy);
@@ -157,7 +155,7 @@ export function buildAgentConfig(opts: BuildConfigOptions): {
     llmPluginConfig: pluginConfig,
   };
 
-  applyLlmBindingToAgentConfig(config, llmBinding);
+  configureAgentLlmBinding(config, pluginConfig);
 
   return { config, pluginConfig };
 }
@@ -523,7 +521,11 @@ export class AgentRuntime {
       spawnLifecycle: this.onSpawnLifecycle,
       workspacePrompt: this.runWorkspacePrompt ?? undefined,
     };
-    applyLlmBindingToAgentConfig(runConfig, this.resolveRunLlmBinding());
+    const override = this.getSessionLlmOverride();
+    configureAgentLlmBinding(runConfig, this.pluginConfig, {
+      profileName: override.profileName?.trim(),
+      model: override.model?.trim(),
+    });
     return runConfig;
   }
 
@@ -1021,6 +1023,9 @@ export function printStepEvent(event: AgentStepEvent): void {
     }
     case 'llm_retry':
       console.log(`  ${formatLlmRetrySummary(event)}`);
+      break;
+    case 'llm_fallback':
+      console.log(`  ${formatLlmFallbackSummary(event)}`);
       break;
     case 'compression':
       console.log(
