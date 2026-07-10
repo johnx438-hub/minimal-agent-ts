@@ -23,6 +23,7 @@ import {
   SLASH_HELP_LINES,
 } from './slash.js';
 import { printRuntimeEvent } from './log.js';
+import { handleLlmSlashClassic } from './llm-slash.js';
 import { resetMarkdownTerminal } from './markdown.js';
 import { CompressionFatigueTracker } from '../compression-fatigue.js';
 import { createFatiguePrompter } from './fatigue-prompt.js';
@@ -59,7 +60,7 @@ function printBanner(runtime: AgentRuntime, shellOn: boolean, webOn: boolean): v
 function printStatus(runtime: AgentRuntime, armedWorkflow: string | null): void {
   const wf = armedWorkflow ? `  workflow armed: ${armedWorkflow}` : '';
   console.log(
-    `[${runtime.sessionLabel()}] shell:${runtime.config.allowShell ? 'on' : 'off'} web:${runtime.config.allowWeb ? 'on' : 'off'}${wf}`,
+    `[${runtime.sessionLabel()}] ${runtime.formatSessionLlmShortLine()}  shell:${runtime.config.allowShell ? 'on' : 'off'} web:${runtime.config.allowWeb ? 'on' : 'off'}${wf}`,
   );
 }
 
@@ -269,6 +270,12 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
 
     if (result.message === '__help__') {
       for (const line of SLASH_HELP_LINES) console.log(`  ${line}`);
+      showPrompt();
+      return;
+    }
+
+    if (result.llmAction) {
+      handleLlmSlashClassic(runtime, result.llmAction, (line) => console.log(line));
       showPrompt();
       return;
     }

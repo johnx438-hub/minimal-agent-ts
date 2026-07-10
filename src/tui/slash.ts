@@ -9,6 +9,10 @@ export type ApproveAction =
   | { type: 'always'; kind: ApproveKind }
   | { type: 'revoke'; kind: ApproveKind };
 
+export type LlmSlashAction =
+  | { kind: 'profile'; mode: 'list' | 'set' | 'reset'; name?: string }
+  | { kind: 'model'; mode: 'list' | 'set' | 'reset'; model?: string };
+
 export interface SlashResult {
   handled: boolean;
   message?: string;
@@ -26,6 +30,7 @@ export interface SlashResult {
   memoryAction?: MemorySlashAction;
   /** Usage or error text when memoryAction could not be parsed. */
   memoryMessage?: string;
+  llmAction?: LlmSlashAction;
 }
 
 /** Single source of truth for slash help, aliases, and autocomplete hints. */
@@ -113,6 +118,17 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
     command: '/quit',
     hintZh: '退出 TUI',
     hintEn: 'Exit TUI',
+  },
+  {
+    command: '/profile [name|reset]',
+    aliases: ['/provider'],
+    hintZh: '切换 api profile（仅主 Agent 本会话）',
+    hintEn: 'Switch api profile (main agent, this session)',
+  },
+  {
+    command: '/model [id|reset]',
+    hintZh: '覆盖 model（仅主 Agent 本会话）',
+    hintEn: 'Override model (main agent, this session)',
   },
   {
     command: '/shell on|off',
@@ -346,6 +362,35 @@ export function parseSlashLine(line: string): SlashResult | null {
         return { handled: true, message: '__resume_last__' };
       }
       return { handled: true, message: `__resume__:${id}` };
+    }
+
+    case '/profile':
+    case '/provider': {
+      const sub = parts[1]?.trim();
+      if (!sub) {
+        return { handled: true, llmAction: { kind: 'profile', mode: 'list' } };
+      }
+      if (sub.toLowerCase() === 'reset') {
+        return { handled: true, llmAction: { kind: 'profile', mode: 'reset' } };
+      }
+      return {
+        handled: true,
+        llmAction: { kind: 'profile', mode: 'set', name: sub },
+      };
+    }
+
+    case '/model': {
+      const sub = parts.slice(1).join(' ').trim();
+      if (!sub) {
+        return { handled: true, llmAction: { kind: 'model', mode: 'list' } };
+      }
+      if (sub.toLowerCase() === 'reset') {
+        return { handled: true, llmAction: { kind: 'model', mode: 'reset' } };
+      }
+      return {
+        handled: true,
+        llmAction: { kind: 'model', mode: 'set', model: sub },
+      };
     }
 
     case '/shell': {

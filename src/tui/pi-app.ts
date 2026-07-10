@@ -41,6 +41,11 @@ import {
 } from './pi/prompts.js';
 import { cwdChangeNeedsConfirm } from '../tools/path-utils.js';
 import { buildSelectItems, showPickerOverlay } from './pi/picker.js';
+import {
+  handleLlmSlashPi,
+  modelPickerItems,
+  profilePickerItems,
+} from './llm-slash.js';
 import { showHistoryBrowser } from './pi/history-overlay.js';
 import { showLogBrowser } from './pi/log-overlay.js';
 import { showSessionDetailOverlay } from './pi/session-detail.js';
@@ -181,7 +186,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
   const printStatus = (): void => {
     const wf = armedWorkflow ? `  workflow armed: ${armedWorkflow}` : '';
     say(
-      `[${runtime.sessionLabel()}] shell:${runtime.config.allowShell ? 'on' : 'off'} web:${runtime.config.allowWeb ? 'on' : 'off'}${wf}`,
+      `[${runtime.sessionLabel()}] ${runtime.formatSessionLlmShortLine()}  shell:${runtime.config.allowShell ? 'on' : 'off'} web:${runtime.config.allowWeb ? 'on' : 'off'}${wf}`,
       true,
     );
   };
@@ -290,6 +295,32 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
 
     if (result.message === '__help__') {
       for (const line of SLASH_HELP_LINES) say(`  ${line}`, true);
+      resumeEditor();
+      return;
+    }
+
+    if (result.llmAction) {
+      await handleLlmSlashPi(runtime, result.llmAction, {
+        say,
+        pickProfile: async () => {
+          const items = profilePickerItems(runtime);
+          const picked = await showPickerOverlay(tui, {
+            title: 'API profiles — Enter to select · Esc cancel',
+            items,
+            maxVisible: Math.min(items.length, 10),
+          });
+          return picked?.value ?? null;
+        },
+        pickModel: async () => {
+          const items = modelPickerItems(runtime);
+          const picked = await showPickerOverlay(tui, {
+            title: 'Models — Enter to select · Esc cancel',
+            items,
+            maxVisible: Math.min(items.length, 10),
+          });
+          return picked?.value ?? null;
+        },
+      });
       resumeEditor();
       return;
     }

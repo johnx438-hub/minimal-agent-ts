@@ -81,9 +81,31 @@ import {
 import {
   applyLlmBindingToAgentConfig,
   buildRunStartLlmMeta,
+  listModelsForProfile,
+  listProfileNames,
   requireAvailableLlmBinding,
+  resolveDefaultProfileName,
   resolveLlmBinding,
+  type ResolvedLlmBinding,
 } from './llm-profiles.js';
+
+export interface SessionLlmOverride {
+  profileName?: string;
+  model?: string;
+}
+
+export interface SessionProfileChoice {
+  name: string;
+  displayName?: string;
+  available: boolean;
+  unavailableReason?: string;
+  active: boolean;
+}
+
+export interface SessionModelChoice {
+  model: string;
+  active: boolean;
+}
 
 function env(name: string, fallback?: string): string | undefined {
   const v = process.env[name]?.trim();
@@ -182,6 +204,7 @@ export class AgentRuntime {
   private pendingHandoffPrefix: string | null = null;
   private runWorkspacePrompt: WorkspacePromptBundle | null = null;
   private readonly p0Collector: P0TelemetryCollector | null;
+  private sessionLlmOverride: SessionLlmOverride = {};
 
   constructor(opts: AgentRuntimeOptions) {
     setWorkspaceRoot(opts.cwd);
@@ -342,9 +365,152 @@ export class AgentRuntime {
     return bundle;
   }
 
+  hasSessionLlmOverride(): boolean {
+    return Boolean(this.sessionLlmOverride.profileName || this.sessionLlmOverride.model);
+  }
+
+  getSessionLlmOverride(): Readonly<SessionLlmOverride> {
+    return { ...this.sessionLlmOverride };
+  }
+
+  private clearSessionLlmOverride(): void {
+    this.sessionLlmOverride = {};
+  }
+
+  private resolveRunLlmBinding(): ResolvedLlmBinding {
+    const opts: { profileName?: string; model?: string } = {};
+    if (this.sessionLlmOverride.profileName) {
+      opts.profileName = this.sessionLlmOverride.profileName;
+    }
+    if (this.sessionLlmOverride.model) {
+      opts.model = this.sessionLlmOverride.model;
+    }
+    return resolveLlmBinding(this.pluginConfig, opts);
+  }
+
+  getEffectiveProfileName(): string {
+    return this.resolveRunLlmBinding().profileName;
+  }
+
+  formatSessionLlmShortLine(): string {
+    const binding = this.resolveRunLlmBinding();
+    const star = this.hasSessionLlmOverride() ? '*' : '';
+    return `llm:${binding.profileName}/${binding.model}${star}`;
+  }
+
+  formatSessionLlmStatus(): string {
+    const binding = this.resolveRunLlmBinding();
+    const tag = `${binding.profileName}/${binding.model}`;
+    const override = this.hasSessionLlmOverride() ? ' (session override)' : '';
+    const cache =
+      binding.cache?.mode && binding.cache.mode !== 'off'
+        ? ` cache=${binding.cache.mode}`
+        : '';
+    return `llm: ${tag}${override}${cache} — main agent only; spawn jobs use preset binding`;
+  }
+
+  listSessionProfileChoices(): SessionProfileChoice[] {
+    const effectiveProfile =
+      this.sessionLlmOverride.profileName ??
+      this.config.llm?.profileName ??
+      resolveDefaultProfileName(this.pluginConfig);
+    const names = listProfileNames(this.pluginConfig);
+    return names.map((name) => {
+      const binding = resolveLlmBinding(this.pluginConfig, { profileName: name });
+      const profile = this.pluginConfig.api_profiles?.[name];
+      return {
+        name,
+        displayName: profile?.display_name ?? (name === '__env__' ? 'Environment' : undefined),
+        available: binding.available,
+        unavailableReason: binding.unavailableReason,
+        active: name === effectiveProfile,
+      };
+    });
+  }
+
+  listSessionModelChoices(): SessionModelChoice[] {
+    const profileName = this.getEffectiveProfileName();
+    const activeModel = this.resolveRunLlmBinding().model;
+    return listModelsForProfile(this.pluginConfig, profileName).map((model) => ({
+      model,
+      active: model === activeModel,
+    }));
+  }
+
+  setSessionLlmProfile(profileName: string): { ok: boolean; message: string } {
+    const trimmed = profileName.trim();
+    if (!trimmed) {
+      return { ok: false, message: 'error: profile name required' };
+    }
+    try {
+      const binding = resolveLlmBinding(this.pluginConfig, { profileName: trimmed });
+      if (!binding.available) {
+        return {
+          ok: false,
+          message: `error: ${binding.unavailableReason ?? `profile "${trimmed}" unavailable`}`,
+        };
+      }
+      this.sessionLlmOverride = { profileName: trimmed };
+      const models = listModelsForProfile(this.pluginConfig, trimmed);
+      const hint =
+        models.length > 1
+          ? ` Models: ${models.join(', ')} (use /model)`
+          : '';
+      return {
+        ok: true,
+        message: `profile → ${trimmed}/${binding.model} (next task)${hint}`,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, message: `error: ${msg}` };
+    }
+  }
+
+  setSessionLlmModel(model: string): { ok: boolean; message: string } {
+    const trimmed = model.trim();
+    if (!trimmed) {
+      return { ok: false, message: 'error: model id required' };
+    }
+    try {
+      const profileName = this.getEffectiveProfileName();
+      const binding = resolveLlmBinding(this.pluginConfig, {
+        profileName,
+        model: trimmed,
+      });
+      if (!binding.available) {
+        return {
+          ok: false,
+          message: `error: ${binding.unavailableReason ?? 'profile unavailable'}`,
+        };
+      }
+      this.sessionLlmOverride = {
+        ...this.sessionLlmOverride,
+        model: trimmed,
+      };
+      return {
+        ok: true,
+        message: `model → ${profileName}/${trimmed} (next task)`,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, message: `error: ${msg}` };
+    }
+  }
+
+  resetSessionLlmOverride(): void {
+    this.clearSessionLlmOverride();
+  }
+
+  resetSessionLlmModel(): void {
+    delete this.sessionLlmOverride.model;
+    if (!this.sessionLlmOverride.profileName) {
+      this.clearSessionLlmOverride();
+    }
+  }
+
   private buildRunConfig(signal: AbortSignal): AgentConfig {
     const session = this.ensureSession();
-    return {
+    const runConfig: AgentConfig = {
       ...this.config,
       sessionId: session.session_id,
       abortSignal: signal,
@@ -352,6 +518,8 @@ export class AgentRuntime {
       spawnLifecycle: this.onSpawnLifecycle,
       workspacePrompt: this.runWorkspacePrompt ?? undefined,
     };
+    applyLlmBindingToAgentConfig(runConfig, this.resolveRunLlmBinding());
+    return runConfig;
   }
 
   /** run_start.llm uses the same binding as the upcoming agent run (G2-a). */
@@ -360,7 +528,11 @@ export class AgentRuntime {
     signal: AbortSignal,
     wsMeta: ReturnType<typeof workspacePromptRunStartMeta>,
   ): void {
-    const llm = buildRunStartLlmMeta(this.buildRunConfig(signal).llm);
+    const llmMeta = buildRunStartLlmMeta(this.buildRunConfig(signal).llm);
+    const llm =
+      llmMeta && this.hasSessionLlmOverride()
+        ? { ...llmMeta, session_override: true }
+        : llmMeta;
     this.emit({
       type: 'run_start',
       session_id: sessionId,
@@ -380,12 +552,14 @@ export class AgentRuntime {
     if (!loaded) return false;
     this.session = loaded;
     this.sessionDirty = false;
+    this.clearSessionLlmOverride();
     return true;
   }
 
   newSession(): void {
     this.session = createSession(env('USER_ID') ?? 'user_default');
     this.sessionDirty = true;
+    this.clearSessionLlmOverride();
   }
 
   /** Drop in-flight messages; completed task summaries remain. */
