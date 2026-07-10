@@ -6,6 +6,7 @@ import { afterEach, describe, it } from 'node:test';
 
 import { formatRunStartLlmSummary } from '../src/events.js';
 import { AgentRuntime } from '../src/runner.js';
+import { loadSession } from '../src/session.js';
 import { parseSlashLine } from '../src/tui/slash.js';
 
 const ENV_KEYS = ['OPENAI_API_KEY', 'DEEPSEEK_API_KEY', 'ZAI_API_KEY', 'MODEL'] as const;
@@ -236,6 +237,58 @@ describe('TUI llm slash (G2-c)', () => {
         session_override: true,
       }),
       'glm-main/glm-5.2 (override)',
+    );
+  });
+
+  it('persists model override across resume and process restart', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ma-tui-llm-slash-resume-'));
+    writeFileSync(
+      join(dir, 'agent.json'),
+      JSON.stringify({
+        default_api_profile: 'deepseek-main',
+        api_profiles: {
+          'deepseek-main': {
+            base_url: 'https://api.deepseek.com',
+            api_key_env: 'DEEPSEEK_API_KEY',
+            default_model: 'deepseek-v4-flash',
+            models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+            reasoning_map: {
+              high: { thinking: { type: 'enabled' }, reasoning_effort: 'high' },
+            },
+          },
+        },
+      }),
+    );
+
+    process.env.DEEPSEEK_API_KEY = 'ds-key';
+    delete process.env.OPENAI_API_KEY;
+
+    const runtime = new AgentRuntime({ cwd: dir, deferSession: true });
+    runtime.newSession();
+    const sessionId = runtime.sessionLabel();
+
+    runtime.setSessionLlmModel('deepseek-v4-pro');
+    runtime.setSessionReasoningLevel('high');
+    assert.match(runtime.formatSessionLlmShortLine(), /deepseek-v4-pro\* r:high$/);
+
+    const onDisk = loadSession(sessionId);
+    assert.ok(onDisk?.llm_override);
+    assert.equal(onDisk.llm_override?.model, 'deepseek-v4-pro');
+    assert.equal(onDisk.llm_override?.reasoningLevel, 'high');
+
+    const resumed = new AgentRuntime({ cwd: dir, resumeSessionId: sessionId });
+    assert.match(
+      resumed.formatSessionLlmShortLine(),
+      /deepseek-v4-pro\* r:high$/,
+    );
+    assert.equal(resumed.getSessionLlmOverride().model, 'deepseek-v4-pro');
+    assert.equal(resumed.getSessionReasoningLevel(), 'high');
+
+    const runtime2 = new AgentRuntime({ cwd: dir, deferSession: true });
+    assert.ok(runtime2.resumeSession(sessionId));
+    assert.match(
+      runtime2.formatSessionLlmShortLine(),
+      /deepseek-v4-pro\* r:high$/,
     );
   });
 });

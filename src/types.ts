@@ -175,6 +175,14 @@ export interface TaskSummaryDoc {
   current_work: string;       // What was worked on immediately before summary
 }
 
+/** Per-session LLM overrides from /profile /model /reasoning (main agent only). */
+export interface SessionLlmOverride {
+  profileName?: string;
+  model?: string;
+  /** Key into effective profile reasoning_map (G4 /reasoning). */
+  reasoningLevel?: string;
+}
+
 /** Session state persisted to session.json. */
 export interface SessionFile {
   session_id: string;
@@ -184,6 +192,8 @@ export interface SessionFile {
   updated_at?: number;
   tasks: TaskSummaryDoc[];     // Completed task summaries
   current_messages: ChatMessage[];  // Messages for ongoing task
+  /** Restored on resume / restart so slash overrides survive process exit. */
+  llm_override?: SessionLlmOverride;
 }
 
 /** Session metadata for quick lookup. */

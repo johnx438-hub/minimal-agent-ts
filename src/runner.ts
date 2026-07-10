@@ -41,6 +41,7 @@ import type { AgentPluginConfig } from './plugins/types.js';
 import type {
   AgentConfig,
   SessionFile,
+  SessionLlmOverride,
   SessionMeta,
   SessionOverview,
   SpawnLifecycleEvent,
@@ -93,12 +94,7 @@ import {
 } from './llm-models-remote.js';
 import { listReasoningLevels, resolveReasoningPatch } from './llm-reasoning.js';
 
-export interface SessionLlmOverride {
-  profileName?: string;
-  model?: string;
-  /** Key into effective profile reasoning_map (G4 /reasoning). */
-  reasoningLevel?: string;
-}
+export type { SessionLlmOverride };
 
 export interface SessionProfileChoice {
   name: string;
@@ -269,24 +265,22 @@ export class AgentRuntime {
       if (!loaded) {
         throw new Error(`Session not found: ${opts.resumeSessionId}`);
       }
-      this.session = loaded;
+      this.attachSession(loaded);
     } else if (opts.resumeLatest) {
       const latest = getLatestSession(env('USER_ID'));
       if (!latest) {
         if (!deferSession) {
-          this.session = createSession(env('USER_ID') ?? 'user_default');
-          this.sessionDirty = true;
+          this.attachSession(createSession(env('USER_ID') ?? 'user_default'), true);
         }
       } else {
         const loaded = loadSession(latest.session_id);
         if (!loaded) {
           throw new Error(`Session not found: ${latest.session_id}`);
         }
-        this.session = loaded;
+        this.attachSession(loaded);
       }
     } else if (!deferSession) {
-      this.session = createSession(env('USER_ID') ?? 'user_default');
-      this.sessionDirty = true;
+      this.attachSession(createSession(env('USER_ID') ?? 'user_default'), true);
     }
 
     if (opts.loadHandoffFrom) {
@@ -327,10 +321,49 @@ export class AgentRuntime {
   /** Create a session on first task when TUI started with deferSession. */
   ensureSession(): SessionFile {
     if (!this.session) {
-      this.session = createSession(env('USER_ID') ?? 'user_default');
-      this.sessionDirty = true;
+      this.attachSession(createSession(env('USER_ID') ?? 'user_default'), true);
     }
-    return this.session;
+    return this.session!;
+  }
+
+  private attachSession(session: SessionFile, dirty = false): void {
+    this.session = session;
+    this.sessionDirty = dirty;
+    this.restoreSessionLlmOverrideFromSession(session);
+  }
+
+  private normalizeSessionLlmOverride(
+    raw?: SessionLlmOverride,
+  ): SessionLlmOverride | undefined {
+    if (!raw) return undefined;
+    const normalized: SessionLlmOverride = {};
+    const profileName = raw.profileName?.trim();
+    const model = raw.model?.trim();
+    const reasoningLevel = raw.reasoningLevel?.trim();
+    if (profileName) normalized.profileName = profileName;
+    if (model) normalized.model = model;
+    if (reasoningLevel) normalized.reasoningLevel = reasoningLevel;
+    return Object.keys(normalized).length > 0 ? normalized : undefined;
+  }
+
+  private restoreSessionLlmOverrideFromSession(session?: SessionFile | null): void {
+    const normalized = this.normalizeSessionLlmOverride(session?.llm_override);
+    this.sessionLlmOverride = normalized ?? {};
+    this.bumpModelListGeneration();
+  }
+
+  private persistSessionLlmOverride(forceSave = true): void {
+    if (!this.session) return;
+    const normalized = this.normalizeSessionLlmOverride(this.sessionLlmOverride);
+    if (normalized) {
+      this.session.llm_override = normalized;
+    } else {
+      delete this.session.llm_override;
+    }
+    this.sessionDirty = true;
+    if (forceSave) {
+      this.saveIfDirty(true);
+    }
   }
 
   resumeLatestSession(): boolean {
@@ -398,9 +431,12 @@ export class AgentRuntime {
     return { ...this.sessionLlmOverride };
   }
 
-  private clearSessionLlmOverride(): void {
+  private clearSessionLlmOverride(persist = true): void {
     this.sessionLlmOverride = {};
     this.bumpModelListGeneration();
+    if (persist) {
+      this.persistSessionLlmOverride();
+    }
   }
 
   private bumpModelListGeneration(): void {
@@ -519,6 +555,7 @@ export class AgentRuntime {
         ...(preservedModel ? { model: preservedModel } : {}),
         ...(preservedReasoning ? { reasoningLevel: preservedReasoning } : {}),
       };
+      this.persistSessionLlmOverride();
       const models = listModelsForProfile(this.pluginConfig, trimmed);
       const hint =
         models.length > 1
@@ -557,6 +594,7 @@ export class AgentRuntime {
         ...this.sessionLlmOverride,
         model: trimmed,
       };
+      this.persistSessionLlmOverride();
       return {
         ok: true,
         message: `model → ${profileName}/${trimmed} (next task)`,
@@ -578,7 +616,9 @@ export class AgentRuntime {
       !(this.sessionLlmOverride.reasoningLevel?.trim())
     ) {
       this.clearSessionLlmOverride();
+      return;
     }
+    this.persistSessionLlmOverride();
   }
 
   listSessionReasoningChoices(): SessionReasoningChoice[] {
@@ -614,6 +654,7 @@ export class AgentRuntime {
       ...this.sessionLlmOverride,
       reasoningLevel: trimmed,
     };
+    this.persistSessionLlmOverride();
     return {
       ok: true,
       message: `reasoning → ${binding.profileName}/${trimmed} (next task)`,
@@ -627,7 +668,9 @@ export class AgentRuntime {
       !(this.sessionLlmOverride.model?.trim())
     ) {
       this.clearSessionLlmOverride();
+      return;
     }
+    this.persistSessionLlmOverride();
   }
 
   private buildRunConfig(signal: AbortSignal): AgentConfig {
@@ -681,16 +724,15 @@ export class AgentRuntime {
   resumeSession(id: string): boolean {
     const loaded = loadSession(id);
     if (!loaded) return false;
-    this.session = loaded;
-    this.sessionDirty = false;
-    this.clearSessionLlmOverride();
+    this.attachSession(loaded);
     return true;
   }
 
   newSession(): void {
-    this.session = createSession(env('USER_ID') ?? 'user_default');
-    this.sessionDirty = true;
-    this.clearSessionLlmOverride();
+    this.attachSession(createSession(env('USER_ID') ?? 'user_default'), true);
+    this.sessionLlmOverride = {};
+    this.bumpModelListGeneration();
+    this.persistSessionLlmOverride();
   }
 
   /** Drop in-flight messages; completed task summaries remain. */
