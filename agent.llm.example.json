@@ -54,6 +54,7 @@
       "extra_body": { "reasoning_effort": "low" }
     },
     "openrouter-test": {
+      "_note": "Good profile to exercise G2-d remote GET /models in TUI /model picker.",
       "display_name": "OpenRouter（个人测试）",
       "base_url": "https://openrouter.ai/api/v1",
       "api_key_env": "OPENROUTER_API_KEY",

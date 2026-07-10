@@ -626,6 +626,17 @@ function buildChatBody(model, messages, tools, stream, extraBody?) {
 
 **G2.1 验收**：网络失败时 picker 与 **仅静态配置** 时完全一致。
 
+#### B.1 实现（G2-d 落地）
+
+| 模块 | 职责 |
+|------|------|
+| `src/llm-models-remote.ts` | `GET {base}/models`、parse、10min cache、`mergeStaticAndRemoteModels` |
+| `AgentRuntime.listSessionModelChoicesAsync()` | 静态 + 可选 remote；`modelListGeneration` 丢弃过期 fetch |
+| `listSessionModelChoices()` | **仅静态**（hint、`setSessionLlmProfile` 不变） |
+| TUI `/model` list | pi + classic 走 async；**merged 长度 ≤1** 才短路（选项 A） |
+
+环境变量：`REMOTE_MODELS=0` 禁用；`REMOTE_MODELS_MAX`（默认 20）限制 remote 补全条数。
+
 #### C. Picker UI
 
 | 陷阱 | 表现 | 防护 |
@@ -696,7 +707,7 @@ function buildChatBody(model, messages, tools, stream, extraBody?) {
 | G2-a | `run_start.llm`：`profile` / `model` / `cache_mode` / `base_url_host`；TUI log + `--json-events` |
 | G2-b | job `meta.json`：`api_profile`、`model`、`llm_base_url`、`cache_mode`；`spawn:list` 展示 |
 | G2-c | `/profile` `/model`（§11.2–11.4）；`AgentRuntime.sessionLlmOverride`；状态栏 |
-| G2-d | （可选 G2.1）远程 `GET /models`；**须**满足 §11.4-B 回退与竞态防护 |
+| G2-d | 远程 `GET /models`（G2.1）；**须**满足 §11.4-B 回退与竞态防护 |
 
 **验收**
 
@@ -704,7 +715,8 @@ function buildChatBody(model, messages, tools, stream, extraBody?) {
 - [ ] job `meta.json` 可区分三并行 `code_review`（不同 profile/model）
 - [ ] `/profile` `/model` 会话级覆盖；pi-tui picker + classic 文本列表
 - [ ] 满足 §11.3 交互不变量与 §11.4 P0 checklist
-- [ ] 单测：`sessionLlmOverride` 合并、`listModelsForProfile` 与 profile 切换清 model
+- [x] 单测：`sessionLlmOverride` 合并、`listModelsForProfile` 与 profile 切换清 model
+- [x] G2-d：`listSessionModelChoicesAsync`；失败 ≡ 静态；`modelListGeneration` 竞态；merged ≤1 短路（选项 A）
 
 ### G3 — Fallback 链（P1，~1 天）
 
@@ -784,6 +796,7 @@ cc-connect provider-presets.json
 | 2026-07-10 | v0.2：厂商调研（DeepSeek/GLM 主力，xAI/OR 测试，Anthropic 最后）；缓存提前至 G1-cache；难度表；`agent.llm.example.json` |
 | 2026-07-11 | v0.3：§11 模型列表 + G2-c TUI slash/picker 交互；§11.3 不变量；§11.4 picker/API 联动陷阱与 checklist；G2 任务表 |
 | 2026-07-11 | v0.4：G3 fallback 链落地；§10.2–10.3；`llm_fallback` 事件；effective pre-flight |
+| 2026-07-11 | v0.5：G2-d 远程 `GET /models`；§11.4-B.1；merged 短路选项 A |
 
 ---
 

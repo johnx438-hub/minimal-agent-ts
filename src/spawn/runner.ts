@@ -153,7 +153,9 @@ async function runSpawnAgentInner(opts: {
       preset.name,
       parentConfig.llm,
     );
-    const presetModel = preset.model?.trim();
+    const presetModel = parentConfig.llmPluginConfig?.spawn_presets
+      ?.find((p) => p.name === preset.name)
+      ?.model?.trim();
     try {
       configureAgentLlmBinding(childConfig, parentConfig.llmPluginConfig, {
         profileName: presetBinding.profileName,

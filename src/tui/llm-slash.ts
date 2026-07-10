@@ -1,4 +1,4 @@
-import type { AgentRuntime } from '../runner.js';
+import type { AgentRuntime, SessionModelChoice } from '../runner.js';
 
 import type { LlmSlashAction } from './slash.js';
 import { buildSelectItems } from './pi/picker.js';
@@ -27,11 +27,21 @@ export function profilePickerItems(runtime: AgentRuntime): SelectItem[] {
 }
 
 export function modelPickerItems(runtime: AgentRuntime): SelectItem[] {
+  return modelPickerItemsFromChoices(
+    runtime.listSessionModelChoices(),
+    runtime.getEffectiveProfileName(),
+  );
+}
+
+export function modelPickerItemsFromChoices(
+  choices: SessionModelChoice[],
+  profileName: string,
+): SelectItem[] {
   return buildSelectItems(
-    runtime.listSessionModelChoices().map((choice) => ({
+    choices.map((choice) => ({
       value: choice.model,
       label: `${choice.model}${choice.active ? ' (active)' : ''}`,
-      description: runtime.getEffectiveProfileName(),
+      description: profileName,
     })),
   );
 }
@@ -56,12 +66,25 @@ export function formatProfileListClassic(runtime: AgentRuntime): string[] {
 }
 
 export function formatModelListClassic(runtime: AgentRuntime): string[] {
-  const lines = [
-    `profile: ${runtime.getEffectiveProfileName()}`,
+  return formatModelListClassicFromChoices(
+    runtime.listSessionModelChoices(),
+    runtime.getEffectiveProfileName(),
     runtime.formatSessionLlmStatus(),
-    '',
-  ];
-  for (const choice of runtime.listSessionModelChoices()) {
+  );
+}
+
+export function formatModelListClassicFromChoices(
+  choices: SessionModelChoice[],
+  profileName: string,
+  statusLine: string,
+  remoteError?: string,
+): string[] {
+  const lines = [`profile: ${profileName}`, statusLine];
+  if (remoteError) {
+    lines.push(`  ${remoteError}`);
+  }
+  lines.push('');
+  for (const choice of choices) {
     lines.push(`  ${choice.model}${choice.active ? ' (active)' : ''}`);
   }
   lines.push('  (pi TUI: /model opens picker; or /model <id>)');
@@ -74,7 +97,7 @@ export async function handleLlmSlashPi(
   deps: {
     say: (message: string, meta?: boolean) => void;
     pickProfile: () => Promise<string | null>;
-    pickModel: () => Promise<string | null>;
+    pickModel: (choices: SessionModelChoice[]) => Promise<string | null>;
   },
 ): Promise<void> {
   if (action.kind === 'profile') {
@@ -112,21 +135,22 @@ export async function handleLlmSlashPi(
     deps.say(runtime.setSessionLlmModel(action.model!).message);
     return;
   }
-  const models = runtime.listSessionModelChoices();
-  if (models.length <= 1) {
-    deps.say(runtime.formatSessionLlmStatus());
+  const modelList = await runtime.listSessionModelChoicesAsync();
+  if (modelList.choices.length <= 1) {
+    const note = modelList.remoteError ? ` ${modelList.remoteError}` : '';
+    deps.say(`${runtime.formatSessionLlmStatus()}${note}`);
     return;
   }
-  const picked = await deps.pickModel();
+  const picked = await deps.pickModel(modelList.choices);
   if (!picked) return;
   deps.say(runtime.setSessionLlmModel(picked).message);
 }
 
-export function handleLlmSlashClassic(
+export async function handleLlmSlashClassic(
   runtime: AgentRuntime,
   action: LlmSlashAction,
   print: (line: string) => void,
-): void {
+): Promise<void> {
   if (action.kind === 'profile') {
     if (action.mode === 'reset') {
       runtime.resetSessionLlmOverride();
@@ -157,12 +181,18 @@ export function handleLlmSlashClassic(
     print(runtime.setSessionLlmModel(action.model!).message);
     return;
   }
-  const models = runtime.listSessionModelChoices();
-  if (models.length <= 1) {
-    print(runtime.formatSessionLlmStatus());
+  const modelList = await runtime.listSessionModelChoicesAsync();
+  if (modelList.choices.length <= 1) {
+    const note = modelList.remoteError ? ` ${modelList.remoteError}` : '';
+    print(`${runtime.formatSessionLlmStatus()}${note}`);
     return;
   }
-  for (const line of formatModelListClassic(runtime)) {
+  for (const line of formatModelListClassicFromChoices(
+    modelList.choices,
+    runtime.getEffectiveProfileName(),
+    runtime.formatSessionLlmStatus(),
+    modelList.remoteError,
+  )) {
     print(line);
   }
 }

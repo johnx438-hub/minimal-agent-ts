@@ -87,6 +87,10 @@ import {
   type ResolvedLlmBinding,
 } from './llm-profiles.js';
 import { configureAgentLlmBinding } from './llm-fallback.js';
+import {
+  resolveMergedModelIds,
+  type MergedModelListSource,
+} from './llm-models-remote.js';
 
 export interface SessionLlmOverride {
   profileName?: string;
@@ -104,6 +108,12 @@ export interface SessionProfileChoice {
 export interface SessionModelChoice {
   model: string;
   active: boolean;
+}
+
+export interface SessionModelListResult {
+  choices: SessionModelChoice[];
+  source: MergedModelListSource;
+  remoteError?: string;
 }
 
 function env(name: string, fallback?: string): string | undefined {
@@ -202,6 +212,7 @@ export class AgentRuntime {
   private runWorkspacePrompt: WorkspacePromptBundle | null = null;
   private readonly p0Collector: P0TelemetryCollector | null;
   private sessionLlmOverride: SessionLlmOverride = {};
+  private modelListGeneration = 0;
 
   constructor(opts: AgentRuntimeOptions) {
     setWorkspaceRoot(opts.cwd);
@@ -373,6 +384,11 @@ export class AgentRuntime {
 
   private clearSessionLlmOverride(): void {
     this.sessionLlmOverride = {};
+    this.bumpModelListGeneration();
+  }
+
+  private bumpModelListGeneration(): void {
+    this.modelListGeneration++;
   }
 
   private resolveRunLlmBinding(): ResolvedLlmBinding {
@@ -434,6 +450,32 @@ export class AgentRuntime {
     }));
   }
 
+  /** Static list + optional GET /models enrich (G2-d); discards stale fetch on profile change. */
+  async listSessionModelChoicesAsync(): Promise<SessionModelListResult> {
+    const generationAtStart = this.modelListGeneration;
+    const binding = this.resolveRunLlmBinding();
+    const activeModel = binding.model;
+    const staticModels = listModelsForProfile(this.pluginConfig, binding.profileName);
+
+    const merged = await resolveMergedModelIds(staticModels, binding);
+
+    if (generationAtStart !== this.modelListGeneration) {
+      return {
+        choices: this.listSessionModelChoices(),
+        source: 'static',
+      };
+    }
+
+    return {
+      choices: merged.models.map((model) => ({
+        model,
+        active: model === activeModel,
+      })),
+      source: merged.source,
+      remoteError: merged.remoteError,
+    };
+  }
+
   setSessionLlmProfile(profileName: string): { ok: boolean; message: string } {
     const trimmed = profileName.trim();
     if (!trimmed) {
@@ -459,6 +501,7 @@ export class AgentRuntime {
           ? ` Models: ${models.join(', ')} (use /model)`
           : '';
       const displayModel = preservedModel ?? binding.model;
+      this.bumpModelListGeneration();
       return {
         ok: true,
         message: `profile → ${trimmed}/${displayModel} (next task)${hint}`,

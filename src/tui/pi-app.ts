@@ -43,7 +43,7 @@ import { cwdChangeNeedsConfirm } from '../tools/path-utils.js';
 import { buildSelectItems, showPickerOverlay } from './pi/picker.js';
 import {
   handleLlmSlashPi,
-  modelPickerItems,
+  modelPickerItemsFromChoices,
   profilePickerItems,
 } from './llm-slash.js';
 import { showHistoryBrowser } from './pi/history-overlay.js';
@@ -311,8 +311,11 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
           });
           return picked?.value ?? null;
         },
-        pickModel: async () => {
-          const items = modelPickerItems(runtime);
+        pickModel: async (choices) => {
+          const items = modelPickerItemsFromChoices(
+            choices,
+            runtime.getEffectiveProfileName(),
+          );
           const picked = await showPickerOverlay(tui, {
             title: 'Models — Enter to select · Esc cancel',
             items,

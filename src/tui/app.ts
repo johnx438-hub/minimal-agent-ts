@@ -275,7 +275,7 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
     }
 
     if (result.llmAction) {
-      handleLlmSlashClassic(runtime, result.llmAction, (line) => console.log(line));
+      await handleLlmSlashClassic(runtime, result.llmAction, (line) => console.log(line));
       showPrompt();
       return;
     }
