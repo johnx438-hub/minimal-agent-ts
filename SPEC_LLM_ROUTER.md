@@ -2,7 +2,7 @@
 
 > **定位**: OpenAI-compatible **传输与配置中间层**——多 API profile、子 Agent 绑模型、fallback、reasoning/extra_body 透传、**主流厂商隐式缓存观测**。与 ReAct 主循环、上下文策略 **正交**；目标是将本仓逐步打磨为 **开箱即用的 Agent 底座**。  
 > **参考**: [cc-connect](https://github.com/chenhg5/cc-connect) 的 `provider-presets.json` + `/provider` `/model` `/reasoning` 思路（**不**复制 IM 桥接与外部 CLI 适配器）。  
-> **状态**: Draft v0.2（2026-07-10）  
+> **状态**: Draft v0.3（2026-07-11）
 > **顺序**: B（P0 填表）→ F3-c → **G1 + G1-cache** → G2 → G3 → G4 → **G5（Anthropic 显式缓存，最后）**
 
 ---
@@ -500,10 +500,125 @@ function buildChatBody(model, messages, tools, stream, extraBody?) {
 
 ---
 
-## 11. 模型列表（G2）
+## 11. 模型列表与 TUI slash（G2）
 
-- profile.`models[]`：TUI 补全 + spawn 校验（warn）
-- 可选 `GET {base}/models`，内存缓存 10 分钟
+### 11.1 数据源
+
+| 来源 | API | 用途 | 阶段 |
+|------|-----|------|------|
+| **静态** | `listProfileNames()`、`listModelsForProfile()`（`src/llm-profiles.ts`） | pi-tui picker、classic 文本列表、`/model` 直设校验（warn） | **G2 必做** |
+| **远程** | `GET {base}/models`，内存缓存 10 分钟，timeout + 失败回退静态 | 配置未列全的 OpenRouter slug 等 | **G2.1 可选** |
+
+静态列表规则（与实现对齐）：
+
+- profile 有 `models[]` → 列表即该数组；否则仅 `[default_model]`
+- `__env__` → 仅 `[resolveModel from MODEL env]`（**不是**其他 profile 的 `models[]`）
+- `resolveLlmBinding` 的 `model` override **不**要求落在 `models[]` 内（手写 `/model <id>` 仍可透传）；picker 展示的是**建议集**，不是硬白名单
+
+配置校验（加载时 **warn**，不阻塞启动）：
+
+- `default_model` 应出现在 `models[]` 中（若 `models[]` 非空）
+
+### 11.2 TUI slash 交互（G2-c）
+
+**范围**：仅 **主 Agent 会话**（`AgentRuntime` session override）。spawn preset / workflow role / job 的 `api_profile` **不受** `/profile` 影响；见 §11.4 spawn 分裂。
+
+| 命令 | 行为 |
+|------|------|
+| `/profile` | pi-tui：**picker**；classic TUI：**文本列表**（与现 `/sessions`、`/skills` 分工一致） |
+| `/profile <name>` | 直接设 session profile override |
+| `/profile reset` | 清 profile + model override，恢复 `default_api_profile` / env |
+| `/provider` | `/profile` 的别名（cc-connect 习惯） |
+| `/model` | 列出**当前生效 profile** 的模型；多项时 pi picker / classic 列表 |
+| `/model <id>` | 直接设 session model override |
+| `/model reset` | 仅清 model override |
+
+**双路径**（与 `/workflow` 相同）：无参 → 列表/picker；有参 → 直设。
+
+**单选项短路**：仅 1 个 profile 或当前 profile 仅 1 个 model 时，无参调用**打印状态**，不弹空 picker。
+
+**pi-tui picker**（复用 `showPickerOverlay` + `buildSelectItems`，可参考 `/skills`）：
+
+- 行标记：`(active)` 当前生效；`(no key)` + description 显示 `unavailableReason`
+- 缺 key 的 profile：**选中时拦截**，`say` 错误，**不**写入 override
+- `value` 必须为完整 model id（OpenRouter slug 勿在展示层截断 value）
+- Enter 才 commit；Esc 取消 = 无变更
+
+**状态栏**（`printStatus`）：`llm:<profile>/<model>`，有 override 时标 `(override)` 或 `*`。
+
+**不持久化**：override 不写 `agent.json`；新 session 清空（与 `/shell on|off` 一致）。
+
+**实现模块**（拟）：
+
+| 模块 | 职责 |
+|------|------|
+| `src/tui/slash.ts` | parse、`SlashResult` 的 `llmProfileAction` / `llmModelAction` |
+| `src/runner.ts` | `sessionLlmOverride`、`buildRunConfig` 合并 `resolveLlmBinding` |
+| `src/tui/llm-picker.ts`（可选） | `buildProfilePickerEntries` / `buildModelPickerEntries` |
+| `src/tui/pi-app.ts` | picker 与 `say` 反馈 |
+| `src/tui/app.ts` | classic 文本列表 + 提示「pi TUI 可用 picker」 |
+
+### 11.3 交互不变量（实现必须满足）
+
+1. **`/model` 列表来源** = `listModelsForProfile(pluginConfig, effectiveProfileName)`，其中 `effectiveProfileName` = session profile override ?? default。
+2. **`/profile <name>` 成功后**：默认 **清空 model override**（或：若旧 model 不在新 profile 列表中则清空——二者取并，推荐一律清空以免陈旧）。
+3. **`/profile reset`**：清空 profile **与** model override。
+4. **`/model reset`**：仅清空 model override；profile override 保留。
+5. **缺 key profile**：picker 可选中预览，但 **commit 时拒绝**；`requireAvailableLlmBinding` 在 `run` 前仍作最后防线。
+6. **`run_start.llm`**（G2-a）与状态栏使用**同一套** `buildRunConfig` 解析结果，避免「显示 A、请求 B」。
+7. **正在运行的 task**：override 仅对 **下一条** `runSingleTask` / workflow 生效；run 中改 slash 不改变当前 in-flight `AgentConfig`（可选：run 中拒绝 `/profile` `/model` 并提示）。
+
+### 11.4 Picker 与模型列表：已知陷阱与防护
+
+#### A. 静态 `models[]`（G2）
+
+| 陷阱 | 表现 | 防护 |
+|------|------|------|
+| 列表与请求不一致 | picker 显示 A，实际请求 B | 状态栏 + `run_start.llm` 同源；`(active)` 标记对齐 `effective` binding |
+| `default_model ∉ models[]` | 默认项不在列表中 | 加载时 warn；picker 始终包含 `default_model` 一项 |
+| Profile 切换后陈旧 model | 切到 DeepSeek 仍发 `glm-5.2` | §11.3 规则 2：profile 切换清 model override |
+| `__env__` 列表污染 | `/model` 显示上一 profile 的 5 个型号 | 列表 API 必须传 **当前** `effectiveProfileName`，禁止缓存「上一个 profile」的列表 |
+| 手写 `/model` 不在列表 | 能跑但 picker 无对应行 | 允许；status 显示 override；picker 无 `(active)` 时以 status 为准 |
+| `models[]` 重复 | picker 两条相同 value | 构建 items 时去重 |
+
+#### B. 远程 `GET /models`（G2.1，可选）
+
+| 陷阱 | 表现 | 防护 |
+|------|------|------|
+| 请求挂住 | 开 picker 卡死 | timeout（如 5s）；失败 → 静态列表 |
+| 空列表 / 401 被吞 | 「无模型」 | 显示 `(auth failed)` / `(fetch failed)`；回退静态 |
+| 竞态 | 快速切 profile，列表错 profile | 每次 fetch 带 `profileGeneration`；丢弃过期响应 |
+| slug 与配置不一致 | 同模型两行不同 id | G2.1 可选去重；静态 `models[]` **置顶** |
+| 列表过大 | OpenRouter 数百项难选 | 默认只展示 `models[]`；远程仅作「补全」或 `/model <id>` 直设 |
+
+**G2.1 验收**：网络失败时 picker 与 **仅静态配置** 时完全一致。
+
+#### C. Picker UI
+
+| 陷阱 | 表现 | 防护 |
+|------|------|------|
+| Esc 误改 | 用户以为未切换 | 仅 Enter commit |
+| 缺 key 仍写入 | 下条 task LLM 硬失败 | commit 拦截 + `unavailableReason` |
+| description 截断 value | 选中错误 slug | `truncateToWidth` 只用于 label/description，`value` 完整 |
+| run 中修改 | 当前 turn 行为未定义 | 仅下条生效或 run 中禁止（§11.3 规则 7） |
+
+#### D. 与 spawn / job 分裂（非 picker bug，需文案）
+
+| 陷阱 | 表现 | 防护 |
+|------|------|------|
+| 用户以为 TUI profile 管 spawn | 主 agent GLM，code_review job 仍走 preset | `/profile` status 注明「仅主 Agent；spawn 见 preset / job meta」 |
+| 事后追溯 | `spawn:list` 与 TUI 当时不一致 | G2-b：job `meta.json` 写入 `api_profile` / `model` |
+
+#### E. 实现优先级（checklist）
+
+| 优先级 | 项 |
+|:------:|-----|
+| P0 | profile 切换 ↔ model override 陈旧（§11.3 规则 2） |
+| P0 | `/model` 列表绑定当前 `effectiveProfileName` |
+| P0 | 缺 key profile commit 拦截 |
+| P1 | `default_model ∈ models[]` warn |
+| P1 | 远程列表：timeout + 静态 fallback + 竞态取消（G2.1） |
+| P2 | 远程与静态 slug 去重；run 中 slash 策略文案 |
 
 ---
 
@@ -543,11 +658,20 @@ function buildChatBody(model, messages, tools, stream, extraBody?) {
 
 ### G2 — 可观测 + TUI（P1，~1 天）
 
+| 任务 | 说明 |
+|------|------|
+| G2-a | `run_start.llm`：`profile` / `model` / `cache_mode` / `base_url_host`；TUI log + `--json-events` |
+| G2-b | job `meta.json`：`api_profile`、`model`、`llm_base_url`、`cache_mode`；`spawn:list` 展示 |
+| G2-c | `/profile` `/model`（§11.2–11.4）；`AgentRuntime.sessionLlmOverride`；状态栏 |
+| G2-d | （可选 G2.1）远程 `GET /models`；**须**满足 §11.4-B 回退与竞态防护 |
+
 **验收**
 
 - [ ] `run_start.llm` 含 profile / model / cache_mode
-- [ ] job `meta.json` 可区分三并行 `code_review`
-- [ ] `/profile` `/model` 会话级覆盖
+- [ ] job `meta.json` 可区分三并行 `code_review`（不同 profile/model）
+- [ ] `/profile` `/model` 会话级覆盖；pi-tui picker + classic 文本列表
+- [ ] 满足 §11.3 交互不变量与 §11.4 P0 checklist
+- [ ] 单测：`sessionLlmOverride` 合并、`listModelsForProfile` 与 profile 切换清 model
 
 ### G3 — Fallback 链（P1，~1 天）
 
@@ -602,7 +726,7 @@ cc-connect provider-presets.json
 
 | 层 | 内容 |
 |----|------|
-| 单元 | `resolveLlmBinding`、`parseCacheUsage`（DS/GLM/OR fixtures）、extra_body 合并、fallback |
+| 单元 | `resolveLlmBinding`、`parseCacheUsage`（DS/GLM/OR fixtures）、extra_body 合并、fallback；G2：`sessionLlmOverride`、profile 切换清 model、`listModelsForProfile` |
 | 集成 | mock `fetch`：profile A 失败 → B；usage 含 DS 字段 |
 | 回归 | 无 `api_profiles` 与现网 snapshot 一致 |
 | E2E（人工） | DeepSeek + GLM 各跑 3 turn 看 cache 事件 |
@@ -616,6 +740,7 @@ cc-connect provider-presets.json
 |------|------|
 | 2026-07-10 | v0.1 初稿：轨 G 范围、schema、绑定、G1–G5 验收 |
 | 2026-07-10 | v0.2：厂商调研（DeepSeek/GLM 主力，xAI/OR 测试，Anthropic 最后）；缓存提前至 G1-cache；难度表；`agent.llm.example.json` |
+| 2026-07-11 | v0.3：§11 模型列表 + G2-c TUI slash/picker 交互；§11.3 不变量；§11.4 picker/API 联动陷阱与 checklist；G2 任务表 |
 
 ---
 
