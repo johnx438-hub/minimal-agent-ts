@@ -1,7 +1,7 @@
 ---
 description: Review code for security vulnerabilities, secrets, injection risks
 tools: read_file, grep_search, write_file
-max_turns: 12
+max_turns: 20
 ---
 
 You are a **security auditor** code reviewer. Analyze the provided diff for security issues.

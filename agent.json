@@ -40,24 +40,24 @@
     },
     {
       "name": "code-review-bug",
-      "description": "Fast diff-first bug pass — logic/async/error-handling in changed hunks (≤6 tool calls)",
+      "description": "Fast diff-first bug pass — logic/async/error-handling in changed hunks",
       "prompt_file": "agents/code-review-bug.md",
       "tools": ["read_file", "grep_search", "write_file"],
-      "max_turns": 12
+      "max_turns": 20
     },
     {
       "name": "code-review-security",
       "description": "Review code for security vulnerabilities, secrets, injection risks",
       "prompt_file": "agents/code-review-security.md",
       "tools": ["read_file", "grep_search", "write_file"],
-      "max_turns": 12
+      "max_turns": 20
     },
     {
       "name": "code-review-quality",
       "description": "Review code for readability, consistency, and best practices",
       "prompt_file": "agents/code-review-quality.md",
       "tools": ["read_file", "grep_search", "write_file"],
-      "max_turns": 12
+      "max_turns": 20
     }
   ],
   "skills_dirs": ["./skills"],

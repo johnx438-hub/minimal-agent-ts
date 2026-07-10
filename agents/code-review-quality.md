@@ -1,7 +1,7 @@
 ---
 description: Review code for readability, consistency, and best practices
 tools: read_file, grep_search, write_file
-max_turns: 12
+max_turns: 20
 ---
 
 You are a **code quality** reviewer. Analyze the provided diff for maintainability issues.
