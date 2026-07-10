@@ -91,10 +91,13 @@ import {
   resolveMergedModelIds,
   type MergedModelListSource,
 } from './llm-models-remote.js';
+import { listReasoningLevels, resolveReasoningPatch } from './llm-reasoning.js';
 
 export interface SessionLlmOverride {
   profileName?: string;
   model?: string;
+  /** Key into effective profile reasoning_map (G4 /reasoning). */
+  reasoningLevel?: string;
 }
 
 export interface SessionProfileChoice {
@@ -114,6 +117,11 @@ export interface SessionModelListResult {
   choices: SessionModelChoice[];
   source: MergedModelListSource;
   remoteError?: string;
+}
+
+export interface SessionReasoningChoice {
+  level: string;
+  active: boolean;
 }
 
 function env(name: string, fallback?: string): string | undefined {
@@ -374,8 +382,16 @@ export class AgentRuntime {
   }
 
   hasSessionLlmOverride(): boolean {
-    const { profileName, model } = this.sessionLlmOverride;
-    return (profileName?.trim() ?? '') !== '' || (model?.trim() ?? '') !== '';
+    const { profileName, model, reasoningLevel } = this.sessionLlmOverride;
+    return (
+      (profileName?.trim() ?? '') !== '' ||
+      (model?.trim() ?? '') !== '' ||
+      (reasoningLevel?.trim() ?? '') !== ''
+    );
+  }
+
+  getSessionReasoningLevel(): string | undefined {
+    return this.sessionLlmOverride.reasoningLevel?.trim() || undefined;
   }
 
   getSessionLlmOverride(): Readonly<SessionLlmOverride> {
@@ -411,18 +427,22 @@ export class AgentRuntime {
   formatSessionLlmShortLine(): string {
     const binding = this.resolveRunLlmBinding();
     const star = this.hasSessionLlmOverride() ? '*' : '';
-    return `llm:${binding.profileName}/${binding.model}${star}`;
+    const reasoning = this.getSessionReasoningLevel();
+    const r = reasoning ? ` r:${reasoning}` : '';
+    return `llm:${binding.profileName}/${binding.model}${star}${r}`;
   }
 
   formatSessionLlmStatus(): string {
     const binding = this.resolveRunLlmBinding();
     const tag = `${binding.profileName}/${binding.model}`;
     const override = this.hasSessionLlmOverride() ? ' (session override)' : '';
+    const reasoning = this.getSessionReasoningLevel();
+    const reasoningPart = reasoning ? ` reasoning=${reasoning}` : '';
     const cache =
       binding.cache?.mode && binding.cache.mode !== 'off'
         ? ` cache=${binding.cache.mode}`
         : '';
-    return `llm: ${tag}${override}${cache} — main agent only; spawn jobs use preset binding`;
+    return `llm: ${tag}${override}${reasoningPart}${cache} — main agent only; spawn jobs use preset binding`;
   }
 
   listSessionProfileChoices(): SessionProfileChoice[] {
@@ -491,9 +511,13 @@ export class AgentRuntime {
       }
       const profileChanged = this.getEffectiveProfileName() !== trimmed;
       const preservedModel = profileChanged ? undefined : this.sessionLlmOverride.model?.trim();
+      const preservedReasoning = profileChanged
+        ? undefined
+        : this.sessionLlmOverride.reasoningLevel?.trim();
       this.sessionLlmOverride = {
         profileName: trimmed,
         ...(preservedModel ? { model: preservedModel } : {}),
+        ...(preservedReasoning ? { reasoningLevel: preservedReasoning } : {}),
       };
       const models = listModelsForProfile(this.pluginConfig, trimmed);
       const hint =
@@ -549,7 +573,59 @@ export class AgentRuntime {
 
   resetSessionLlmModel(): void {
     delete this.sessionLlmOverride.model;
-    if (!(this.sessionLlmOverride.profileName?.trim())) {
+    if (
+      !(this.sessionLlmOverride.profileName?.trim()) &&
+      !(this.sessionLlmOverride.reasoningLevel?.trim())
+    ) {
+      this.clearSessionLlmOverride();
+    }
+  }
+
+  listSessionReasoningChoices(): SessionReasoningChoice[] {
+    const binding = this.resolveRunLlmBinding();
+    const active = this.getSessionReasoningLevel();
+    return listReasoningLevels(binding.reasoningMap).map((level) => ({
+      level,
+      active: level === active,
+    }));
+  }
+
+  setSessionReasoningLevel(level: string): { ok: boolean; message: string } {
+    const trimmed = level.trim();
+    if (!trimmed) {
+      return { ok: false, message: 'error: reasoning level required' };
+    }
+    const binding = this.resolveRunLlmBinding();
+    const patch = resolveReasoningPatch(binding.reasoningMap, trimmed);
+    if (!patch) {
+      const available = listReasoningLevels(binding.reasoningMap);
+      if (available.length === 0) {
+        return {
+          ok: false,
+          message: `error: profile "${binding.profileName}" has no reasoning_map`,
+        };
+      }
+      return {
+        ok: false,
+        message: `error: unknown reasoning level "${trimmed}" (available: ${available.join(', ')})`,
+      };
+    }
+    this.sessionLlmOverride = {
+      ...this.sessionLlmOverride,
+      reasoningLevel: trimmed,
+    };
+    return {
+      ok: true,
+      message: `reasoning → ${binding.profileName}/${trimmed} (next task)`,
+    };
+  }
+
+  resetSessionReasoningLevel(): void {
+    delete this.sessionLlmOverride.reasoningLevel;
+    if (
+      !(this.sessionLlmOverride.profileName?.trim()) &&
+      !(this.sessionLlmOverride.model?.trim())
+    ) {
       this.clearSessionLlmOverride();
     }
   }
@@ -569,6 +645,10 @@ export class AgentRuntime {
       profileName: override.profileName?.trim(),
       model: override.model?.trim(),
     });
+    const reasoningLevel = override.reasoningLevel?.trim();
+    if (reasoningLevel) {
+      runConfig.sessionReasoningLevel = reasoningLevel;
+    }
     return runConfig;
   }
 
@@ -578,7 +658,8 @@ export class AgentRuntime {
     signal: AbortSignal,
     wsMeta: ReturnType<typeof workspacePromptRunStartMeta>,
   ): void {
-    const llmMeta = buildRunStartLlmMeta(this.buildRunConfig(signal).llm);
+    const runConfig = this.buildRunConfig(signal);
+    const llmMeta = buildRunStartLlmMeta(runConfig.llm, runConfig.sessionReasoningLevel);
     const llm =
       llmMeta && this.hasSessionLlmOverride()
         ? { ...llmMeta, session_override: true }

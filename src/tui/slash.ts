@@ -11,7 +11,8 @@ export type ApproveAction =
 
 export type LlmSlashAction =
   | { kind: 'profile'; mode: 'list' | 'set' | 'reset'; name?: string }
-  | { kind: 'model'; mode: 'list' | 'set' | 'reset'; model?: string };
+  | { kind: 'model'; mode: 'list' | 'set' | 'reset'; model?: string }
+  | { kind: 'reasoning'; mode: 'list' | 'set' | 'reset'; level?: string };
 
 export interface SlashResult {
   handled: boolean;
@@ -129,6 +130,11 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
     command: '/model [id|reset]',
     hintZh: '覆盖 model（仅主 Agent 本会话）',
     hintEn: 'Override model (main agent, this session)',
+  },
+  {
+    command: '/reasoning [level|reset]',
+    hintZh: '推理强度（reasoning_map，仅主 Agent 本会话）',
+    hintEn: 'Reasoning effort via reasoning_map (main agent, this session)',
   },
   {
     command: '/shell on|off',
@@ -390,6 +396,20 @@ export function parseSlashLine(line: string): SlashResult | null {
       return {
         handled: true,
         llmAction: { kind: 'model', mode: 'set', model: sub },
+      };
+    }
+
+    case '/reasoning': {
+      const sub = parts[1]?.trim();
+      if (!sub) {
+        return { handled: true, llmAction: { kind: 'reasoning', mode: 'list' } };
+      }
+      if (sub.toLowerCase() === 'reset') {
+        return { handled: true, llmAction: { kind: 'reasoning', mode: 'reset' } };
+      }
+      return {
+        handled: true,
+        llmAction: { kind: 'reasoning', mode: 'set', level: sub },
       };
     }
 

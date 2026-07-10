@@ -133,6 +133,8 @@ export interface AgentConfig {
   llmBindingChain?: import('./llm-profiles.js').ResolvedLlmBinding[];
   /** When false, only the effective profile is used (explicit model or FALLBACK=0). */
   llmProfileFallbackEnabled?: boolean;
+  /** Session /reasoning level key into profile reasoning_map (G4); main agent only. */
+  sessionReasoningLevel?: string;
   /** agent.json snapshot for spawn/workflow per-preset LLM resolution. */
   llmPluginConfig?: AgentPluginConfig;
 }

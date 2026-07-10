@@ -276,6 +276,7 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
 
     if (result.llmAction) {
       await handleLlmSlashClassic(runtime, result.llmAction, (line) => console.log(line));
+      printStatus(runtime, armedWorkflow);
       showPrompt();
       return;
     }

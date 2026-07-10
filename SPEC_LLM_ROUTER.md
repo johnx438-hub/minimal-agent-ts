@@ -736,10 +736,18 @@ function buildChatBody(model, messages, tools, stream, extraBody?) {
 
 ### G4 — Reasoning（P1，1 天）
 
+| 任务 | 说明 |
+|------|------|
+| G4-a | `llm-reasoning.ts`：`resolveReasoningPatch` / `buildSessionReasoningExtraBody` |
+| G4-b | `buildLlmTurnRequestForBinding` 合并顺序 §9.1；`sessionReasoningLevel` on `AgentConfig` |
+| G4-c | `/reasoning` slash + pi picker + classic 列表；`run_start.llm.reasoning` |
+| G4-d | 单测：DS/GLM body、`xAI` `reasoning_effort` 覆盖 profile `extra_body` |
+
 **验收**
 
-- [ ] DeepSeek 或 GLM `reasoning_map` E2E body 含 `thinking` / `reasoning_effort`
-- [ ] xAI `reasoning_effort` 透传可测
+- [x] DeepSeek 或 GLM `reasoning_map` body 含 `thinking` / `reasoning_effort`
+- [x] xAI `reasoning_effort` 透传可测
+- [x] `/reasoning` / `/reasoning reset`；profile 切换清 reasoning override
 
 ### G5 — Anthropic 显式缓存（P2 最后，1–2 天）
 
@@ -797,6 +805,7 @@ cc-connect provider-presets.json
 | 2026-07-11 | v0.3：§11 模型列表 + G2-c TUI slash/picker 交互；§11.3 不变量；§11.4 picker/API 联动陷阱与 checklist；G2 任务表 |
 | 2026-07-11 | v0.4：G3 fallback 链落地；§10.2–10.3；`llm_fallback` 事件；effective pre-flight |
 | 2026-07-11 | v0.5：G2-d 远程 `GET /models`；§11.4-B.1；merged 短路选项 A |
+| 2026-07-11 | v0.6：G4 `/reasoning` + `reasoning_map` 会话 patch；`run_start.llm.reasoning` |
 
 ---
 

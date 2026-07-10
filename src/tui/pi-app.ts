@@ -45,6 +45,7 @@ import {
   handleLlmSlashPi,
   modelPickerItemsFromChoices,
   profilePickerItems,
+  reasoningPickerItems,
 } from './llm-slash.js';
 import { showHistoryBrowser } from './pi/history-overlay.js';
 import { showLogBrowser } from './pi/log-overlay.js';
@@ -323,7 +324,17 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
           });
           return picked?.value ?? null;
         },
+        pickReasoning: async () => {
+          const items = reasoningPickerItems(runtime);
+          const picked = await showPickerOverlay(tui, {
+            title: 'Reasoning — Enter to select · Esc cancel',
+            items,
+            maxVisible: Math.min(items.length, 10),
+          });
+          return picked?.value ?? null;
+        },
       });
+      printStatus();
       resumeEditor();
       return;
     }

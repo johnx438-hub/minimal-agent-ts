@@ -1,4 +1,4 @@
-import type { AgentRuntime, SessionModelChoice } from '../runner.js';
+import type { AgentRuntime, SessionModelChoice, SessionReasoningChoice } from '../runner.js';
 
 import type { LlmSlashAction } from './slash.js';
 import { buildSelectItems } from './pi/picker.js';
@@ -41,6 +41,26 @@ export function modelPickerItemsFromChoices(
     choices.map((choice) => ({
       value: choice.model,
       label: `${choice.model}${choice.active ? ' (active)' : ''}`,
+      description: profileName,
+    })),
+  );
+}
+
+export function reasoningPickerItems(runtime: AgentRuntime): SelectItem[] {
+  return reasoningPickerItemsFromChoices(
+    runtime.listSessionReasoningChoices(),
+    runtime.getEffectiveProfileName(),
+  );
+}
+
+export function reasoningPickerItemsFromChoices(
+  choices: SessionReasoningChoice[],
+  profileName: string,
+): SelectItem[] {
+  return buildSelectItems(
+    choices.map((choice) => ({
+      value: choice.level,
+      label: `${choice.level}${choice.active ? ' (active)' : ''}`,
       description: profileName,
     })),
   );
@@ -91,6 +111,32 @@ export function formatModelListClassicFromChoices(
   return lines;
 }
 
+export function formatReasoningListClassic(runtime: AgentRuntime): string[] {
+  return formatReasoningListClassicFromChoices(
+    runtime.listSessionReasoningChoices(),
+    runtime.getEffectiveProfileName(),
+    runtime.formatSessionLlmStatus(),
+  );
+}
+
+export function formatReasoningListClassicFromChoices(
+  choices: SessionReasoningChoice[],
+  profileName: string,
+  statusLine: string,
+): string[] {
+  const lines = [`profile: ${profileName}`, statusLine, ''];
+  if (choices.length === 0) {
+    lines.push('  (no reasoning_map for this profile)');
+  } else {
+    for (const choice of choices) {
+      lines.push(`  ${choice.level}${choice.active ? ' (active)' : ''}`);
+    }
+  }
+  lines.push('  (pi TUI: /reasoning opens picker; or /reasoning <level>)');
+  lines.push('  (/reasoning reset clears session reasoning override)');
+  return lines;
+}
+
 export async function handleLlmSlashPi(
   runtime: AgentRuntime,
   action: LlmSlashAction,
@@ -98,12 +144,13 @@ export async function handleLlmSlashPi(
     say: (message: string, meta?: boolean) => void;
     pickProfile: () => Promise<string | null>;
     pickModel: (choices: SessionModelChoice[]) => Promise<string | null>;
+    pickReasoning: () => Promise<string | null>;
   },
 ): Promise<void> {
   if (action.kind === 'profile') {
     if (action.mode === 'reset') {
       runtime.resetSessionLlmOverride();
-      deps.say('LLM session override cleared (profile + model)');
+      deps.say('LLM session override cleared (profile + model + reasoning)');
       return;
     }
     if (action.mode === 'set') {
@@ -126,24 +173,47 @@ export async function handleLlmSlashPi(
     return;
   }
 
-  if (action.mode === 'reset') {
-    runtime.resetSessionLlmModel();
-    deps.say('model override cleared');
+  if (action.kind === 'model') {
+    if (action.mode === 'reset') {
+      runtime.resetSessionLlmModel();
+      deps.say('model override cleared');
+      return;
+    }
+    if (action.mode === 'set') {
+      deps.say(runtime.setSessionLlmModel(action.model!).message);
+      return;
+    }
+    const modelList = await runtime.listSessionModelChoicesAsync();
+    if (modelList.choices.length <= 1) {
+      const note = modelList.remoteError ? ` ${modelList.remoteError}` : '';
+      deps.say(`${runtime.formatSessionLlmStatus()}${note}`);
+      return;
+    }
+    const picked = await deps.pickModel(modelList.choices);
+    if (!picked) return;
+    deps.say(runtime.setSessionLlmModel(picked).message);
     return;
   }
-  if (action.mode === 'set') {
-    deps.say(runtime.setSessionLlmModel(action.model!).message);
-    return;
+
+  if (action.kind === 'reasoning') {
+    if (action.mode === 'reset') {
+      runtime.resetSessionReasoningLevel();
+      deps.say('reasoning override cleared');
+      return;
+    }
+    if (action.mode === 'set') {
+      deps.say(runtime.setSessionReasoningLevel(action.level!).message);
+      return;
+    }
+    const choices = runtime.listSessionReasoningChoices();
+    if (choices.length <= 1) {
+      deps.say(runtime.formatSessionLlmStatus());
+      return;
+    }
+    const picked = await deps.pickReasoning();
+    if (!picked) return;
+    deps.say(runtime.setSessionReasoningLevel(picked).message);
   }
-  const modelList = await runtime.listSessionModelChoicesAsync();
-  if (modelList.choices.length <= 1) {
-    const note = modelList.remoteError ? ` ${modelList.remoteError}` : '';
-    deps.say(`${runtime.formatSessionLlmStatus()}${note}`);
-    return;
-  }
-  const picked = await deps.pickModel(modelList.choices);
-  if (!picked) return;
-  deps.say(runtime.setSessionLlmModel(picked).message);
 }
 
 export async function handleLlmSlashClassic(
@@ -154,7 +224,7 @@ export async function handleLlmSlashClassic(
   if (action.kind === 'profile') {
     if (action.mode === 'reset') {
       runtime.resetSessionLlmOverride();
-      print('LLM session override cleared (profile + model)');
+      print('LLM session override cleared (profile + model + reasoning)');
       return;
     }
     if (action.mode === 'set') {
@@ -172,27 +242,54 @@ export async function handleLlmSlashClassic(
     return;
   }
 
-  if (action.mode === 'reset') {
-    runtime.resetSessionLlmModel();
-    print('model override cleared');
+  if (action.kind === 'model') {
+    if (action.mode === 'reset') {
+      runtime.resetSessionLlmModel();
+      print('model override cleared');
+      return;
+    }
+    if (action.mode === 'set') {
+      print(runtime.setSessionLlmModel(action.model!).message);
+      return;
+    }
+    const modelList = await runtime.listSessionModelChoicesAsync();
+    if (modelList.choices.length <= 1) {
+      const note = modelList.remoteError ? ` ${modelList.remoteError}` : '';
+      print(`${runtime.formatSessionLlmStatus()}${note}`);
+      return;
+    }
+    for (const line of formatModelListClassicFromChoices(
+      modelList.choices,
+      runtime.getEffectiveProfileName(),
+      runtime.formatSessionLlmStatus(),
+      modelList.remoteError,
+    )) {
+      print(line);
+    }
     return;
   }
-  if (action.mode === 'set') {
-    print(runtime.setSessionLlmModel(action.model!).message);
-    return;
-  }
-  const modelList = await runtime.listSessionModelChoicesAsync();
-  if (modelList.choices.length <= 1) {
-    const note = modelList.remoteError ? ` ${modelList.remoteError}` : '';
-    print(`${runtime.formatSessionLlmStatus()}${note}`);
-    return;
-  }
-  for (const line of formatModelListClassicFromChoices(
-    modelList.choices,
-    runtime.getEffectiveProfileName(),
-    runtime.formatSessionLlmStatus(),
-    modelList.remoteError,
-  )) {
-    print(line);
+
+  if (action.kind === 'reasoning') {
+    if (action.mode === 'reset') {
+      runtime.resetSessionReasoningLevel();
+      print('reasoning override cleared');
+      return;
+    }
+    if (action.mode === 'set') {
+      print(runtime.setSessionReasoningLevel(action.level!).message);
+      return;
+    }
+    const choices = runtime.listSessionReasoningChoices();
+    if (choices.length <= 1) {
+      print(runtime.formatSessionLlmStatus());
+      return;
+    }
+    for (const line of formatReasoningListClassicFromChoices(
+      choices,
+      runtime.getEffectiveProfileName(),
+      runtime.formatSessionLlmStatus(),
+    )) {
+      print(line);
+    }
   }
 }

@@ -1,4 +1,5 @@
 import type { ChatOptions } from './llm.js';
+import { buildSessionReasoningExtraBody } from './llm-reasoning.js';
 import type { ResolvedLlmBinding } from './llm-profiles.js';
 import type { CachePolicyConfig } from './plugins/types.js';
 import type { AgentConfig, ChatMessage } from './types.js';
@@ -160,7 +161,15 @@ export function buildLlmTurnRequestForBinding(
   const adapted = applyCacheAdapter(apiMessages, cache, {
     sessionId: config.sessionId,
   });
-  const extraBody = mergeExtraBody(profileExtra, adapted.extraBody);
+  const reasoningExtra = binding
+    ? buildSessionReasoningExtraBody(binding, config.sessionReasoningLevel)
+    : buildSessionReasoningExtraBody(
+        {
+          reasoningMap: config.llm?.reasoningMap,
+        },
+        config.sessionReasoningLevel,
+      );
+  const extraBody = mergeExtraBody(profileExtra, adapted.extraBody, reasoningExtra);
 
   return {
     apiMessages: adapted.messages,

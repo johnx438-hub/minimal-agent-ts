@@ -90,6 +90,8 @@ export interface RunStartLlmMeta {
   model: string;
   cache_mode?: string;
   base_url_host?: string;
+  /** Session /reasoning level (G4). */
+  reasoning?: string;
   /** True when TUI session override is active (G2-c). */
   session_override?: boolean;
 }
@@ -169,6 +171,9 @@ export function formatRunStartLlmSummary(llm: RunStartLlmMeta): string {
   }
   if (llm.base_url_host) {
     parts.push(`host=${llm.base_url_host}`);
+  }
+  if (llm.reasoning) {
+    parts.push(`reasoning=${llm.reasoning}`);
   }
   if (llm.session_override) {
     parts.push('(override)');

@@ -492,7 +492,10 @@ export function buildJobLlmMeta(
 }
 
 /** Build run_start.llm from the same LlmProfile used by buildRunConfig. */
-export function buildRunStartLlmMeta(llm: LlmProfile | undefined): RunStartLlmMeta | undefined {
+export function buildRunStartLlmMeta(
+  llm: LlmProfile | undefined,
+  sessionReasoningLevel?: string,
+): RunStartLlmMeta | undefined {
   if (!llm) return undefined;
   const host = llmBaseUrlHost(llm.baseUrl);
   const meta: RunStartLlmMeta = {
@@ -501,5 +504,7 @@ export function buildRunStartLlmMeta(llm: LlmProfile | undefined): RunStartLlmMe
     cache_mode: llm.cache?.mode ?? 'off',
   };
   if (host) meta.base_url_host = host;
+  const reasoning = sessionReasoningLevel?.trim();
+  if (reasoning) meta.reasoning = reasoning;
   return meta;
 }
