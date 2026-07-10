@@ -80,6 +80,7 @@ import {
 } from './agent-prompt.js';
 import {
   applyLlmBindingToAgentConfig,
+  buildRunStartLlmMeta,
   requireAvailableLlmBinding,
   resolveLlmBinding,
 } from './llm-profiles.js';
@@ -351,7 +352,24 @@ export class AgentRuntime {
       spawnLifecycle: this.onSpawnLifecycle,
       workspacePrompt: this.runWorkspacePrompt ?? undefined,
     };
-  };
+  }
+
+  /** run_start.llm uses the same binding as the upcoming agent run (G2-a). */
+  private emitRunStart(
+    sessionId: string,
+    signal: AbortSignal,
+    wsMeta: ReturnType<typeof workspacePromptRunStartMeta>,
+  ): void {
+    const llm = buildRunStartLlmMeta(this.buildRunConfig(signal).llm);
+    this.emit({
+      type: 'run_start',
+      session_id: sessionId,
+      cwd: this.config.cwd,
+      agent_md: wsMeta.agent_md,
+      memory: wsMeta.memory,
+      ...(llm ? { llm } : {}),
+    });
+  }
 
   listSessions(): SessionMeta[] {
     return listSessions();
@@ -596,13 +614,7 @@ export class AgentRuntime {
     const signal = this.abortController.signal;
 
     const wsMeta = workspacePromptRunStartMeta(this.beginRunWorkspacePrompt());
-    this.emit({
-      type: 'run_start',
-      session_id: session.session_id,
-      cwd: this.config.cwd,
-      agent_md: wsMeta.agent_md,
-      memory: wsMeta.memory,
-    });
+    this.emitRunStart(session.session_id, signal, wsMeta);
     setActiveActionSessionId(session.session_id);
 
     try {
@@ -724,13 +736,7 @@ export class AgentRuntime {
     const signal = this.abortController.signal;
 
     const wsMeta = workspacePromptRunStartMeta(this.beginRunWorkspacePrompt());
-    this.emit({
-      type: 'run_start',
-      session_id: session.session_id,
-      cwd: this.config.cwd,
-      agent_md: wsMeta.agent_md,
-      memory: wsMeta.memory,
-    });
+    this.emitRunStart(session.session_id, signal, wsMeta);
     setActiveActionSessionId(session.session_id);
 
     const runConfig = this.buildRunConfig(signal);

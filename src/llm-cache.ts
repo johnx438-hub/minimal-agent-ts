@@ -64,7 +64,7 @@ export function applyCacheAdapter(
   }
 
   if (mode === 'openrouter_sticky') {
-    const sessionId = resolveStickySessionId(cache, ctx.sessionId);
+    const sessionId = resolveStickySessionId(cache ?? { mode: 'openrouter_sticky' }, ctx.sessionId);
     if (!sessionId) {
       return { messages };
     }

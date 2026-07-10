@@ -3,8 +3,11 @@ import {
   formatIndexFlushSummary,
   isActionIoMetricsEnabled,
 } from '../action-io-metrics.js';
-import type { AgentStepEvent } from '../events.js';
-import type { RuntimeEvent } from '../events.js';
+import {
+  formatRunStartLlmSummary,
+  type AgentStepEvent,
+  type RuntimeEvent,
+} from '../events.js';
 import { printStepEvent } from '../runner.js';
 import { renderMarkdownForTerminal, shouldFormatFinal } from './markdown.js';
 
@@ -51,6 +54,9 @@ export function printRuntimeEvent(event: RuntimeEvent): void {
       console.log('─'.repeat(60));
       console.log(`▶ task start  session=${event.session_id}`);
       console.log(`  cwd: ${event.cwd}`);
+      if (event.llm) {
+        console.log(`  llm: ${formatRunStartLlmSummary(event.llm)}`);
+      }
       break;
 
     case 'run_stopping':

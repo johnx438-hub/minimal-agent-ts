@@ -74,6 +74,14 @@ export type AgentStepEvent =
       queue_depth: number;
     };
 
+/** LLM binding snapshot on run_start (轨 G2-a); no secrets. */
+export interface RunStartLlmMeta {
+  profile: string;
+  model: string;
+  cache_mode?: string;
+  base_url_host?: string;
+}
+
 /** Agent step events plus runtime lifecycle events (TUI / --json-events). */
 export type RuntimeEvent =
   | AgentStepEvent
@@ -87,6 +95,7 @@ export type RuntimeEvent =
         requirements_chars: number;
         truncated: boolean;
       };
+      llm?: RunStartLlmMeta;
     }
   | { type: 'run_stopping'; session_id: string }
   | { type: 'run_end'; reason: 'completed' | 'aborted' | 'error'; message?: string }
@@ -140,6 +149,17 @@ export type RuntimeEvent =
   | { type: 'spawn_end'; preset: string; ok: boolean; detail?: string }
   | { type: 'action_flush'; flush_ms: number; count: number; pending: number }
   | { type: 'index_flush'; flush_ms: number; count: number; pending: number };
+
+export function formatRunStartLlmSummary(llm: RunStartLlmMeta): string {
+  const parts = [`${llm.profile}/${llm.model}`];
+  if (llm.cache_mode && llm.cache_mode !== 'off') {
+    parts.push(`cache=${llm.cache_mode}`);
+  }
+  if (llm.base_url_host) {
+    parts.push(`host=${llm.base_url_host}`);
+  }
+  return parts.join(' ');
+}
 
 export function formatLlmRetrySummary(event: {
   attempt: number;

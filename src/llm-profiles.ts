@@ -1,3 +1,4 @@
+import type { RunStartLlmMeta } from './events.js';
 import type {
   AgentPluginConfig,
   ApiProfileConfig,
@@ -366,4 +367,31 @@ export function resolveWorkflowRoleLlmBinding(
     profileName,
     model: opts.model?.trim() || role.model?.trim(),
   });
+}
+
+/** Host only — safe for run_start / logs (no path, no key). */
+export function llmBaseUrlHost(baseUrl: string): string | undefined {
+  const trimmed = baseUrl.trim();
+  if (!trimmed || !/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
+    return undefined;
+  }
+  try {
+    const host = new URL(trimmed).host;
+    return host || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Build run_start.llm from the same LlmProfile used by buildRunConfig. */
+export function buildRunStartLlmMeta(llm: LlmProfile | undefined): RunStartLlmMeta | undefined {
+  if (!llm) return undefined;
+  const host = llmBaseUrlHost(llm.baseUrl);
+  const meta: RunStartLlmMeta = {
+    profile: llm.profileName,
+    model: llm.model,
+    cache_mode: llm.cache?.mode ?? 'off',
+  };
+  if (host) meta.base_url_host = host;
+  return meta;
 }

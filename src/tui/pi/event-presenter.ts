@@ -2,8 +2,10 @@ import { CancellableLoader, Markdown, Text, type TUI } from '@earendil-works/pi-
 
 import {
   formatLlmRetrySummary,
+  formatRunStartLlmSummary,
   formatToolPlanSummary,
   type AgentStepEvent,
+  type RunStartLlmMeta,
   type RuntimeEvent,
 } from '../../events.js';
 import { shouldFormatFinal } from '../markdown.js';
@@ -69,7 +71,7 @@ export class PiEventPresenter {
 
     switch (event.type) {
       case 'run_start':
-        this.beginRun(event.session_id, event.cwd, event.agent_md, event.memory);
+        this.beginRun(event.session_id, event.cwd, event.agent_md, event.memory, event.llm);
         break;
       case 'run_stopping':
         this.setStopping();
@@ -179,6 +181,7 @@ export class PiEventPresenter {
     cwd: string,
     agentMd?: { path: string; chars: number; truncated: boolean },
     memory?: { profile_chars: number; requirements_chars: number; truncated: boolean },
+    llm?: RunStartLlmMeta,
   ): void {
     this.streamBuffer = '';
     this.streamMd = null;
@@ -205,6 +208,9 @@ export class PiEventPresenter {
       this.appendRunMeta(
         `🧠 memory: profile ${memory.profile_chars} + requirements ${memory.requirements_chars} = ${total} chars${trunc}`,
       );
+    }
+    if (llm) {
+      this.appendRunMeta(`🤖 llm: ${formatRunStartLlmSummary(llm)}`);
     }
     this.tui.requestRender();
   }
