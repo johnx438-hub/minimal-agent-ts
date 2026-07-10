@@ -4,9 +4,10 @@
 > **前提**: Phase 1–2、4–6 已实现。  
 > **当前重点**: 轨 B **P0 填表复测**；轨 A TUI 细节打磨；轨 F 个性化与 ZVEC 减负（见下）。  
 > **能力拓展**（web search / LSP / 文档转换 / Office）：单见 **[SPEC_TOOLS.md](./SPEC_TOOLS.md)**，不进本表主线。  
+> **LLM 路由**（多 API profile、子 Agent 绑模型、fallback、reasoning）：单见 **[SPEC_LLM_ROUTER.md](./SPEC_LLM_ROUTER.md)**（轨 G）。
 > **工程审查**: `workspace/CODE_REVIEW_REPORT.md`（2026-07-01）为历史快照；以本文件 + `npm test` 为准。
 
-**推荐顺序**: **B（P0 填表）→ F（轻量记忆 + Agent.md + 去 ZVEC）→ 视数据选 C**；轨 A / 轨 E 增强与 **SPEC_TOOLS** 按需并行，不要 B+C 同时开工。
+**推荐顺序**: **B（P0 填表）→ F3-c（硬删 ZVEC）→ G（api_profiles，见 SPEC_LLM_ROUTER）→ 视数据选 C**；轨 A / 轨 E 增强与 **SPEC_TOOLS** 按需并行，不要 B+C 同时开工。
 
 ---
 
@@ -20,6 +21,7 @@
 | **D** | `spawn_agent` 同步预设子 Agent | ✅ **已实现**（基础版） | Meta-Planner 动态 flow、嵌套 spawn | — |
 | **E** | `spawn_background` + `code_review` 后台 job | ✅ **已实现**（Phase 1a–1d） | TUI jobs 面板、跨机调度 | P2（增强） |
 | **F** | 个性化 + 依赖减负 | P0 填表后、细节打磨期 | 内置 RAG、重造 MemFileCli | P1 |
+| **G** | LLM 路由（见 [SPEC_LLM_ROUTER.md](./SPEC_LLM_ROUTER.md)） | F3-c 后、多 profile 有刚需 | IM 桥接、多 wire 协议、合并 ds-cache | P1 |
 | **—** | 工具能力拓展 | 有真实任务需求 | 见 [SPEC_TOOLS.md](./SPEC_TOOLS.md) | 按需 |
 
 ---
@@ -407,6 +409,7 @@ minimal-agent-ts-ds-cache/   # 已有：前缀缓存叙事 fork（独立）
 | **minimal-agent-ts-ds-cache** | DeepSeek 前缀缓存友好变体 |
 | **MemFileCli** | 可选：深度 Wiki 记忆（轨 F `/memory` 管轻量用户层） |
 | **SPEC_TOOLS.md** | 工具能力拓展（web search / LSP / 文档 / Office），与主线解耦 |
+| **SPEC_LLM_ROUTER.md** | 轨 G：api_profiles、spawn/workflow 绑模型、fallback、reasoning |
 | **minimal-agent-rs**（规划） | 可选 CPU 内核，轨 C 触发后再建 |
 
 ---
@@ -423,3 +426,4 @@ minimal-agent-ts-ds-cache/   # 已有：前缀缓存叙事 fork（独立）
 | 2026-07-05 | Tier 1 测试补洞（pointerize / action-store / context-prune）；`path_escape` 权限；测试 **211** |
 | 2026-07-06 | 轨 F（Agent.md、/memory、ZVEC 剔除）；**SPEC_TOOLS.md** 单开；pi-tui compact tool 显示；测试 **232** |
 | 2026-07-06 | F3-a/b：ZVEC 默认 off（opt-in）；recall 冷存 keyword + `tool:` 过滤；测试 **259** |
+| 2026-07-10 | 轨 G：**SPEC_LLM_ROUTER.md**（cc-connect 式 profile 中间层；G1–G5 分期） |
