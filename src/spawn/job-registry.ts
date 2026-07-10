@@ -158,6 +158,15 @@ class JobRegistry {
   releaseHandleForTests(jobId: string): void {
     this.handles.delete(jobId);
   }
+
+  /** Test teardown: abort every in-process job so mocks exit wait loops. */
+  abortAllHandlesForTests(): void {
+    for (const handle of this.handles.values()) {
+      if (!handle.abortController.signal.aborted) {
+        handle.abortController.abort();
+      }
+    }
+  }
 }
 
 let registry: JobRegistry | null = null;
@@ -170,7 +179,10 @@ export function getJobRegistry(): JobRegistry {
 }
 
 export function resetJobRegistryForTests(): void {
-  registry = null;
+  if (registry) {
+    registry.abortAllHandlesForTests();
+    registry = null;
+  }
 }
 
 export function releaseJobHandleForTests(jobId: string): void {
