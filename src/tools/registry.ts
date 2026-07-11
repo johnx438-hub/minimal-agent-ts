@@ -3,49 +3,29 @@ import { resolve } from 'node:path';
 import { isCapabilityEnabled } from '../permission-gate.js';
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import { loadAgentPluginConfig } from '../plugins/config-loader.js';
+import {
+  BuiltinToolProvider,
+  DEFAULT_BUILTIN_TOOLS,
+} from './providers/builtin-provider.js';
 import { CliToolProvider } from './providers/cli-provider.js';
 import { McpToolProvider } from './providers/mcp-provider.js';
 import { SkillsToolProvider } from './providers/skills-provider.js';
 import { SpawnToolProvider } from './providers/spawn-provider.js';
 import { isRoleToolAllowlisted } from './providers/tool-allowlist.js';
 import type { AgentPluginConfig } from '../plugins/types.js';
-import { CODE_REVIEW_DEFINITIONS, runCodeReviewTool } from './code-review.js';
-import { EDIT_FILE_DEFINITIONS, runEditFileTool } from './edit-file.js';
-import { EXPLORE_DEFINITIONS, runExploreTool } from './explore.js';
-import { READ_WRITE_DEFINITIONS, runReadWriteTool } from './read-write.js';
-import { RECALL_DEFINITIONS, runRecallTool } from './recall.js';
-import { SHELL_DEFINITIONS, runShellTool } from './shell.js';
+import { EDIT_FILE_DEFINITIONS } from './edit-file.js';
+import { EXPLORE_DEFINITIONS } from './explore.js';
+import { READ_WRITE_DEFINITIONS } from './read-write.js';
+import { RECALL_DEFINITIONS } from './recall.js';
+import { SHELL_DEFINITIONS } from './shell.js';
 import { SKILLS_TOOL_DEFINITIONS } from './skills-tool.js';
-import { WEB_FETCH_DEFINITIONS, runWebFetchTool } from './web-fetch.js';
 import { parseToolArgsJson } from './tool-args.js';
 
-type BuiltinHandler = (
-  toolName: string,
-  args: Record<string, unknown>,
-  config: AgentConfig,
-) => Promise<string | null>;
-
-const ALL_BUILTIN: Record<string, { defs: ToolDefinition[]; handler: BuiltinHandler }> = {
-  read_file: { defs: READ_WRITE_DEFINITIONS, handler: runReadWriteTool },
-  write_file: { defs: READ_WRITE_DEFINITIONS, handler: runReadWriteTool },
-  edit_file: { defs: EDIT_FILE_DEFINITIONS, handler: runEditFileTool },
-  grep_search: { defs: EXPLORE_DEFINITIONS, handler: runExploreTool },
-  list_files: { defs: EXPLORE_DEFINITIONS, handler: runExploreTool },
-  diff_file: { defs: EXPLORE_DEFINITIONS, handler: runExploreTool },
-  recall_query: { defs: RECALL_DEFINITIONS, handler: runRecallTool },
-  run_shell: { defs: SHELL_DEFINITIONS, handler: runShellTool },
-  web_fetch: { defs: WEB_FETCH_DEFINITIONS, handler: runWebFetchTool },
-  code_review: { defs: CODE_REVIEW_DEFINITIONS, handler: runCodeReviewTool },
-};
-
-const DEFAULT_BUILTIN_TOOLS = [
-  ...Object.keys(ALL_BUILTIN),
-  'invoke_skill',
-  'web_search',
-] as const;
+export { DEFAULT_BUILTIN_TOOLS };
 
 export class ToolRegistry {
   private pluginConfig: AgentPluginConfig = loadAgentPluginConfig(process.cwd());
+  private readonly builtinProvider = new BuiltinToolProvider();
   private readonly mcpProvider = new McpToolProvider();
   private readonly spawnProvider = new SpawnToolProvider();
   private readonly skillsProvider = new SkillsToolProvider();
@@ -55,19 +35,13 @@ export class ToolRegistry {
   private registryCwd = process.cwd();
 
   async reinitialize(cwd: string, pluginConfig?: AgentPluginConfig): Promise<void> {
-    await this.mcpProvider.shutdown();
-    await this.spawnProvider.shutdown();
-    await this.skillsProvider.shutdown();
-    await this.cliProvider.shutdown();
+    await this.shutdownProviders();
     this.initialized = false;
     await this.initialize(cwd, pluginConfig);
   }
 
   async initialize(cwd: string, pluginConfig?: AgentPluginConfig): Promise<void> {
-    await this.mcpProvider.shutdown();
-    await this.spawnProvider.shutdown();
-    await this.skillsProvider.shutdown();
-    await this.cliProvider.shutdown();
+    await this.shutdownProviders();
 
     this.registryCwd = cwd;
     this.pluginConfig = pluginConfig ?? loadAgentPluginConfig(cwd);
@@ -81,16 +55,14 @@ export class ToolRegistry {
         pluginConfig: this.pluginConfig,
         enabledBuiltin: this.enabledBuiltin,
       };
+      await this.builtinProvider.load(providerCtx);
       await this.mcpProvider.load(providerCtx);
       await this.spawnProvider.load(providerCtx);
       await this.skillsProvider.load(providerCtx);
       await this.cliProvider.load(providerCtx);
       this.initialized = true;
     } catch (err) {
-      await this.mcpProvider.shutdown();
-      await this.spawnProvider.shutdown();
-      await this.skillsProvider.shutdown();
-      await this.cliProvider.shutdown();
+      await this.shutdownProviders();
       this.initialized = false;
       throw err;
     }
@@ -148,63 +120,15 @@ export class ToolRegistry {
   }
 
   getDefinitions(config: AgentConfig): ToolDefinition[] {
+    const ctx = { ...this.providerContext(), config };
     const defs: ToolDefinition[] = [];
     const seen = new Set<string>();
-    const allowlist = config.toolAllowlist;
 
-    for (const toolName of this.enabledBuiltin) {
-      if (toolName === 'run_shell' && !isCapabilityEnabled(config, 'shell')) continue;
-      if (toolName === 'web_fetch' && !isCapabilityEnabled(config, 'web')) continue;
-      if (!isRoleToolAllowlisted(toolName, allowlist)) continue;
-      const entry = ALL_BUILTIN[toolName];
-      if (!entry) continue;
-
-      for (const def of entry.defs) {
-        const name = def.function.name;
-        if (!this.enabledBuiltin.has(name)) continue;
-        if (!isRoleToolAllowlisted(name, allowlist)) continue;
-        if (seen.has(name)) continue;
-        seen.add(name);
-        defs.push(def);
-      }
-    }
-
-    for (const def of this.spawnProvider.getDefinitions({
-      ...this.providerContext(),
-      config,
-    })) {
-      const name = def.function.name;
-      if (seen.has(name)) continue;
-      seen.add(name);
-      defs.push(def);
-    }
-
-    for (const def of this.skillsProvider.getDefinitions({
-      ...this.providerContext(),
-      config,
-    })) {
-      const name = def.function.name;
-      if (seen.has(name)) continue;
-      seen.add(name);
-      defs.push(def);
-    }
-
-    for (const def of this.cliProvider.getDefinitions({
-      ...this.providerContext(),
-      config,
-    })) {
-      const name = def.function.name;
-      if (seen.has(name)) continue;
-      seen.add(name);
-      defs.push(def);
-    }
-
-    defs.push(
-      ...this.mcpProvider.getDefinitions({
-        ...this.providerContext(),
-        config,
-      }),
-    );
+    this.appendUniqueDefs(defs, seen, this.builtinProvider.getDefinitions(ctx));
+    this.appendUniqueDefs(defs, seen, this.spawnProvider.getDefinitions(ctx));
+    this.appendUniqueDefs(defs, seen, this.skillsProvider.getDefinitions(ctx));
+    this.appendUniqueDefs(defs, seen, this.cliProvider.getDefinitions(ctx));
+    this.appendUniqueDefs(defs, seen, this.mcpProvider.getDefinitions(ctx));
 
     return defs;
   }
@@ -228,49 +152,17 @@ export class ToolRegistry {
         return `error: tool ${name} is not allowed for this role`;
       }
 
-      const skillsResult = await this.skillsProvider.execute(name, args, {
-        ...this.providerContext(),
-        config,
-      });
-      if (skillsResult !== null) return skillsResult;
-
-      const spawnResult = await this.spawnProvider.execute(name, args, {
-        ...this.providerContext(),
-        config,
-      });
-      if (spawnResult !== null) return spawnResult;
-
-      const cliResult = await this.cliProvider.execute(name, args, {
-        ...this.providerContext(),
-        config,
-      });
-      if (cliResult !== null) return cliResult;
-
-      const builtin = ALL_BUILTIN[name];
-      if (builtin && this.enabledBuiltin.has(name)) {
-        if (name === 'run_shell' && !isCapabilityEnabled(config, 'shell')) {
-          const gate = config.permissionGate;
-          if (!gate || !(await gate.ensureShell(config, 'run_shell'))) {
-            if (config.abortSignal?.aborted) return '[aborted]';
-            return 'error: run_shell is disabled. Use /shell on or approve when prompted.';
-          }
-        }
-        if (name === 'web_fetch' && !isCapabilityEnabled(config, 'web')) {
-          const gate = config.permissionGate;
-          if (!gate || !(await gate.ensureWeb(config, 'web_fetch'))) {
-            if (config.abortSignal?.aborted) return '[aborted]';
-            return 'error: web_fetch is disabled. Use /web on or approve when prompted.';
-          }
-        }
-        const result = await builtin.handler(name, args, config);
+      const ctx = { ...this.providerContext(), config };
+      for (const provider of [
+        this.skillsProvider,
+        this.spawnProvider,
+        this.cliProvider,
+        this.builtinProvider,
+        this.mcpProvider,
+      ]) {
+        const result = await provider.execute(name, args, ctx);
         if (result !== null) return result;
       }
-
-      const mcpResult = await this.mcpProvider.execute(name, args, {
-        ...this.providerContext(),
-        config,
-      });
-      if (mcpResult !== null) return mcpResult;
 
       return `error: unknown tool ${name}`;
     } catch (err) {
@@ -280,11 +172,29 @@ export class ToolRegistry {
   }
 
   async shutdown(): Promise<void> {
+    await this.shutdownProviders();
+    this.initialized = false;
+  }
+
+  private appendUniqueDefs(
+    target: ToolDefinition[],
+    seen: Set<string>,
+    defs: ToolDefinition[],
+  ): void {
+    for (const def of defs) {
+      const name = def.function.name;
+      if (seen.has(name)) continue;
+      seen.add(name);
+      target.push(def);
+    }
+  }
+
+  private async shutdownProviders(): Promise<void> {
+    await this.builtinProvider.shutdown();
     await this.mcpProvider.shutdown();
     await this.spawnProvider.shutdown();
     await this.skillsProvider.shutdown();
     await this.cliProvider.shutdown();
-    this.initialized = false;
   }
 }
 
