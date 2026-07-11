@@ -81,8 +81,11 @@ Wave 3   /spawns、turn_io TUI、pi overlay 统一
 
 ### M-Prod-2：`web_search`（~1 天）
 
-- 子进程 `ddgr --json`；权限同 `web_fetch`
-- 大结果 pointerize；无 ddgr 时清晰错误
+见 **[SPEC_TOOLS.md](../SPEC_TOOLS.md)** §3（v0.2）：
+
+- **v1**：子进程 `ddgr --json`；权限同 `web_fetch`；pointerize
+- **v1.5**（可同 PR 或紧随）：spill cache 先查 + 单 task 外搜 budget
+- **v2**（可选）：`agent.json` `backend: searxng` 或 MCP HTTP 外置
 - 顺带：`registerCliTool` 或 CliToolProvider 雏形（底座 L1 预埋）
 
 ### M-Prod-3：体验抛光（按需）
