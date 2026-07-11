@@ -3,7 +3,6 @@ import 'dotenv/config';
 
 import {
   formatActionFlushSummary,
-  formatIndexFlushSummary,
   isActionIoMetricsEnabled,
 } from './action-io-metrics.js';
 import type { RuntimeEvent } from './events.js';
@@ -219,12 +218,6 @@ function onRuntimeEvent(event: RuntimeEvent, jsonEvents: boolean): void {
   if (event.type === 'action_flush') {
     if (isActionIoMetricsEnabled()) {
       console.log(`  💾 ${formatActionFlushSummary(event)}`);
-    }
-    return;
-  }
-  if (event.type === 'index_flush') {
-    if (isActionIoMetricsEnabled()) {
-      console.log(`  🔍 ${formatIndexFlushSummary(event)}`);
     }
     return;
   }

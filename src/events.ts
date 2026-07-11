@@ -165,8 +165,7 @@ export type RuntimeEvent =
     }
   | { type: 'spawn_start'; preset: string }
   | { type: 'spawn_end'; preset: string; ok: boolean; detail?: string }
-  | { type: 'action_flush'; flush_ms: number; count: number; pending: number }
-  | { type: 'index_flush'; flush_ms: number; count: number; pending: number };
+  | { type: 'action_flush'; flush_ms: number; count: number; pending: number };
 
 export function formatRunStartLlmSummary(llm: RunStartLlmMeta): string {
   const parts = [`${llm.profile}/${llm.model}`];

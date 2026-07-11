@@ -56,7 +56,6 @@ import {
 } from './handoff.js';
 import { listWorkflowMetaForCwd } from './workflow/catalog.js';
 import { runWorkflow } from './workflow/runner.js';
-import { resetZvecCollection } from './action-index.js';
 import { appendTaskTranscript } from './session-transcript.js';
 import { flushTranscriptWrites } from './session-transcript-queue.js';
 import {
@@ -64,10 +63,6 @@ import {
   flushActionWrites,
   setActiveActionSessionId,
 } from './action-write-queue.js';
-import {
-  configureActionIndexQueue,
-  flushActionIndex,
-} from './action-index-queue.js';
 import { formatTurnIoSummary, isActionIoMetricsEnabled } from './action-io-metrics.js';
 import {
   createP0Collector,
@@ -241,17 +236,6 @@ export class AgentRuntime {
       onFlush: (info) => {
         this.emit({
           type: 'action_flush',
-          flush_ms: info.flush_ms,
-          count: info.count,
-          pending: info.pending,
-        });
-      },
-    });
-
-    configureActionIndexQueue({
-      onFlush: (info) => {
-        this.emit({
-          type: 'index_flush',
           flush_ms: info.flush_ms,
           count: info.count,
           pending: info.pending,
@@ -822,7 +806,6 @@ export class AgentRuntime {
     setWorkspaceRoot(resolved);
     this.config.cwd = resolved;
     this.pluginConfig = loadAgentPluginConfig(resolved);
-    resetZvecCollection();
     await reinitializeToolRegistry(resolved, this.pluginConfig);
   }
 
@@ -1081,7 +1064,6 @@ export class AgentRuntime {
       throw err;
     } finally {
       await flushActionWrites().catch(() => undefined);
-      await flushActionIndex().catch(() => undefined);
       await flushTranscriptWrites().catch(() => undefined);
       this.running = false;
     }
@@ -1152,7 +1134,6 @@ export class AgentRuntime {
       throw err;
     } finally {
       await flushActionWrites().catch(() => undefined);
-      await flushActionIndex().catch(() => undefined);
       await flushTranscriptWrites().catch(() => undefined);
       this.running = false;
     }
@@ -1160,7 +1141,6 @@ export class AgentRuntime {
 
   async shutdown(): Promise<void> {
     await flushActionWrites().catch(() => undefined);
-    await flushActionIndex().catch(() => undefined);
     await flushTranscriptWrites().catch(() => undefined);
     setActiveActionSessionId(undefined);
     await toolRegistry.shutdown();

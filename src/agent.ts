@@ -1,6 +1,4 @@
 import { awaitWithAbort, resolveAbortSignal } from './agent-abort.js';
-import { indexActionAsync, scheduleIndexSync } from './action-index.js';
-
 import { beginTurnIo, buildTurnIoEvent } from './action-io-metrics.js';
 import { saveAction } from './action-store.js';
 import { flushActionWritesSync } from './action-write-queue.js';
@@ -140,7 +138,6 @@ function persistToolAction(
     if (!block) return undefined;
     attachActionPreview(block, previewPolicy);
     saveAction(block);
-    indexActionAsync(block);
     return block.action_id;
   } catch {
     return undefined;
@@ -267,8 +264,6 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
   if (tracker) {
     tracker.onUserMessage(userTask, 1);
   }
-
-  scheduleIndexSync(toolConfig.sessionId);
 
   const budget = createBudgetConfig(config.model);
   try {

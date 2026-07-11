@@ -189,8 +189,6 @@
 | `saveAction()` → 队列 | `action-write-queue.ts` | 每个 tool 完成 **enqueue**；后台批量 `writeFile` | × 并行 tool 数（已异步，非 sync） |
 | `appendTaskTranscript()` → 队列 | `session-transcript-queue.ts` | 每个 task 完成 **enqueue**；后台 append | × workflow 多角色 |
 | `saveSession()` | `session.ts` | run 结束 / 节流保存 | 整棵 `session.json` 序列化 |
-| `indexActionAsync()` | `action-index.ts` | 每 action（已异步） | CPU/RSS，与 IO 争抢 |
-
 **并发叠乘示意**（`max_parallel: 2` 时）：
 
 ```text
@@ -210,7 +208,7 @@
 | **B-IO-3** | `TranscriptWriteQueue` 异步 append | `session-transcript-queue.ts` | ✅ |
 | **B-IO-4** | `turn_io` + `action_flush` 指标；`ACTION_IO_METRICS=1` | `action-io-metrics.ts`, `events.ts` | ✅ |
 | **B-IO-5** | spawn action 写入 `actions/spawn/<parent>/` | `action-paths.ts`, `spawn/runner.ts` | ✅ |
-| **B-IO-6** | `ActionIndexQueue` 串行索引 + spawn 暂停 | `action-index-queue.ts` | ✅ |
+| **B-IO-6** | ~~`ActionIndexQueue` 串行索引~~（F3-c 已移除 ZVEC 索引） | — | ✅ 已删 |
 | **B-IO-7** | P0 遥测 `runs.jsonl` + `summary.tsv`（可选） | `p0-telemetry.ts`, `p0-summary.ts` | ✅ 骨架 |
 
 **明确不做（本阶段）**：
@@ -225,8 +223,6 @@
 |------|------|----------|
 | action 写盘队列积压 | `action-write-queue.ts` | 满并发时队列深度 / flush 延迟（**待 P0 量化**） |
 | Session 整树序列化 | `session.ts`、`saveSession` | turn 越多 save 越慢、RSS 阶梯上升 |
-| Embedding 推理 | `embedding.ts`、`@xenova/transformers` | 索引时 CPU/RSS 尖峰 |
-| 混合检索 | `action-index.ts`、zvec | recall / 索引写入卡顿 |
 | 消息树常驻 | `agent.ts`、`current_messages` | 长会话 RSS 与 messages 长度线性相关 |
 | 大 tool 结果多份拷贝 | inline + `action-store` | 峰值内存翻倍 |
 
@@ -266,16 +262,14 @@ node --heapsnapshot-near-heap-limit=3 $(which tsx) src/tui/main.ts
 **其他 B 项**（非 IO）：
 
 - [ ] turn > **N**（如 50）时 RSS > **X MB** 或明显 GC 卡顿
-- [ ] embedding 索引阻塞主循环可感知
 
 ### 候选优化（按性价比，IO 优先）
 
 1. **B-IO-1～3** 同步写盘队列化（见上表）
 2. `saveSession` 增量 / 节流（已有 `saveSessionThrottled`；评估是否够）
-3. embedding 懒加载、批量 `indexActionAsync` 限流
-4. 压缩后释放大 `content` 引用（仅留 action_id）
-5. `assembleApiMessages` 结果缓存失效策略收紧
-6. 系统提示词 `Agent.md` — 见 **轨 F-1**
+3. 压缩后释放大 `content` 引用（仅留 action_id）
+4. `assembleApiMessages` 结果缓存失效策略收紧
+5. 系统提示词 `Agent.md` — 见 **轨 F-1**
 
 ### 验收
 
@@ -332,11 +326,11 @@ node --heapsnapshot-near-heap-limit=3 $(which tsx) src/tui/main.ts
 |:----:|------|------|
 | **F3-a** | 默认 `ENABLE_ZVEC=0`（opt-in `=1`）；文档标 deprecated | ✅ |
 | **F3-b** | `recall_query` 仅 `action_id` + 冷存 keyword（`tool:` 过滤） | ✅ |
-| **F3-c** | 删除 `action-index.ts`、`embedding.ts`、`@zvec/zvec` | 待做 |
+| **F3-c** | 删除 `action-index.ts`、`embedding.ts`、`@zvec/zvec`、`@xenova/transformers` | ✅ |
 
-**保留**：`action-store` 冷存、`recall_query(action_id)`、transcript 内 grep。  
-**删除**：384 维 embedding、`@xenova/transformers` 索引路径（若仅服务 ZVEC）。  
-**收益**：安装体积、索引 CPU/RSS、轨 B 表「混合检索」一行可填「已移除」。
+**保留**：`action-store` 冷存、`recall_query(action_id)` + keyword、transcript 内 grep。  
+**已删**：384 维 embedding、ZVEC 混合检索、`index_flush` 事件链。  
+**收益**：`node_modules` 约 -106MB，索引 CPU/RSS 归零。
 
 ### 触发条件
 
@@ -345,7 +339,7 @@ node --heapsnapshot-near-heap-limit=3 $(which tsx) src/tui/main.ts
 
 ### 验收
 
-- 新 clone：`ENABLE_ZVEC=0` 默认下 `npm test` 全绿
+- 新 clone：`npm test` 全绿（无 ZVEC 依赖）
 - `Agent.md` 存在时行为可感知变化，不存在时与现版一致
 - `/memory` 只动 `.agent/memory/`，不碰 session 冷存格式
 
@@ -366,8 +360,6 @@ node --heapsnapshot-near-heap-limit=3 $(which tsx) src/tui/main.ts
 
 | 候选 | 现 TS 模块 | 不适合迁 Rust 的 |
 |------|------------|------------------|
-| Embedding 推理 | `embedding.ts`（**轨 F3 剔除后取消**） | `runAgent` 主循环、LLM 流式 |
-| 向量 + FTS 检索 | `action-index.ts`（**轨 F3 剔除后取消**） | workflow 模板、slash |
 | 大文本 hash / diff | `file-hash.ts`、`edit_file` 锚定 | MCP stdio、Skills 加载 |
 | Action 冷存批量 IO | `action-store.ts`（或轨 B 队列后再评估） | session 业务逻辑 |
 

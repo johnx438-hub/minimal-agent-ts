@@ -171,7 +171,6 @@ CLI：`npm run spawn:{list,status,kill,tail}`。
 | `STREAM` | `1` | 设为 `0` 关闭流式输出 |
 | `P0_TELEMETRY` | — | turn/IO 遥测 → `workspace/p0-telemetry/` |
 | `MAX_CONTEXT_TOKENS` | — | 手动覆盖模型上下文上限 |
-| `ENABLE_ZVEC` | off | **已废弃**；设为 `1` 才启用旧版 ZVEC 索引（F3-c 将移除） |
 
 ## 路线图状态
 

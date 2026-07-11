@@ -61,14 +61,6 @@ export function formatActionFlushSummary(event: {
   return `action_flush: ${event.count} file(s), ${event.flush_ms}ms, pending=${event.pending}`;
 }
 
-export function formatIndexFlushSummary(event: {
-  flush_ms: number;
-  count: number;
-  pending: number;
-}): string {
-  return `index_flush: ${event.count} indexed, ${event.flush_ms}ms, pending=${event.pending}`;
-}
-
 export function resetActionIoMetricsForTests(): void {
   activeTurn = 0;
   actionsSaved = 0;

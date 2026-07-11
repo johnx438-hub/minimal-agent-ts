@@ -1,6 +1,5 @@
 import {
   formatActionFlushSummary,
-  formatIndexFlushSummary,
   isActionIoMetricsEnabled,
 } from '../action-io-metrics.js';
 import {
@@ -141,12 +140,6 @@ export function printRuntimeEvent(event: RuntimeEvent): void {
     case 'action_flush':
       if (isActionIoMetricsEnabled()) {
         console.log(`  💾 ${formatActionFlushSummary(event)}`);
-      }
-      return;
-
-    case 'index_flush':
-      if (isActionIoMetricsEnabled()) {
-        console.log(`  🔍 ${formatIndexFlushSummary(event)}`);
       }
       return;
   }

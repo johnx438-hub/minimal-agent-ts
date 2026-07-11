@@ -86,8 +86,6 @@ describe('p0 telemetry', () => {
       action_save_ms_total: 0,
       action_flush_ms_total: 0,
       action_flush_count: 0,
-      index_flush_ms_total: 0,
-      index_flush_count: 0,
       spawn_count: 0,
       spawns: [],
     };
@@ -123,8 +121,6 @@ describe('p0 telemetry', () => {
       action_save_ms_total: 2,
       action_flush_ms_total: 1,
       action_flush_count: 1,
-      index_flush_ms_total: 0.5,
-      index_flush_count: 1,
       spawn_count: 0,
       spawns: [],
       ...overrides,

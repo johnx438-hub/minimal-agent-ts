@@ -42,8 +42,6 @@ export interface P0RunRecord {
   action_save_ms_total: number;
   action_flush_ms_total: number;
   action_flush_count: number;
-  index_flush_ms_total: number;
-  index_flush_count: number;
   spawn_count: number;
   spawns: P0SpawnRecord[];
 }
@@ -87,8 +85,6 @@ export class P0TelemetryCollector {
   private readonly activeSpawnStack: Array<{ preset: string; startedAt: number }> = [];
   private actionFlushMsTotal = 0;
   private actionFlushCount = 0;
-  private indexFlushMsTotal = 0;
-  private indexFlushCount = 0;
   private closed = false;
 
   constructor(cwd: string) {
@@ -164,11 +160,6 @@ export class P0TelemetryCollector {
         this.actionFlushCount += event.count;
         break;
 
-      case 'index_flush':
-        this.indexFlushMsTotal += event.flush_ms;
-        this.indexFlushCount += event.count;
-        break;
-
       case 'run_end':
         this.closeOpenTurnsBefore(Number.MAX_SAFE_INTEGER, performance.now());
         void this.persist({
@@ -242,8 +233,6 @@ export class P0TelemetryCollector {
       action_save_ms_total: Math.round(actionSaveMsTotal * 100) / 100,
       action_flush_ms_total: Math.round(this.actionFlushMsTotal * 100) / 100,
       action_flush_count: this.actionFlushCount,
-      index_flush_ms_total: Math.round(this.indexFlushMsTotal * 100) / 100,
-      index_flush_count: this.indexFlushCount,
       spawn_count: this.spawns.length,
       spawns: this.spawns,
     };
@@ -288,8 +277,6 @@ const P0_COMPARE_METRICS: Array<{
     pick: (r) => r.action_flush_ms_total,
   },
   { key: 'action_flush_count', label: 'action_flush_n', pick: (r) => r.action_flush_count },
-  { key: 'index_flush_ms_total', label: 'index_flush_ms', pick: (r) => r.index_flush_ms_total },
-  { key: 'index_flush_count', label: 'index_flush_n', pick: (r) => r.index_flush_count },
   { key: 'spawn_count', label: 'spawns', pick: (r) => r.spawn_count },
   { key: 'rss_start_mb', label: 'rss_start_mb', pick: (r) => r.rss_start_mb },
   { key: 'rss_end_mb', label: 'rss_end_mb', pick: (r) => r.rss_end_mb },

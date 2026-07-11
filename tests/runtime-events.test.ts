@@ -155,15 +155,6 @@ describe('emitJsonEvent lifecycle', () => {
     });
     const parsedFlush = parseJsonEventLine(flush);
     assert.equal(parsedFlush.event.type, 'action_flush');
-
-    const indexFlush = serializeRuntimeEvent({
-      type: 'index_flush',
-      flush_ms: 12.3,
-      count: 1,
-      pending: 2,
-    });
-    const parsedIndex = parseJsonEventLine(indexFlush);
-    assert.equal(parsedIndex.event.type, 'index_flush');
   });
 
   it('serializes run_stopping for --json-events consumers', () => {
