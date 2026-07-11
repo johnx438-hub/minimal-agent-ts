@@ -11,15 +11,33 @@
   ],
   "skills_dirs": ["./skills"],
   "mcp_policy": {
-    "allow": ["mcp_filesystem_*"],
+    "allow": ["mcp_filesystem_*", "mcp_remote_*"],
     "deny": []
   },
   "mcp_servers": [
     {
       "name": "filesystem",
+      "transport": "stdio",
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
       "enabled": false
+    },
+    {
+      "name": "remote",
+      "transport": "streamable-http",
+      "url": "http://127.0.0.1:8787/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_TOKEN"
+      },
+      "enabled": false,
+      "_comment": "WSL/Windows: run MCP server on one side, agent connects via url"
+    },
+    {
+      "name": "legacy_sse",
+      "transport": "sse",
+      "url": "http://127.0.0.1:9000/sse",
+      "enabled": false,
+      "_comment": "Legacy HTTP/SSE MCP servers only"
     }
   ]
 }

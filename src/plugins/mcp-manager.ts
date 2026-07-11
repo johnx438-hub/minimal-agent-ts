@@ -1,7 +1,12 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 
+import {
+  closeMcpTransport,
+  createMcpClientTransport,
+  validateMcpServerConfig,
+} from './mcp-transport.js';
 import type { McpPolicy, McpServerConfig, McpToolBinding } from './types.js';
 
 function sanitizeName(value: string): string {
@@ -55,48 +60,50 @@ function formatToolResult(result: Record<string, unknown>): string {
   return isError ? `error: ${text}` : text;
 }
 
-async function closeClient(client: Client): Promise<void> {
+interface McpConnection {
+  client: Client;
+  transport: Transport;
+}
+
+async function closeConnection(conn: McpConnection): Promise<void> {
   try {
-    await client.close();
+    await conn.client.close();
   } catch {
     /* ignore */
   }
+  await closeMcpTransport(conn.transport);
 }
 
 export class McpManager {
-  private clients = new Map<string, Client>();
+  private connections = new Map<string, McpConnection>();
 
   /** Close one server connection and drop it from the active map. */
   async closeServer(serverName: string): Promise<void> {
-    const client = this.clients.get(serverName);
-    if (!client) return;
-    this.clients.delete(serverName);
-    await closeClient(client);
+    const conn = this.connections.get(serverName);
+    if (!conn) return;
+    this.connections.delete(serverName);
+    await closeConnection(conn);
   }
 
   connectedServers(): string[] {
-    return [...this.clients.keys()];
+    return [...this.connections.keys()];
   }
 
   async connect(server: McpServerConfig, cwd: string): Promise<McpToolBinding[]> {
     if (server.enabled === false) return [];
 
+    const configErr = validateMcpServerConfig(server);
+    if (configErr) throw new Error(configErr);
+
     await this.closeServer(server.name);
 
-    const transport = new StdioClientTransport({
-      command: server.command,
-      args: server.args ?? [],
-      env: server.env,
-      cwd: server.cwd ?? cwd,
-      stderr: 'pipe',
-    });
-
+    const { transport } = createMcpClientTransport(server, cwd);
     const client = new Client({ name: 'minimal-agent-ts', version: '0.1.0' });
 
     try {
       await client.connect(transport);
       const listed = await client.listTools();
-      this.clients.set(server.name, client);
+      this.connections.set(server.name, { client, transport });
 
       const bindings: McpToolBinding[] = [];
 
@@ -115,10 +122,10 @@ export class McpManager {
           parameters: inputSchema,
           call: async (args, signal) => {
             if (signal?.aborted) return '[aborted]';
-            const active = this.clients.get(server.name);
+            const active = this.connections.get(server.name);
             if (!active) return `error: MCP server disconnected: ${server.name}`;
             try {
-              const result = await active.callTool(
+              const result = await active.client.callTool(
                 { name: tool.name, arguments: args },
                 CallToolResultSchema,
                 { signal },
@@ -141,16 +148,21 @@ export class McpManager {
 
       return bindings;
     } catch (err) {
-      await closeClient(client);
+      await closeMcpTransport(transport);
+      try {
+        await client.close();
+      } catch {
+        /* ignore */
+      }
       throw err;
     }
   }
 
   async shutdown(): Promise<void> {
-    const clients = [...this.clients.values()];
-    this.clients.clear();
-    for (const client of clients) {
-      await closeClient(client);
+    const conns = [...this.connections.values()];
+    this.connections.clear();
+    for (const conn of conns) {
+      await closeConnection(conn);
     }
   }
 }

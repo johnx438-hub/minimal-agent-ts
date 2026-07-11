@@ -1,10 +1,22 @@
+export type McpTransportKind = 'stdio' | 'streamable-http' | 'sse';
+
 export interface McpServerConfig {
   name: string;
-  command: string;
+  enabled?: boolean;
+  /**
+   * Default: `stdio` when `command` is set; `streamable-http` when only `url` is set.
+   * Use `sse` for legacy HTTP/SSE MCP servers.
+   */
+  transport?: McpTransportKind;
+  /** stdio: executable (e.g. npx). Mutually exclusive with `url`. */
+  command?: string;
   args?: string[];
   env?: Record<string, string>;
   cwd?: string;
-  enabled?: boolean;
+  /** HTTP: MCP endpoint (streamable-http or sse). Mutually exclusive with `command`. */
+  url?: string;
+  /** Optional HTTP headers (e.g. Authorization). */
+  headers?: Record<string, string>;
 }
 
 export interface McpPolicy {

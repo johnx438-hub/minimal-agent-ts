@@ -155,7 +155,7 @@ npm run spawn:tail -- job_xxx
 - **工具开关**：`builtin_tools` 列表；`run_shell` 还需 `--allow-shell`
 - **大输出**：最近 2 turn 工具结果保持完整；更早的变 `[action:…]` 卡片（含 smart 摘要：shell/grep/read/mcp）
 - **捞回历史**：`recall_query(action_id=…)`，≤24KB 默认返回全文
-- **MCP**：参考 `agent.mcp.example.json`，工具名形如 `mcp_<server>_<tool>`
+- **MCP**：参考 `agent.mcp.example.json`（`stdio` / `streamable-http` / `sse`），工具名形如 `mcp_<server>_<tool>`
 
 ## 7. 推荐试手任务
 
