@@ -21,7 +21,9 @@ export class SpawnToolProvider implements ToolProvider {
       ctx.pluginConfig.spawn_policy,
     );
     configureSpawnSemaphore(ctx.pluginConfig.spawn_policy?.max_parallel ?? 1);
-    this.enabledBuiltin = new Set(ctx.pluginConfig.builtin_tools ?? []);
+    this.enabledBuiltin = new Set(
+      ctx.enabledBuiltin ?? ctx.pluginConfig.builtin_tools ?? [],
+    );
   }
 
   async shutdown(): Promise<void> {

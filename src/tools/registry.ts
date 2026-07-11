@@ -4,20 +4,17 @@ import { isCapabilityEnabled } from '../permission-gate.js';
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import { loadAgentPluginConfig } from '../plugins/config-loader.js';
 import { McpToolProvider } from './providers/mcp-provider.js';
+import { SkillsToolProvider } from './providers/skills-provider.js';
 import { SpawnToolProvider } from './providers/spawn-provider.js';
 import { isRoleToolAllowlisted } from './providers/tool-allowlist.js';
-import {
-  buildLoadedSkillsSystemBlock,
-  discoverSkills,
-} from '../plugins/skills.js';
-import type { AgentPluginConfig, SkillDefinition } from '../plugins/types.js';
+import type { AgentPluginConfig } from '../plugins/types.js';
 import { CODE_REVIEW_DEFINITIONS, runCodeReviewTool } from './code-review.js';
 import { EDIT_FILE_DEFINITIONS, runEditFileTool } from './edit-file.js';
 import { EXPLORE_DEFINITIONS, runExploreTool } from './explore.js';
 import { READ_WRITE_DEFINITIONS, runReadWriteTool } from './read-write.js';
 import { RECALL_DEFINITIONS, runRecallTool } from './recall.js';
 import { SHELL_DEFINITIONS, runShellTool } from './shell.js';
-import { SKILLS_TOOL_DEFINITIONS, runSkillsTool } from './skills-tool.js';
+import { SKILLS_TOOL_DEFINITIONS } from './skills-tool.js';
 import { WEB_FETCH_DEFINITIONS, runWebFetchTool } from './web-fetch.js';
 import { WEB_SEARCH_DEFINITIONS, runWebSearchTool } from './web-search.js';
 import { parseToolArgsJson } from './tool-args.js';
@@ -37,17 +34,18 @@ const ALL_BUILTIN: Record<string, { defs: ToolDefinition[]; handler: BuiltinHand
   diff_file: { defs: EXPLORE_DEFINITIONS, handler: runExploreTool },
   recall_query: { defs: RECALL_DEFINITIONS, handler: runRecallTool },
   run_shell: { defs: SHELL_DEFINITIONS, handler: runShellTool },
-  invoke_skill: { defs: SKILLS_TOOL_DEFINITIONS, handler: async () => null },
   web_fetch: { defs: WEB_FETCH_DEFINITIONS, handler: runWebFetchTool },
   web_search: { defs: WEB_SEARCH_DEFINITIONS, handler: runWebSearchTool },
   code_review: { defs: CODE_REVIEW_DEFINITIONS, handler: runCodeReviewTool },
 };
 
+const DEFAULT_BUILTIN_TOOLS = [...Object.keys(ALL_BUILTIN), 'invoke_skill'] as const;
+
 export class ToolRegistry {
   private pluginConfig: AgentPluginConfig = loadAgentPluginConfig(process.cwd());
-  private skills = new Map<string, SkillDefinition>();
   private readonly mcpProvider = new McpToolProvider();
   private readonly spawnProvider = new SpawnToolProvider();
+  private readonly skillsProvider = new SkillsToolProvider();
   private initialized = false;
   private enabledBuiltin = new Set<string>();
   private registryCwd = process.cwd();
@@ -55,6 +53,7 @@ export class ToolRegistry {
   async reinitialize(cwd: string, pluginConfig?: AgentPluginConfig): Promise<void> {
     await this.mcpProvider.shutdown();
     await this.spawnProvider.shutdown();
+    await this.skillsProvider.shutdown();
     this.initialized = false;
     await this.initialize(cwd, pluginConfig);
   }
@@ -62,20 +61,28 @@ export class ToolRegistry {
   async initialize(cwd: string, pluginConfig?: AgentPluginConfig): Promise<void> {
     await this.mcpProvider.shutdown();
     await this.spawnProvider.shutdown();
+    await this.skillsProvider.shutdown();
 
     this.registryCwd = cwd;
     this.pluginConfig = pluginConfig ?? loadAgentPluginConfig(cwd);
-    this.skills = discoverSkills(this.pluginConfig.skills_dirs ?? []);
-    this.enabledBuiltin = new Set(this.pluginConfig.builtin_tools ?? Object.keys(ALL_BUILTIN));
+    this.enabledBuiltin = new Set(
+      this.pluginConfig.builtin_tools ?? DEFAULT_BUILTIN_TOOLS,
+    );
 
     try {
-      const providerCtx = { cwd, pluginConfig: this.pluginConfig };
+      const providerCtx = {
+        cwd,
+        pluginConfig: this.pluginConfig,
+        enabledBuiltin: this.enabledBuiltin,
+      };
       await this.mcpProvider.load(providerCtx);
       await this.spawnProvider.load(providerCtx);
+      await this.skillsProvider.load(providerCtx);
       this.initialized = true;
     } catch (err) {
       await this.mcpProvider.shutdown();
       await this.spawnProvider.shutdown();
+      await this.skillsProvider.shutdown();
       this.initialized = false;
       throw err;
     }
@@ -102,7 +109,7 @@ export class ToolRegistry {
   }
 
   listSkillNames(): string[] {
-    return [...this.skills.keys()];
+    return this.skillsProvider.listSkillNames();
   }
 
   listMcpTools(): Array<{
@@ -115,15 +122,21 @@ export class ToolRegistry {
   }
 
   getSkillSystemExtension(): string {
-    const loaded = this.pluginConfig.loaded_skills ?? [];
-    const selected = loaded
-      .map((name) => this.skills.get(name))
-      .filter((s): s is SkillDefinition => Boolean(s));
-    return buildLoadedSkillsSystemBlock(selected);
+    return this.skillsProvider.getSkillSystemExtension(
+      this.pluginConfig.loaded_skills,
+    );
   }
 
-  private providerContext(): { cwd: string; pluginConfig: AgentPluginConfig } {
-    return { cwd: this.registryCwd, pluginConfig: this.pluginConfig };
+  private providerContext(): {
+    cwd: string;
+    pluginConfig: AgentPluginConfig;
+    enabledBuiltin: ReadonlySet<string>;
+  } {
+    return {
+      cwd: this.registryCwd,
+      pluginConfig: this.pluginConfig,
+      enabledBuiltin: this.enabledBuiltin,
+    };
   }
 
   getDefinitions(config: AgentConfig): ToolDefinition[] {
@@ -150,6 +163,16 @@ export class ToolRegistry {
     }
 
     for (const def of this.spawnProvider.getDefinitions({
+      ...this.providerContext(),
+      config,
+    })) {
+      const name = def.function.name;
+      if (seen.has(name)) continue;
+      seen.add(name);
+      defs.push(def);
+    }
+
+    for (const def of this.skillsProvider.getDefinitions({
       ...this.providerContext(),
       config,
     })) {
@@ -188,9 +211,11 @@ export class ToolRegistry {
         return `error: tool ${name} is not allowed for this role`;
       }
 
-      if (name === 'invoke_skill') {
-        return runSkillsTool(name, args, this.skills) ?? 'error: invoke_skill failed';
-      }
+      const skillsResult = await this.skillsProvider.execute(name, args, {
+        ...this.providerContext(),
+        config,
+      });
+      if (skillsResult !== null) return skillsResult;
 
       const spawnResult = await this.spawnProvider.execute(name, args, {
         ...this.providerContext(),
@@ -241,6 +266,7 @@ export class ToolRegistry {
   async shutdown(): Promise<void> {
     await this.mcpProvider.shutdown();
     await this.spawnProvider.shutdown();
+    await this.skillsProvider.shutdown();
     this.initialized = false;
   }
 }

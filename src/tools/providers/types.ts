@@ -4,6 +4,8 @@ import type { AgentConfig, ToolDefinition } from '../../types.js';
 export interface ToolProviderContext {
   cwd: string;
   pluginConfig: AgentPluginConfig;
+  /** Resolved builtin_tools allowlist from ToolRegistry (includes defaults). */
+  enabledBuiltin?: ReadonlySet<string>;
 }
 
 export interface ToolResolveContext extends ToolProviderContext {
