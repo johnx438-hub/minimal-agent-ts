@@ -45,6 +45,7 @@ export class SpawnToolProvider implements ToolProvider {
 
   getDefinitions(ctx: ToolResolveContext): ToolDefinition[] {
     if (this.presets.length === 0) return [];
+    if ((ctx.config.spawnDepth ?? 0) > 0) return [];
 
     const allowlist = ctx.config.toolAllowlist;
     const defs: ToolDefinition[] = [];

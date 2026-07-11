@@ -59,6 +59,18 @@ describe('SpawnToolProvider', () => {
     assert.deepEqual(defs, []);
   });
 
+  it('omits spawn defs inside a spawned sub-agent (spawnDepth > 0)', () => {
+    const provider = new SpawnToolProvider();
+    provider.setPresetsForTests([demoPreset], ['spawn_agent', 'spawn_background']);
+
+    const defs = provider.getDefinitions({
+      cwd: '/tmp',
+      pluginConfig: {},
+      config: baseConfig({ spawnDepth: 1 }),
+    });
+    assert.deepEqual(defs, []);
+  });
+
   it('respects role allowlist for spawn tools', () => {
     const provider = new SpawnToolProvider();
     provider.setPresetsForTests([demoPreset], ['spawn_agent', 'spawn_background']);
