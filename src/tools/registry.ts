@@ -3,12 +3,13 @@ import { resolve } from 'node:path';
 import { isCapabilityEnabled } from '../permission-gate.js';
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import { loadAgentPluginConfig } from '../plugins/config-loader.js';
-import { filterMcpBindings, McpManager } from '../plugins/mcp-manager.js';
+import { McpToolProvider } from './providers/mcp-provider.js';
+import { isRoleToolAllowlisted } from './providers/tool-allowlist.js';
 import {
   buildLoadedSkillsSystemBlock,
   discoverSkills,
 } from '../plugins/skills.js';
-import type { AgentPluginConfig, McpToolBinding, SkillDefinition } from '../plugins/types.js';
+import type { AgentPluginConfig, SkillDefinition } from '../plugins/types.js';
 import { CODE_REVIEW_DEFINITIONS, runCodeReviewTool } from './code-review.js';
 import { EDIT_FILE_DEFINITIONS, runEditFileTool } from './edit-file.js';
 import { EXPLORE_DEFINITIONS, runExploreTool } from './explore.js';
@@ -49,50 +50,35 @@ const ALL_BUILTIN: Record<string, { defs: ToolDefinition[]; handler: BuiltinHand
 export class ToolRegistry {
   private pluginConfig: AgentPluginConfig = loadAgentPluginConfig(process.cwd());
   private skills = new Map<string, SkillDefinition>();
-  private mcpBindings: McpToolBinding[] = [];
-  private mcpManager = new McpManager();
+  private readonly mcpProvider = new McpToolProvider();
   private initialized = false;
   private enabledBuiltin = new Set<string>();
   private spawnPresets: ResolvedSpawnPreset[] = [];
+  private registryCwd = process.cwd();
 
   async reinitialize(cwd: string, pluginConfig?: AgentPluginConfig): Promise<void> {
-    await this.mcpManager.shutdown();
+    await this.mcpProvider.shutdown();
     this.initialized = false;
-    this.mcpBindings = [];
     await this.initialize(cwd, pluginConfig);
   }
 
   async initialize(cwd: string, pluginConfig?: AgentPluginConfig): Promise<void> {
-    await this.mcpManager.shutdown();
+    await this.mcpProvider.shutdown();
 
+    this.registryCwd = cwd;
     this.pluginConfig = pluginConfig ?? loadAgentPluginConfig(cwd);
     this.skills = discoverSkills(this.pluginConfig.skills_dirs ?? []);
-    this.mcpBindings = [];
     this.enabledBuiltin = new Set(this.pluginConfig.builtin_tools ?? Object.keys(ALL_BUILTIN));
 
-    const servers = this.pluginConfig.mcp_servers ?? [];
-    const connectedBindings: McpToolBinding[] = [];
-
     try {
-      for (const server of servers) {
-        try {
-          const bindings = await this.mcpManager.connect(server, cwd);
-          const allowed = filterMcpBindings(bindings, this.pluginConfig.mcp_policy ?? {});
-          connectedBindings.push(...allowed);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.warn(`[mcp] failed to connect ${server.name}: ${msg}`);
-        }
-      }
+      await this.mcpProvider.load({ cwd, pluginConfig: this.pluginConfig });
 
       const spawnPolicy = this.pluginConfig.spawn_policy;
       this.spawnPresets = loadSpawnPresets(cwd, this.pluginConfig.spawn_presets, spawnPolicy);
       configureSpawnSemaphore(spawnPolicy?.max_parallel ?? 1);
-      this.mcpBindings = connectedBindings;
       this.initialized = true;
     } catch (err) {
-      await this.mcpManager.shutdown();
-      this.mcpBindings = [];
+      await this.mcpProvider.shutdown();
       this.initialized = false;
       throw err;
     }
@@ -128,12 +114,7 @@ export class ToolRegistry {
     toolName: string;
     description: string;
   }> {
-    return this.mcpBindings.map((b) => ({
-      apiName: b.apiName,
-      serverName: b.serverName,
-      toolName: b.toolName,
-      description: b.description,
-    }));
+    return this.mcpProvider.listMcpTools();
   }
 
   getSkillSystemExtension(): string {
@@ -144,16 +125,8 @@ export class ToolRegistry {
     return buildLoadedSkillsSystemBlock(selected);
   }
 
-  private isToolAllowed(apiName: string, allowlist: string[] | undefined): boolean {
-    if (!allowlist || allowlist.length === 0) return true;
-    if (allowlist.includes(apiName)) return true;
-    if (allowlist.includes('mcp_*') && apiName.startsWith('mcp_')) return true;
-    for (const pattern of allowlist) {
-      if (pattern.endsWith('*') && apiName.startsWith(pattern.slice(0, -1))) {
-        return true;
-      }
-    }
-    return false;
+  private providerContext(): { cwd: string; pluginConfig: AgentPluginConfig } {
+    return { cwd: this.registryCwd, pluginConfig: this.pluginConfig };
   }
 
   getDefinitions(config: AgentConfig): ToolDefinition[] {
@@ -165,14 +138,14 @@ export class ToolRegistry {
       if (toolName === 'run_shell' && !isCapabilityEnabled(config, 'shell')) continue;
       if (toolName === 'web_fetch' && !isCapabilityEnabled(config, 'web')) continue;
       if (toolName === 'web_search' && !isCapabilityEnabled(config, 'web')) continue;
-      if (!this.isToolAllowed(toolName, allowlist)) continue;
+      if (!isRoleToolAllowlisted(toolName, allowlist)) continue;
       const entry = ALL_BUILTIN[toolName];
       if (!entry) continue;
 
       for (const def of entry.defs) {
         const name = def.function.name;
         if (!this.enabledBuiltin.has(name)) continue;
-        if (!this.isToolAllowed(name, allowlist)) continue;
+        if (!isRoleToolAllowlisted(name, allowlist)) continue;
         if (seen.has(name)) continue;
         seen.add(name);
         defs.push(def);
@@ -182,7 +155,7 @@ export class ToolRegistry {
     if (this.spawnPresets.length > 0) {
       if (
         this.enabledBuiltin.has('spawn_agent') &&
-        this.isToolAllowed('spawn_agent', allowlist)
+        isRoleToolAllowlisted('spawn_agent', allowlist)
       ) {
         for (const def of buildSpawnDefinitions(this.spawnPresets)) {
           const name = def.function.name;
@@ -193,7 +166,7 @@ export class ToolRegistry {
       }
       if (
         this.enabledBuiltin.has('spawn_background') &&
-        this.isToolAllowed('spawn_background', allowlist)
+        isRoleToolAllowlisted('spawn_background', allowlist)
       ) {
         for (const def of buildSpawnBackgroundDefinitions(this.spawnPresets)) {
           const name = def.function.name;
@@ -204,17 +177,12 @@ export class ToolRegistry {
       }
     }
 
-    for (const binding of this.mcpBindings) {
-      if (!this.isToolAllowed(binding.apiName, allowlist)) continue;
-      defs.push({
-        type: 'function',
-        function: {
-          name: binding.apiName,
-          description: `[MCP:${binding.serverName}] ${binding.description}`,
-          parameters: binding.parameters,
-        },
-      });
-    }
+    defs.push(
+      ...this.mcpProvider.getDefinitions({
+        ...this.providerContext(),
+        config,
+      }),
+    );
 
     return defs;
   }
@@ -234,7 +202,7 @@ export class ToolRegistry {
       }
 
       const allowlist = config.toolAllowlist;
-      if (allowlist?.length && !this.isToolAllowed(name, allowlist)) {
+      if (allowlist?.length && !isRoleToolAllowlisted(name, allowlist)) {
         return `error: tool ${name} is not allowed for this role`;
       }
 
@@ -285,10 +253,11 @@ export class ToolRegistry {
         if (result !== null) return result;
       }
 
-      const mcp = this.mcpBindings.find((b) => b.apiName === name);
-      if (mcp) {
-        return await mcp.call(args, config.abortSignal);
-      }
+      const mcpResult = await this.mcpProvider.execute(name, args, {
+        ...this.providerContext(),
+        config,
+      });
+      if (mcpResult !== null) return mcpResult;
 
       return `error: unknown tool ${name}`;
     } catch (err) {
@@ -298,7 +267,7 @@ export class ToolRegistry {
   }
 
   async shutdown(): Promise<void> {
-    await this.mcpManager.shutdown();
+    await this.mcpProvider.shutdown();
     this.initialized = false;
   }
 }
