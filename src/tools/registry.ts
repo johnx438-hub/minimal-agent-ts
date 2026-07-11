@@ -4,6 +4,7 @@ import { isCapabilityEnabled } from '../permission-gate.js';
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import { loadAgentPluginConfig } from '../plugins/config-loader.js';
 import { McpToolProvider } from './providers/mcp-provider.js';
+import { SpawnToolProvider } from './providers/spawn-provider.js';
 import { isRoleToolAllowlisted } from './providers/tool-allowlist.js';
 import {
   buildLoadedSkillsSystemBlock,
@@ -19,11 +20,6 @@ import { SHELL_DEFINITIONS, runShellTool } from './shell.js';
 import { SKILLS_TOOL_DEFINITIONS, runSkillsTool } from './skills-tool.js';
 import { WEB_FETCH_DEFINITIONS, runWebFetchTool } from './web-fetch.js';
 import { WEB_SEARCH_DEFINITIONS, runWebSearchTool } from './web-search.js';
-import { loadSpawnPresets } from '../spawn/load-preset.js';
-import { configureSpawnSemaphore } from '../spawn/semaphore.js';
-import type { ResolvedSpawnPreset } from '../spawn/types.js';
-import { buildSpawnBackgroundDefinitions, runSpawnBackgroundTool } from './spawn-background.js';
-import { buildSpawnDefinitions, runSpawnTool } from './spawn.js';
 import { parseToolArgsJson } from './tool-args.js';
 
 type BuiltinHandler = (
@@ -51,19 +47,21 @@ export class ToolRegistry {
   private pluginConfig: AgentPluginConfig = loadAgentPluginConfig(process.cwd());
   private skills = new Map<string, SkillDefinition>();
   private readonly mcpProvider = new McpToolProvider();
+  private readonly spawnProvider = new SpawnToolProvider();
   private initialized = false;
   private enabledBuiltin = new Set<string>();
-  private spawnPresets: ResolvedSpawnPreset[] = [];
   private registryCwd = process.cwd();
 
   async reinitialize(cwd: string, pluginConfig?: AgentPluginConfig): Promise<void> {
     await this.mcpProvider.shutdown();
+    await this.spawnProvider.shutdown();
     this.initialized = false;
     await this.initialize(cwd, pluginConfig);
   }
 
   async initialize(cwd: string, pluginConfig?: AgentPluginConfig): Promise<void> {
     await this.mcpProvider.shutdown();
+    await this.spawnProvider.shutdown();
 
     this.registryCwd = cwd;
     this.pluginConfig = pluginConfig ?? loadAgentPluginConfig(cwd);
@@ -71,29 +69,28 @@ export class ToolRegistry {
     this.enabledBuiltin = new Set(this.pluginConfig.builtin_tools ?? Object.keys(ALL_BUILTIN));
 
     try {
-      await this.mcpProvider.load({ cwd, pluginConfig: this.pluginConfig });
-
-      const spawnPolicy = this.pluginConfig.spawn_policy;
-      this.spawnPresets = loadSpawnPresets(cwd, this.pluginConfig.spawn_presets, spawnPolicy);
-      configureSpawnSemaphore(spawnPolicy?.max_parallel ?? 1);
+      const providerCtx = { cwd, pluginConfig: this.pluginConfig };
+      await this.mcpProvider.load(providerCtx);
+      await this.spawnProvider.load(providerCtx);
       this.initialized = true;
     } catch (err) {
       await this.mcpProvider.shutdown();
+      await this.spawnProvider.shutdown();
       this.initialized = false;
       throw err;
     }
   }
 
   hasSpawnPresets(): boolean {
-    return this.spawnPresets.length > 0;
+    return this.spawnProvider.hasSpawnPresets();
   }
 
   listSpawnPresetNames(): string[] {
-    return this.spawnPresets.map((p) => p.name);
+    return this.spawnProvider.listSpawnPresetNames();
   }
 
-  getSpawnPresets(): ResolvedSpawnPreset[] {
-    return this.spawnPresets;
+  getSpawnPresets(): ReturnType<SpawnToolProvider['getSpawnPresets']> {
+    return this.spawnProvider.getSpawnPresets();
   }
 
   isInitialized(): boolean {
@@ -152,29 +149,14 @@ export class ToolRegistry {
       }
     }
 
-    if (this.spawnPresets.length > 0) {
-      if (
-        this.enabledBuiltin.has('spawn_agent') &&
-        isRoleToolAllowlisted('spawn_agent', allowlist)
-      ) {
-        for (const def of buildSpawnDefinitions(this.spawnPresets)) {
-          const name = def.function.name;
-          if (seen.has(name)) continue;
-          seen.add(name);
-          defs.push(def);
-        }
-      }
-      if (
-        this.enabledBuiltin.has('spawn_background') &&
-        isRoleToolAllowlisted('spawn_background', allowlist)
-      ) {
-        for (const def of buildSpawnBackgroundDefinitions(this.spawnPresets)) {
-          const name = def.function.name;
-          if (seen.has(name)) continue;
-          seen.add(name);
-          defs.push(def);
-        }
-      }
+    for (const def of this.spawnProvider.getDefinitions({
+      ...this.providerContext(),
+      config,
+    })) {
+      const name = def.function.name;
+      if (seen.has(name)) continue;
+      seen.add(name);
+      defs.push(def);
     }
 
     defs.push(
@@ -210,21 +192,11 @@ export class ToolRegistry {
         return runSkillsTool(name, args, this.skills) ?? 'error: invoke_skill failed';
       }
 
-      if (name === 'spawn_agent') {
-        if (!this.enabledBuiltin.has('spawn_agent') || this.spawnPresets.length === 0) {
-          return 'error: spawn_agent is not configured (add spawn_presets and spawn_agent to agent.json)';
-        }
-        const result = await runSpawnTool(name, args, config, this.spawnPresets);
-        if (result !== null) return result;
-      }
-
-      if (name === 'spawn_background') {
-        if (!this.enabledBuiltin.has('spawn_background') || this.spawnPresets.length === 0) {
-          return 'error: spawn_background is not configured (add spawn_presets and spawn_background to agent.json)';
-        }
-        const result = await runSpawnBackgroundTool(name, args, config, this.spawnPresets);
-        if (result !== null) return result;
-      }
+      const spawnResult = await this.spawnProvider.execute(name, args, {
+        ...this.providerContext(),
+        config,
+      });
+      if (spawnResult !== null) return spawnResult;
 
       const builtin = ALL_BUILTIN[name];
       if (builtin && this.enabledBuiltin.has(name)) {
@@ -268,6 +240,7 @@ export class ToolRegistry {
 
   async shutdown(): Promise<void> {
     await this.mcpProvider.shutdown();
+    await this.spawnProvider.shutdown();
     this.initialized = false;
   }
 }
