@@ -2,7 +2,7 @@
 
 > **定位**: 与 ReAct 主线、上下文策略、TUI **正交** 的能力拓展规划；细节打磨期单开维护，避免撑大 `ROADMAP.md`。  
 > **原则**: 轻量内置 + 可选外部 CLI 后端；大结果仍走 pointerize + 冷存；权限沿用现有 gate（`allowShell` / `allowWeb` / path JIT）。  
-> **状态**: Draft v0.1（2026-07-06）
+> **状态**: Draft v0.1（2026-07-06）；产品轨 Wave 2 见 **[docs/ROADMAP.md](./docs/ROADMAP.md)** §3
 
 ---
 

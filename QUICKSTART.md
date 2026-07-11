@@ -1,6 +1,6 @@
 # minimal-agent-ts 快速上手
 
-> 5 分钟跑起来。详细设计见 `SPEC_CONTEXT_MANAGEMENT.md`，代码导读见 `README.md`。
+> 5 分钟跑起来。路线图见 `docs/ROADMAP.md`；详细设计见 `SPEC_CONTEXT_MANAGEMENT.md`；代码导读见 `README.md`。
 
 ## 环境要求
 

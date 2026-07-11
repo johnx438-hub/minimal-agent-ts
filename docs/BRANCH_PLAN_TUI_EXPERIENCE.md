@@ -1,8 +1,8 @@
 # 分支计划：TUI 体验、权限门与嫁接前能力（记录稿）
 
-> **状态**: 仅记录，**不进** `ROADMAP.md`，**不要求**立即改主仓内核。  
-> **前提**: 主仓 = session 内上下文实验 + `AgentRuntime` harness；pi 嫁接见轨 A（`ROADMAP.md`）。  
-> **原则**: **先定规则、后换皮肤**——权限与 slash 在 readline 时代落地，pi `Overlay` 只替换呈现层。
+> **状态**: **历史记录稿**；M1–M5 已落地，M6–M7 与产品轨见 **[ROADMAP.md](./ROADMAP.md)**（统一规划，2026-07-12）。  
+> **前提**: 主仓 = session 内上下文实验 + `AgentRuntime` harness；pi 嫁接见轨 A。  
+> **原则**: **先定规则、后换皮肤**——权限与 slash 已落地；pi `Overlay` 继续替换呈现层。
 
 ---
 

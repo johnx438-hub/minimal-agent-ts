@@ -1,13 +1,12 @@
 # minimal-agent-ts 后续路线图
 
-> **定位**: 一页纸规划，避免 TUI / 性能 / Rust 三线并行。  
-> **前提**: Phase 1–2、4–6 已实现。  
-> **当前重点**: 轨 B **P0 填表复测**；轨 A TUI 细节打磨；轨 F 个性化与 ZVEC 减负（见下）。  
-> **能力拓展**（web search / LSP / 文档转换 / Office）：单见 **[SPEC_TOOLS.md](./SPEC_TOOLS.md)**，不进本表主线。  
-> **LLM 路由**（多 API profile、子 Agent 绑模型、fallback、reasoning）：单见 **[SPEC_LLM_ROUTER.md](./SPEC_LLM_ROUTER.md)**（轨 G）。
-> **工程审查**: `workspace/CODE_REVIEW_REPORT.md`（2026-07-01）为历史快照；以本文件 + `npm test` 为准。
+> **统一规划（产品 + 底座 + 压测 + Hooks）**: **[docs/ROADMAP.md](./docs/ROADMAP.md)** ← 单一事实来源（2026-07-12）  
+> **定位**: 本文件保留轨 A–G **缩写表**与历史压测记录；细节、里程碑、文档索引见 `docs/ROADMAP.md`。  
+> **前提**: Phase 1–2、4–6 已实现；ZVEC 已删；MCP 支持 stdio / streamable-http / sse。  
+> **当前重点**: **产品轨** M-Prod-1（TUI `/jobs`）→ M-Prod-2（`web_search`）；压测改走 **高压 harness**（见 `docs/ROADMAP.md` §5）。  
+> **能力拓展**: [SPEC_TOOLS.md](./SPEC_TOOLS.md) | **LLM 路由**: [SPEC_LLM_ROUTER.md](./SPEC_LLM_ROUTER.md)（轨 G，G2–G4 ✅）
 
-**推荐顺序**: **B（P0 填表）→ F3-c（硬删 ZVEC）→ G（api_profiles，见 SPEC_LLM_ROUTER）→ 视数据选 C**；轨 A / 轨 E 增强与 **SPEC_TOOLS** 按需并行，不要 B+C 同时开工。
+**推荐顺序（2026-07-12）**: **产品（jobs → web_search）** 与 **底座接缝（L0–L3）** 交错小步；压测待 stress preset 就绪后填表；轨 C 仍 **profiling 触发**。
 
 ---
 
@@ -16,12 +15,13 @@
 | 轨 | 目标 | 触发条件 | 不做 | 优先级 |
 |----|------|----------|------|--------|
 | **A** | 嫁接 pi-tui 呈现层 | ✅ **基础版已实现**（`npm run tui`）；演示级 polish 按需 | fork 整仓、重写 agent 内核 | P2（增强） |
-| **B** | TS 运行时内存 / **turn 延迟** / IO | 异步 IO 已落地；**P0 表待填** | 无 profiling 就改架构 | **P0（观测）** |
+| **B** | TS 运行时内存 / **turn 延迟** / IO | 异步 IO ✅；压测待 **高压 harness**（API 限流 + 子 Agent 工具窄） | 无 profiling 就改架构 | P1（观测） |
 | **C** | Rust 内核 fork（CPU 热点） | B 填表后仍撞墙，且热点已定位 | preemptive 全量重写 `runAgent` | P3 |
 | **D** | `spawn_agent` 同步预设子 Agent | ✅ **已实现**（基础版） | Meta-Planner 动态 flow、嵌套 spawn | — |
 | **E** | `spawn_background` + `code_review` 后台 job | ✅ **已实现**（Phase 1a–1d） | TUI jobs 面板、跨机调度 | P2（增强） |
-| **F** | 个性化 + 依赖减负 | P0 填表后、细节打磨期 | 内置 RAG、重造 MemFileCli | P1 |
-| **G** | LLM 路由（见 [SPEC_LLM_ROUTER.md](./SPEC_LLM_ROUTER.md)） | F3-c 后、多 profile 有刚需 | IM 桥接、多 wire 协议、合并 ds-cache | P1 |
+| **F** | 个性化 + 依赖减负 | ✅ Agent.md、`/memory`、ZVEC 硬删 | 内置 RAG、重造 MemFileCli | — |
+| **G** | LLM 路由（见 [SPEC_LLM_ROUTER.md](./SPEC_LLM_ROUTER.md)） | G2–G4 ✅；G5 待做 | 运行时 IM SDK；合并 ds-cache | P2 |
+| **H** | Hooks + MessageBridge | 见 [docs/ROADMAP.md](./docs/ROADMAP.md) §6 | 飞书/Discord 实现 | P1（底座） |
 | **—** | 工具能力拓展 | 有真实任务需求 | 见 [SPEC_TOOLS.md](./SPEC_TOOLS.md) | 按需 |
 
 ---
@@ -44,8 +44,8 @@
 
 | 项 | 2026-07-01 报告 | 当前（2026-07-05） |
 |----|-----------------|---------------------|
-| 测试文件 | 0 | **42** |
-| 用例数 | — | **232**（`npm test`） |
+| 测试文件 | 0 | **45+** |
+| 用例数 | — | **372**（`npm test`） |
 | 已覆盖 | — | compression、**context-prune**、pointer-compact、**pointerize**、**action-store**、tool-scheduler、llm-retry、permission-gate、**path-utils**、spawn-*、**spawn-background**、**spawn-job-cancel**、**code-review-background**、**loop-guard**、**action-write queue**、web-fetch、session-*、TUI overlay 等 |
 
 **Tier 1 补洞（✅ 2026-07-05）**：`tests/pointerize.test.ts`（`shouldPointerize` / `materializePriorTurnTools`）、`tests/action-store.test.ts`（冷存读写与列表）、`tests/context-prune.test.ts`（20k/40k 门槛、`assembleApiMessages`）。
@@ -54,7 +54,7 @@
 
 | 优先级 | 事项 | 触发 / 依据 | 工作量 |
 |:------:|------|-------------|:------:|
-| **P0** | 轨 B **观测填表**：turn P50/P95、`turn_io`、`spawn_background` 场景 | 异步 IO 已落地；**待复测** `max_parallel=3` + 后台 `code_review` | 半天 |
+| **P1** | 轨 B **观测填表**（需 §docs/ROADMAP 高压 harness） | API 限流 + 子 Agent 工具窄导致难测拐点 | 半天 |
 | **P1** | ✅ **同步 IO 异步化**（B-IO-1～3、Index 队列） | `ActionWriteQueue`、`TranscriptWriteQueue`、`ActionIndexQueue` 已合入 | — |
 | **P1** | ✅ 测试补洞：pointerize 规则 + action-store + prune 边界 | `pointerize` / `action-store` / `context-prune` 单测已合入 | — |
 | **P2** | `ToolRegistry` → Provider 拆分 | 新工具类型激增前 | 1–2 天 |
@@ -325,7 +325,7 @@ node --heapsnapshot-near-heap-limit=3 $(which tsx) src/tui/main.ts
 |:----:|------|------|
 | **F3-a** | 默认 `ENABLE_ZVEC=0`（opt-in `=1`）；文档标 deprecated | ✅ |
 | **F3-b** | `recall_query` 仅 `action_id` + 冷存 keyword（`tool:` 过滤） | ✅ |
-| **F3-c** | 删除 `action-index.ts`、`embedding.ts`、`@zvec/zvec`、`@xenova/transformers` | ✅ |
+| **F3-c** | 删除 `action-index.ts`、`embedding.ts`、`@zvec/zvec`、`@xenova/transformers` | ✅（2026-07-12） |
 
 **保留**：`action-store` 冷存、`recall_query(action_id)` + keyword、transcript 内 grep。  
 **已删**：384 维 embedding、ZVEC 混合检索、`index_flush` 事件链。  
@@ -418,3 +418,5 @@ minimal-agent-ts-ds-cache/   # 已有：前缀缓存叙事 fork（独立）
 | 2026-07-06 | 轨 F（Agent.md、/memory、ZVEC 剔除）；**SPEC_TOOLS.md** 单开；pi-tui compact tool 显示；测试 **232** |
 | 2026-07-06 | F3-a/b：ZVEC 默认 off（opt-in）；recall 冷存 keyword + `tool:` 过滤；测试 **259** |
 | 2026-07-10 | 轨 G：**SPEC_LLM_ROUTER.md**（cc-connect 式 profile 中间层；G1–G5 分期） |
+| 2026-07-12 | **docs/ROADMAP.md** 统一规划；MCP HTTP；产品/底座双轨；MessageBridge 预留；压测 harness |
+| 2026-07-12 | F3-c ZVEC 硬删；slash `/brief`；测试 **372** |

@@ -173,7 +173,7 @@ CLI：`npm run spawn:{list,status,kill,tail}`。
 
 ## 路线图状态
 
-**功能 Phase（1–6）** 见下表；**轨 A/B/C**（TUI、TS 性能、Rust 内核）见 **[ROADMAP.md](./ROADMAP.md)**。
+**功能 Phase（1–6）** 见下表；**统一规划**（产品轨、底座模块化、压测、Hooks）见 **[docs/ROADMAP.md](./docs/ROADMAP.md)**；轨 A–G 缩写见 **[ROADMAP.md](./ROADMAP.md)**。
 
 | Phase | 主题 | 状态 |
 |-------|------|------|
@@ -185,7 +185,7 @@ CLI：`npm run spawn:{list,status,kill,tail}`。
 | 6 | 多角色 workflow（config 驱动） | ✅ |
 | 1a–1d | 后台 spawn：`JobRegistry` + `spawn_background` + `code_review` 后台模式 | ✅ |
 
-当前测试：**170** 用例（`npm test`）。
+当前测试：**372** 用例（`npm test`）。
 
 ## 建议学习顺序
 
@@ -196,11 +196,12 @@ CLI：`npm run spawn:{list,status,kill,tail}`。
 5. `src/spawn/job-registry.ts` + `src/tools/code-review.ts` — 后台子 Agent
 6. `src/workflow/runner.ts` — 多角色编排
 
-## 下一步（可选练习）
+## 下一步
 
-- [x] Phase 3：跨 session 记忆 → **MemFileCli**（外置 skill）
-- [x] `web_fetch`（L1 HTTP + 可选 cloakFetch L2）
-- [x] `spawn_agent` / `spawn_background` / `code_review`
-- [x] TUI（`npm run tui`）
-- [ ] 写文件前 overlay 确认（permission 层增强）
-- [ ] Rust 内核 fork（触发条件见 [ROADMAP.md](./ROADMAP.md) 轨 C）
+见 **[docs/ROADMAP.md](./docs/ROADMAP.md)**：
+
+- [ ] **M-Prod-1** TUI `/jobs` + job-query 层
+- [ ] **M-Prod-2** `web_search` 工具
+- [ ] **压测 harness** stress preset + 并行 `spawn_background` dev-worker
+- [ ] **MessageBridge** hook（IM 预留，见 docs/ROADMAP §6）
+- [ ] 底座 L1–L3（ToolProvider、context pipeline、hooks）

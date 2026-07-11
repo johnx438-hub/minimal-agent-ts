@@ -2,8 +2,8 @@
 
 > **定位**: OpenAI-compatible **传输与配置中间层**——多 API profile、子 Agent 绑模型、fallback、reasoning/extra_body 透传、**主流厂商隐式缓存观测**。与 ReAct 主循环、上下文策略 **正交**；目标是将本仓逐步打磨为 **开箱即用的 Agent 底座**。  
 > **参考**: [cc-connect](https://github.com/chenhg5/cc-connect) 的 `provider-presets.json` + `/provider` `/model` `/reasoning` 思路（**不**复制 IM 桥接与外部 CLI 适配器）。  
-> **状态**: Draft v0.3（2026-07-11）
-> **顺序**: B（P0 填表）→ F3-c → **G1 + G1-cache** → G2 → G3 → G4 → **G5（Anthropic 显式缓存，最后）**
+> **状态**: Draft v0.3（2026-07-11）；总路线图见 **[docs/ROADMAP.md](./docs/ROADMAP.md)**  
+> **顺序**: **G1 + G1-cache** → G2 → G3 → G4（✅）→ **G5（Anthropic 显式缓存，最后）**
 
 ---
 
