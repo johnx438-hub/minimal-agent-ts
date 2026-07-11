@@ -55,6 +55,12 @@ import {
   writeHandoffFile,
 } from './handoff.js';
 import {
+  buildSpawnPresetEntries,
+  listOrphanAgentFiles,
+  type OrphanAgentFile,
+  type SpawnPresetEntry,
+} from './spawn/preset-query.js';
+import {
   countRunningJobs,
   formatJobEventsTail,
   formatJobList,
@@ -882,12 +888,25 @@ export class AgentRuntime {
   }
 
   listSpawnPresets(): Array<{ name: string; description: string; tools: string[] }> {
-    if (!toolRegistry.isInitialized()) return [];
-    return toolRegistry.getSpawnPresets().map((p) => ({
+    return this.listSpawnCatalog().presets.map((p) => ({
       name: p.name,
       description: p.description,
       tools: p.tools,
     }));
+  }
+
+  listSpawnCatalog(): { presets: SpawnPresetEntry[]; orphans: OrphanAgentFile[] } {
+    if (!toolRegistry.isInitialized()) {
+      return { presets: [], orphans: [] };
+    }
+    const resolved = toolRegistry.getSpawnPresets();
+    const presets = buildSpawnPresetEntries(
+      this.config.cwd,
+      this.pluginConfig,
+      resolved,
+    );
+    const orphans = listOrphanAgentFiles(this.config.cwd, this.pluginConfig);
+    return { presets, orphans };
   }
 
   listMcpTools(): Array<{

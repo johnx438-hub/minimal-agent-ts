@@ -15,6 +15,7 @@ import {
 } from './llm-slash.js';
 import { showHistoryBrowser } from './pi/history-overlay.js';
 import { showJobsBrowser, showJobStatusOverlay, showJobTailOverlay } from './pi/jobs-overlay.js';
+import { showSpawnsBrowser } from './pi/spawns-overlay.js';
 import { showLogBrowser } from './pi/log-overlay.js';
 import { buildSelectItems, showPickerOverlay } from './pi/picker.js';
 import { showSessionDetailOverlay } from './pi/session-detail.js';
@@ -117,6 +118,12 @@ export async function handlePiSlash(
     } else {
       await showJobTailOverlay(tui, runtime, action.jobId);
     }
+    resumeEditor();
+    return;
+  }
+
+  if (result.spawnsAction) {
+    await showSpawnsBrowser(tui, runtime);
     resumeEditor();
     return;
   }
@@ -515,20 +522,6 @@ export async function handlePiSlash(
           say(`    • ${t.apiName}  (${t.toolName})`, true);
           if (desc) say(`      ${desc}`, true);
         }
-      }
-    }
-    resumeEditor();
-    return;
-  }
-
-  if (result.message === '__spawns__') {
-    const presets = runtime.listSpawnPresets();
-    if (presets.length === 0) {
-      say('(no spawn presets — add spawn_presets to agent.json)');
-    } else {
-      for (const p of presets) {
-        say(`  • ${p.name}: ${p.description}`, true);
-        say(`    tools: ${p.tools.join(', ')}`, true);
       }
     }
     resumeEditor();

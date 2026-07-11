@@ -19,6 +19,8 @@ export type JobsSlashAction =
   | { kind: 'status'; jobId: string }
   | { kind: 'tail'; jobId: string };
 
+export type SpawnsSlashAction = { kind: 'list' };
+
 export interface SlashResult {
   handled: boolean;
   message?: string;
@@ -38,6 +40,7 @@ export interface SlashResult {
   memoryMessage?: string;
   llmAction?: LlmSlashAction;
   jobsAction?: JobsSlashAction;
+  spawnsAction?: SpawnsSlashAction;
 }
 
 /** Single source of truth for slash help, aliases, and autocomplete hints. */
@@ -567,7 +570,7 @@ export function parseSlashLine(line: string): SlashResult | null {
     }
 
     case '/spawns':
-      return { handled: true, message: '__spawns__' };
+      return { handled: true, spawnsAction: { kind: 'list' } };
 
     case '/jobs':
       return parseJobsSlash(parts);

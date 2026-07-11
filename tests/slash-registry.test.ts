@@ -41,6 +41,7 @@ describe('slash registry', () => {
       kind: 'tail',
       jobId: 'job_abc',
     });
+    assert.deepEqual(parseSlashLine('/spawns')?.spawnsAction, { kind: 'list' });
   });
 
   it('exposes autocomplete items with bilingual descriptions', () => {

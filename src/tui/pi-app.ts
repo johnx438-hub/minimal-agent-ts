@@ -9,6 +9,7 @@ import {
   TUI,
 } from '@earendil-works/pi-tui';
 
+import { isActionIoMetricsEnabled } from '../action-io-metrics.js';
 import type { AgentRuntime } from '../runner.js';
 import { CompressionFatigueTracker } from '../compression-fatigue.js';
 import {
@@ -173,13 +174,15 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
 
   const fatigueTracker = new CompressionFatigueTracker();
   const fatiguePrompter = createPiFatiguePrompter(tui);
+  let lastTurnIoTag = '';
 
   const printStatus = (): void => {
     const wf = uiState.armedWorkflow ? `  workflow armed: ${uiState.armedWorkflow}` : '';
     const runningJobs = runtime.countRunningBackgroundJobs();
     const jobsTag = runningJobs > 0 ? `  jobs:${runningJobs} running` : '';
+    const ioTag = isActionIoMetricsEnabled() && lastTurnIoTag ? `  ${lastTurnIoTag}` : '';
     say(
-      `[${runtime.sessionLabel()}] ${runtime.formatSessionLlmShortLine()}  shell:${runtime.config.allowShell ? 'on' : 'off'} web:${runtime.config.allowWeb ? 'on' : 'off'}${jobsTag}${wf}`,
+      `[${runtime.sessionLabel()}] ${runtime.formatSessionLlmShortLine()}  shell:${runtime.config.allowShell ? 'on' : 'off'} web:${runtime.config.allowWeb ? 'on' : 'off'}${jobsTag}${ioTag}${wf}`,
       true,
     );
   };
@@ -217,6 +220,10 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     if (event.type === 'run_start') {
       mode = 'running';
       lastRunAborted = false;
+      lastTurnIoTag = '';
+    }
+    if (event.type === 'turn_io' && isActionIoMetricsEnabled()) {
+      lastTurnIoTag = `io:T${event.turn} ${event.actions_saved}/${event.action_save_ms}ms q=${event.queue_depth}`;
     }
     if (event.type === 'run_stopping') {
       mode = 'stopping';

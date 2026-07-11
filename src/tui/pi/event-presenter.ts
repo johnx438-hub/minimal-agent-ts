@@ -1,6 +1,11 @@
 import { CancellableLoader, Markdown, Text, type TUI } from '@earendil-works/pi-tui';
 
 import {
+  formatActionFlushSummary,
+  formatTurnIoSummary,
+  isActionIoMetricsEnabled,
+} from '../../action-io-metrics.js';
+import {
   formatLlmFallbackSummary,
   formatLlmRetrySummary,
   formatRunStartLlmSummary,
@@ -34,6 +39,7 @@ function isAgentStep(event: RuntimeEvent): event is AgentStepEvent {
     event.type === 'compression' ||
     event.type === 'draft_discarded' ||
     event.type === 'loop_guard' ||
+    event.type === 'turn_io' ||
     event.type === 'final'
   );
 }
@@ -134,6 +140,11 @@ export class PiEventPresenter {
           this.appendRunMeta(
             `spawn ✗ ${event.preset}${event.detail ? `: ${event.detail}` : ''}`,
           );
+        }
+        break;
+      case 'action_flush':
+        if (isActionIoMetricsEnabled()) {
+          this.appendRunMeta(`💾 ${formatActionFlushSummary(event)}`);
         }
         break;
     }
@@ -275,6 +286,11 @@ export class PiEventPresenter {
         this.appendRunMeta(
           `🔄 loop_guard: ${event.action}${event.reason ? ` (${event.reason})` : ''}`,
         );
+        break;
+      case 'turn_io':
+        if (isActionIoMetricsEnabled()) {
+          this.appendRunMeta(`💾 ${formatTurnIoSummary(event)}`);
+        }
         break;
       case 'tool_plan':
         if (event.total >= 2) {

@@ -92,7 +92,7 @@
 
 ### 后续可选（非 P0）
 
-- [ ] slash `/spawns` 列表预设
+- [x] slash `/spawns` 列表预设（pi overlay + orphan agents）
 - [ ] `{{recall(...)}}` workflow 模板
 - [x] 子 Agent action 独立冷存路径（`actions/spawn/<parent>/`，见 `spawn-cold-storage` 测试）
 

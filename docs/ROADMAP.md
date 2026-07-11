@@ -47,7 +47,7 @@
 | 优先级 | 轨 | 内容 |
 |:------:|-----|------|
 | **P0 产品** | 产品 | ~~TUI `/jobs`、job-query~~ ✅；~~`web_search` v1+v1.5~~ ✅ |
-| **P1 产品** | 产品 | `/spawns` 实装、TUI `turn_io`、pi overlay 统一 |
+| **P1 产品** | 产品 | ~~`/spawns` 实装、TUI `turn_io`~~ ✅；pi overlay 统一（按需） |
 | **P1 压测** | B | 高压场景 harness（§5）；填压测表 |
 | **P1 底座** | 底座 | ToolProvider 拆分、context pipeline、**MessageBridge hook**（§6） |
 | **P2** | G5 | Anthropic 显式缓存 `anthropic_breakpoints` |
@@ -87,11 +87,14 @@ Wave 3   /spawns、turn_io TUI、pi overlay 统一
 - **v1.5** ✅：spill cache 先查 + 单 task 外搜 budget
 - **v2**（可选）：`backend: searxng` 或 MCP HTTP 外置
 
-### M-Prod-3：体验抛光（按需）
+### M-Prod-3：体验抛光（✅ 2026-07-12）
 
-- `/spawns` 列表 `agents/*.md` + preset 摘要（当前为占位）
-- `ACTION_IO_METRICS=1` 时 TUI 显示 `turn_io`
-- workflow checkpoint / 权限 / jobs 统一 pi `SelectList`
+| 交付 | 说明 |
+|------|------|
+| `/spawns` | pi `SelectList` 列表注册 preset + 未注册 `agents/*.md`；Enter/`i` → 详情 overlay |
+| `src/spawn/preset-query.ts` | `buildSpawnPresetEntries` / `listOrphanAgentFiles` / 格式化 |
+| `turn_io` TUI | `ACTION_IO_METRICS=1` 时 chat meta 显示 `turn_io` / `action_flush`；状态条 `io:T…` |
+| 按需 | workflow checkpoint / 权限 统一 pi `SelectList`（jobs 已统一） |
 
 ### BRANCH_PLAN 里程碑对照
 

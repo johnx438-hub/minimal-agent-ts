@@ -202,6 +202,7 @@ CLI：`npm run spawn:{list,status,kill,tail}`。
 
 - [x] **M-Prod-1** TUI `/jobs` + job-query 层
 - [x] **M-Prod-2** `web_search` 工具（ddgr + cache + budget）
+- [x] **M-Prod-3** TUI `/spawns` overlay + `ACTION_IO_METRICS=1` 时 `turn_io` 显示
 - [ ] **压测 harness** stress preset + 并行 `spawn_background` dev-worker
 - [ ] **MessageBridge** hook（IM 预留，见 docs/ROADMAP §6）
 - [ ] 底座 L1–L3（ToolProvider、context pipeline、hooks）
