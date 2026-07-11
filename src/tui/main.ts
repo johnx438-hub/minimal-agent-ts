@@ -2,7 +2,6 @@ import 'dotenv/config';
 import { resolve } from 'node:path';
 
 import { AgentRuntime } from '../runner.js';
-import { runTuiApp } from './app.js';
 import { runPiTuiApp } from './pi-app.js';
 
 const SESSION_ID_RE = /^session_\d{14}$/;
@@ -93,23 +92,12 @@ async function main(): Promise<void> {
 
   await runtime.initialize();
 
-  const useReadline = process.env.TUI_BACKEND === 'readline';
-
-  if (useReadline) {
-    await runTuiApp({
-      runtime,
-      noShell: opts.noShell,
-      noWeb: opts.noWeb,
-      allowWeb: opts.allowWeb,
-    });
-  } else {
-    await runPiTuiApp({
-      runtime,
-      noShell: opts.noShell,
-      noWeb: opts.noWeb,
-      allowWeb: opts.allowWeb,
-    });
-  }
+  await runPiTuiApp({
+    runtime,
+    noShell: opts.noShell,
+    noWeb: opts.noWeb,
+    allowWeb: opts.allowWeb,
+  });
 }
 
 main().catch((err) => {

@@ -9,7 +9,7 @@ import {
   type RunStartLlmMeta,
   type RuntimeEvent,
 } from '../../events.js';
-import { shouldFormatFinal } from '../markdown.js';
+import { shouldFormatFinal } from './final-text.js';
 import type { PiChatLog } from './chat-log.js';
 import { piChalk, piMarkdownTheme } from './themes.js';
 import {

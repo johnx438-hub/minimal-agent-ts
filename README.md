@@ -203,5 +203,5 @@ CLI：`npm run spawn:{list,status,kill,tail}`。
 - [x] `web_fetch`（L1 HTTP + 可选 cloakFetch L2）
 - [x] `spawn_agent` / `spawn_background` / `code_review`
 - [x] TUI（`npm run tui`）
-- [ ] 写文件前 `readline` 确认（permission 层增强）
+- [ ] 写文件前 overlay 确认（permission 层增强）
 - [ ] Rust 内核 fork（触发条件见 [ROADMAP.md](./ROADMAP.md) 轨 C）

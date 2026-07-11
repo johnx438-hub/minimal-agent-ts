@@ -213,7 +213,7 @@ turn_start → llm_done → tool_plan → tool_batch? → tool_call* → tool_re
 
 新代码应优先消费 `tool_plan`；`tool_batch` 保留至 v0.3 再评估废弃。
 
-#### 5.4.4 TUI 展示（pi presenter / readline log）
+#### 5.4.4 TUI 展示（pi presenter）
 
 **默认（v0.2）**：单行摘要，走 `appendRunMeta`（dim），位于该 turn 的 `tool_call` 行**之上**：
 

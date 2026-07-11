@@ -29,7 +29,7 @@ import {
   slashAutocompleteItems,
   SLASH_HELP_LINES,
 } from './slash.js';
-import type { TuiAppOptions } from './app.js';
+import type { TuiAppOptions } from './types.js';
 import { PiChatLog } from './pi/chat-log.js';
 import { PiEventPresenter } from './pi/event-presenter.js';
 import {
