@@ -64,11 +64,6 @@ import {
   setActiveActionSessionId,
 } from './action-write-queue.js';
 import { formatTurnIoSummary, isActionIoMetricsEnabled } from './action-io-metrics.js';
-import {
-  createP0Collector,
-  isP0TelemetryEnabled,
-  type P0TelemetryCollector,
-} from './p0-telemetry.js';
 import type { TaskBlock } from './task-tracker.js';
 import { setWorkspaceRoot } from './workspace.js';
 import {
@@ -210,7 +205,6 @@ export class AgentRuntime {
   private workflowConfirmFn?: WorkflowConfirmFn;
   private pendingHandoffPrefix: string | null = null;
   private runWorkspacePrompt: WorkspacePromptBundle | null = null;
-  private readonly p0Collector: P0TelemetryCollector | null;
   private sessionLlmOverride: SessionLlmOverride = {};
   private modelListGeneration = 0;
 
@@ -229,7 +223,6 @@ export class AgentRuntime {
     this.pluginConfig = built.pluginConfig;
     this.jsonEvents = opts.jsonEvents ?? false;
     this.useStream = env('STREAM', '1') !== '0';
-    this.p0Collector = isP0TelemetryEnabled() ? createP0Collector(opts.cwd) : null;
     this.permissionGate.setLifecycle((event) => this.emit(event));
 
     configureActionWriteQueue({
@@ -367,7 +360,6 @@ export class AgentRuntime {
   }
 
   private emit(event: RuntimeEvent): void {
-    this.p0Collector?.onEvent(event);
     if (this.jsonEvents) {
       emitJsonEvent(event);
     }

@@ -45,7 +45,7 @@ describe('loop guard regression exemptions', () => {
     });
     const row = record(
       'read_file',
-      { path: 'workspace/p0-telemetry/latest.json' },
+      { path: 'workspace/code-review-bug/report.md' },
       'same body',
     );
 

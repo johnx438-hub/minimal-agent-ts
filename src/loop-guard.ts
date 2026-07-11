@@ -15,7 +15,7 @@ export interface LoopGuardConfig {
 
 const REVIEW_DELEGATION_TOOLS = new Set(['code_review', 'spawn_agent', 'spawn_background']);
 
-const REGRESSION_PATH_MARKERS = ['workspace/p0-telemetry', 'workspace/code-review-'];
+const REGRESSION_PATH_MARKERS = ['workspace/code-review-'];
 
 export interface ToolTurnRecord {
   name: string;

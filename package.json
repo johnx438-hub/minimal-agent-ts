@@ -10,8 +10,6 @@
     "typecheck": "tsc --noEmit",
     "test": "NODE_ENV=test node --import tsx --test tests/**/*.test.ts",
     "test:one": "NODE_ENV=test node --import tsx --test",
-    "p0:summary": "tsx src/p0-summary.ts",
-    "p0:compare": "tsx src/p0-compare.ts",
     "spawn:list": "tsx src/spawn-cli.ts list",
     "spawn:status": "tsx src/spawn-cli.ts status",
     "spawn:kill": "tsx src/spawn-cli.ts kill",

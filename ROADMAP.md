@@ -46,7 +46,7 @@
 |----|-----------------|---------------------|
 | 测试文件 | 0 | **42** |
 | 用例数 | — | **232**（`npm test`） |
-| 已覆盖 | — | compression、**context-prune**、pointer-compact、**pointerize**、**action-store**、tool-scheduler、llm-retry、permission-gate、**path-utils**、spawn-*、**spawn-background**、**spawn-job-cancel**、**code-review-background**、**loop-guard**、**action-write/index queue**、**p0-telemetry**、web-fetch、session-*、TUI overlay 等 |
+| 已覆盖 | — | compression、**context-prune**、pointer-compact、**pointerize**、**action-store**、tool-scheduler、llm-retry、permission-gate、**path-utils**、spawn-*、**spawn-background**、**spawn-job-cancel**、**code-review-background**、**loop-guard**、**action-write queue**、web-fetch、session-*、TUI overlay 等 |
 
 **Tier 1 补洞（✅ 2026-07-05）**：`tests/pointerize.test.ts`（`shouldPointerize` / `materializePriorTurnTools`）、`tests/action-store.test.ts`（冷存读写与列表）、`tests/context-prune.test.ts`（20k/40k 门槛、`assembleApiMessages`）。
 
@@ -118,7 +118,6 @@
 ### 后续可选（非 P0）
 
 - [ ] TUI jobs 面板（`/jobs` 或 spawn 状态条）
-- [ ] P0 遥测按 `job_id` 分桶（`P0_TELEMETRY=1` 骨架已有）
 - [ ] `code_review` diff 截断策略调优（当前 40K chars）
 
 ### 已合入但未单列的事项
@@ -209,7 +208,7 @@
 | **B-IO-4** | `turn_io` + `action_flush` 指标；`ACTION_IO_METRICS=1` | `action-io-metrics.ts`, `events.ts` | ✅ |
 | **B-IO-5** | spawn action 写入 `actions/spawn/<parent>/` | `action-paths.ts`, `spawn/runner.ts` | ✅ |
 | **B-IO-6** | ~~`ActionIndexQueue` 串行索引~~（F3-c 已移除 ZVEC 索引） | — | ✅ 已删 |
-| **B-IO-7** | P0 遥测 `runs.jsonl` + `summary.tsv`（可选） | `p0-telemetry.ts`, `p0-summary.ts` | ✅ 骨架 |
+| **B-IO-7** | ~~P0 遥测~~（已剔除；用 `ACTION_IO_METRICS=1` + `--json-events` 替代） | — | ✅ 已删 |
 
 **明确不做（本阶段）**：
 

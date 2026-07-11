@@ -53,7 +53,6 @@ src/
     read-write.ts, edit-file.ts, explore.ts, shell.ts, web-fetch.ts, ...
   workflow/             # 多角色 workflow 执行器
   tui/                  # 终端 UI（pi-tui）
-  p0-telemetry.ts       # 可选 turn/IO 遥测
 
 agents/                 # spawn 预设（code-review-bug/security/quality 等）
 workflows/              # review-loop.json 等
@@ -169,7 +168,7 @@ CLI：`npm run spawn:{list,status,kill,tail}`。
 | `LOOP_GUARD_REGRESSION` | — | 设为 `1` 放宽 review 回归任务的重复检测 |
 | `ALLOW_SHELL` / `ALLOW_WEB` | `0` | 启用对应工具 |
 | `STREAM` | `1` | 设为 `0` 关闭流式输出 |
-| `P0_TELEMETRY` | — | turn/IO 遥测 → `workspace/p0-telemetry/` |
+| `ACTION_IO_METRICS` | — | headless：`turn_io` / `action_flush` 行级指标 |
 | `MAX_CONTEXT_TOKENS` | — | 手动覆盖模型上下文上限 |
 
 ## 路线图状态
