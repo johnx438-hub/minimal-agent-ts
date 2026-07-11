@@ -341,15 +341,15 @@ v0.1 **不** 做 `/skills unload`（可 v0.2）。
 
 减少与 Codex `/handoff`（git/worktree 迁移）及通用词歧义：
 
-| 新命令 | 旧命令（deprecated，仍解析） | 说明 |
-|--------|------------------------------|------|
+| 新命令 | 旧命令（已删除，返回提示） | 说明 |
+|--------|--------------------------|------|
 | `/actions [id]` | `/log` | 任务与工具调用审计 |
 | `/transcript [id]` | `/history` | user/assistant 对话时间线 |
 | `/brief` | `/handoff` | 写 session 摘要 markdown（**非** git 迁移） |
 | `/brief load [id]` | `/handoff load` | 排队注入下条 task |
 | `/new brief` | `/new handoff` | 写摘要并新建 session |
 
-**已删除别名**：`/session`（用 `/sessions`）、`/provider`（用 `/profile`）。
+**已删除别名**：`/session`（用 `/sessions`）、`/provider`（用 `/profile`）、`/log`、`/history`、`/handoff`、`/new handoff`。
 
 内部仍写 `.sessions/handoff_<id>.md`；CLI `--handoff` 不变。
 

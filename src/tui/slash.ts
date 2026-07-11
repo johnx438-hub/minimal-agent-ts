@@ -32,8 +32,6 @@ export interface SlashResult {
   /** Usage or error text when memoryAction could not be parsed. */
   memoryMessage?: string;
   llmAction?: LlmSlashAction;
-  /** Shown once when a deprecated slash alias was used. */
-  deprecatedSlash?: string;
 }
 
 /** Single source of truth for slash help, aliases, and autocomplete hints. */
@@ -297,10 +295,6 @@ export function normalizeSlashLine(line: string): string {
   return `/${trimmed.slice(1)}`;
 }
 
-function withDeprecated(result: SlashResult, hint: string): SlashResult {
-  return { ...result, deprecatedSlash: hint };
-}
-
 function parseActionsSlash(parts: string[]): SlashResult {
   const id = parts[1];
   return {
@@ -354,10 +348,10 @@ export function parseSlashLine(line: string): SlashResult | null {
         return { handled: true, newSessionBrief: true };
       }
       if (sub === 'handoff') {
-        return withDeprecated(
-          { handled: true, newSessionBrief: true },
-          'deprecated: /new handoff → use /new brief',
-        );
+        return {
+          handled: true,
+          message: 'Unknown command: /new handoff (use /new brief)',
+        };
       }
       return { handled: true, message: '__new__' };
     }
@@ -368,29 +362,29 @@ export function parseSlashLine(line: string): SlashResult | null {
     case '/actions':
       return parseActionsSlash(parts);
 
-    case '/log':
-      return withDeprecated(
-        parseActionsSlash(parts),
-        'deprecated: /log → use /actions',
-      );
-
     case '/transcript':
       return parseTranscriptSlash(parts);
-
-    case '/history':
-      return withDeprecated(
-        parseTranscriptSlash(parts),
-        'deprecated: /history → use /transcript',
-      );
 
     case '/brief':
       return parseBriefSlash(parts);
 
+    case '/log':
+      return {
+        handled: true,
+        message: 'Unknown command: /log (use /actions)',
+      };
+
+    case '/history':
+      return {
+        handled: true,
+        message: 'Unknown command: /history (use /transcript)',
+      };
+
     case '/handoff':
-      return withDeprecated(
-        parseBriefSlash(parts),
-        'deprecated: /handoff → use /brief (session summary, not git transfer)',
-      );
+      return {
+        handled: true,
+        message: 'Unknown command: /handoff (use /brief — session summary, not git transfer)',
+      };
 
     case '/memory': {
       const parsed = parseMemorySlash(parts);

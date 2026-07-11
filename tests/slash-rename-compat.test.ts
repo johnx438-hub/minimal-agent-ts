@@ -15,18 +15,11 @@ describe('slash rename compat', () => {
     assert.equal(parseSlashLine('/new brief')?.newSessionBrief, true);
   });
 
-  it('deprecated aliases still work with hint', () => {
-    assert.equal(parseSlashLine('/log')?.message, '__actions__');
-    assert.match(parseSlashLine('/log')?.deprecatedSlash ?? '', /deprecated.*\/actions/);
-    assert.equal(parseSlashLine('/history')?.message, '__transcript__');
-    assert.match(parseSlashLine('/history')?.deprecatedSlash ?? '', /deprecated.*\/transcript/);
-    assert.equal(parseSlashLine('/handoff')?.briefWrite, true);
-    assert.match(parseSlashLine('/handoff')?.deprecatedSlash ?? '', /deprecated.*\/brief/);
-    assert.equal(parseSlashLine('/new handoff')?.newSessionBrief, true);
-    assert.match(parseSlashLine('/new handoff')?.deprecatedSlash ?? '', /deprecated.*\/new brief/);
-  });
-
-  it('rejects removed aliases with guidance', () => {
+  it('rejects renamed aliases with guidance', () => {
+    assert.match(parseSlashLine('/log')?.message ?? '', /use \/actions/);
+    assert.match(parseSlashLine('/history')?.message ?? '', /use \/transcript/);
+    assert.match(parseSlashLine('/handoff')?.message ?? '', /use \/brief/);
+    assert.match(parseSlashLine('/new handoff')?.message ?? '', /use \/new brief/);
     assert.match(parseSlashLine('/session')?.message ?? '', /use \/sessions/);
     assert.match(parseSlashLine('/provider glm')?.message ?? '', /use \/profile/);
   });

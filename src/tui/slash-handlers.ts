@@ -72,10 +72,6 @@ export async function handlePiSlash(
     confirmCwdChange,
   } = deps;
 
-  if (result.deprecatedSlash) {
-    say(result.deprecatedSlash, true);
-  }
-
   if (result.stop) {
     if (runtime.isRunning()) {
       requestStop();
