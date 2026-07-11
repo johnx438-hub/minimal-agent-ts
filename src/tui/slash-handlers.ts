@@ -14,6 +14,7 @@ import {
   reasoningPickerItems,
 } from './llm-slash.js';
 import { showHistoryBrowser } from './pi/history-overlay.js';
+import { showJobsBrowser, showJobStatusOverlay, showJobTailOverlay } from './pi/jobs-overlay.js';
 import { showLogBrowser } from './pi/log-overlay.js';
 import { buildSelectItems, showPickerOverlay } from './pi/picker.js';
 import { showSessionDetailOverlay } from './pi/session-detail.js';
@@ -103,6 +104,19 @@ export async function handlePiSlash(
 
   if (result.message === '__help__') {
     for (const line of SLASH_HELP_LINES) say(`  ${line}`, true);
+    resumeEditor();
+    return;
+  }
+
+  if (result.jobsAction) {
+    const action = result.jobsAction;
+    if (action.kind === 'list') {
+      await showJobsBrowser(tui, runtime);
+    } else if (action.kind === 'status') {
+      await showJobStatusOverlay(tui, runtime, action.jobId);
+    } else {
+      await showJobTailOverlay(tui, runtime, action.jobId);
+    }
     resumeEditor();
     return;
   }

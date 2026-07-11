@@ -46,7 +46,7 @@
 
 | 优先级 | 轨 | 内容 |
 |:------:|-----|------|
-| **P0 产品** | 产品 | TUI `/jobs`、job-query 抽取、`web_search` |
+| **P0 产品** | 产品 | ~~TUI `/jobs`、job-query 抽取~~ ✅；`web_search` |
 | **P1 产品** | 产品 | `/spawns` 实装、TUI `turn_io`、pi overlay 统一 |
 | **P1 压测** | B | 高压场景 harness（§5）；填压测表 |
 | **P1 底座** | 底座 | ToolProvider 拆分、context pipeline、**MessageBridge hook**（§6） |
@@ -67,14 +67,15 @@ Wave 2   web_search（SPEC_TOOLS #1）
 Wave 3   /spawns、turn_io TUI、pi overlay 统一
 ```
 
-### M-Prod-1：TUI Jobs（1–2 天）
+### M-Prod-1：TUI Jobs（✅ 2026-07-12）
 
 | 交付 | 说明 |
 |------|------|
-| `/jobs` | 列表 `workspace/jobs/`：id、preset、status、llm（meta） |
-| `/jobs status\|tail <id>` | 详情 / events 滚动 |
-| `src/spawn/job-query.ts` | 从 `job-cli.ts` 抽取；CLI + TUI 共用 |
+| `/jobs` | pi `SelectList` 列表；Enter → status overlay；`t` → events |
+| `/jobs status\|tail <id>` | 分页 overlay（meta / events） |
+| `src/spawn/job-query.ts` | 查询/格式化层；`job-cli.ts` 复用 |
 | 事件 | `job_list` / `job_status`（`--json-events`） |
+| 状态条 | `jobs:N running` 于 TUI `printStatus` |
 
 **约束**: TUI 只调 `AgentRuntime` 或 job-query；不穿透 `agent.ts`。
 

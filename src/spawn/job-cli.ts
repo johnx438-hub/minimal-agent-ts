@@ -3,97 +3,28 @@ import { existsSync, readFileSync, unwatchFile, watchFile } from 'node:fs';
 import { getJobRegistry } from './job-registry.js';
 import { jobEventsPath } from './job-paths.js';
 import {
-  readJobEvents,
-  readJobMeta,
-  readJobResult,
-  type JobStatus,
-  type SpawnJobMeta,
-} from './job-store.js';
+  formatJobList,
+  formatJobStatus,
+  listSpawnJobs,
+  type ListJobsOptions,
+} from './job-query.js';
+import { readJobMeta, type JobStatus, type SpawnJobMeta } from './job-store.js';
+
+export type { JobListEntry, JobStatusDetail, ListJobsOptions } from './job-query.js';
+export {
+  countRunningJobs,
+  formatJobEventsTail,
+  formatJobList,
+  formatJobListLine,
+  formatJobLlmTag,
+  formatJobStatus,
+  getJobStatusDetail,
+  isStaleJob,
+  listSpawnJobs,
+  toJobListEntry,
+} from './job-query.js';
 
 const TERMINAL_JOB_STATUSES = new Set<JobStatus>(['completed', 'failed', 'cancelled']);
-
-const STALE_MS = 24 * 60 * 60 * 1000;
-
-export interface ListJobsOptions {
-  limit?: number;
-  parentSessionId?: string;
-  status?: SpawnJobMeta['status'];
-  staleOnly?: boolean;
-}
-
-export function isStaleJob(meta: SpawnJobMeta, now = Date.now()): boolean {
-  if (meta.status !== 'running' && meta.status !== 'queued') return false;
-  const updated = Date.parse(meta.updated_at);
-  if (!Number.isFinite(updated)) return false;
-  return now - updated > STALE_MS;
-}
-
-export function listSpawnJobs(opts?: ListJobsOptions): SpawnJobMeta[] {
-  const registry = getJobRegistry();
-  const jobs = registry.list({
-    limit: opts?.limit ?? 20,
-    parentSessionId: opts?.parentSessionId,
-    status: opts?.status,
-  });
-  if (!opts?.staleOnly) return jobs;
-  return jobs.filter((meta) => isStaleJob(meta));
-}
-
-export function formatJobLlmTag(meta: SpawnJobMeta): string {
-  if (!meta.api_profile && !meta.model) return '—';
-  const profile = meta.api_profile ?? '?';
-  const model = meta.model ?? '?';
-  const tag = `${profile}/${model}`;
-  return tag.length > 28 ? `${tag.slice(0, 27)}…` : tag;
-}
-
-export function formatJobListLine(meta: SpawnJobMeta, stale = false): string {
-  const staleTag = stale ? ' [stale]' : '';
-  const preview =
-    meta.task_preview.length > 48
-      ? `${meta.task_preview.slice(0, 48)}…`
-      : meta.task_preview;
-  const llm = formatJobLlmTag(meta).padEnd(28);
-  return `${meta.job_id}  ${meta.status.padEnd(10)}  ${meta.preset.padEnd(20)}  ${llm}  ${preview}${staleTag}`;
-}
-
-export function formatJobList(opts?: ListJobsOptions): string {
-  const jobs = listSpawnJobs(opts);
-  if (jobs.length === 0) {
-    return opts?.staleOnly ? 'No stale jobs.' : 'No background jobs found.';
-  }
-
-  const header =
-    'JOB_ID                      STATUS      PRESET                LLM                           TASK';
-  const lines = jobs.map((meta) => formatJobListLine(meta, isStaleJob(meta)));
-  return [header, ...lines].join('\n');
-}
-
-export function formatJobStatus(jobId: string, eventTail = 5): string | null {
-  const meta = readJobMeta(jobId);
-  if (!meta) return null;
-
-  const parts: string[] = ['--- meta ---', JSON.stringify(meta, null, 2)];
-
-  const events = readJobEvents(jobId);
-  if (events.length > 0) {
-    parts.push('', `--- last ${Math.min(eventTail, events.length)} events ---`);
-    for (const event of events.slice(-eventTail)) {
-      parts.push(JSON.stringify(event));
-    }
-  }
-
-  const result = readJobResult(jobId);
-  if (result) {
-    parts.push('', '--- result ---', JSON.stringify(result, null, 2));
-  }
-
-  if (isStaleJob(meta)) {
-    parts.push('', '(stale: running/queued with no update for >24h)');
-  }
-
-  return parts.join('\n');
-}
 
 export function killSpawnJob(jobId: string): { ok: boolean; message: string } {
   const meta = readJobMeta(jobId);
@@ -101,10 +32,7 @@ export function killSpawnJob(jobId: string): { ok: boolean; message: string } {
     return { ok: false, message: `error: unknown job "${jobId}"` };
   }
 
-  if (
-    meta.status !== 'running' &&
-    meta.status !== 'queued'
-  ) {
+  if (meta.status !== 'running' && meta.status !== 'queued') {
     return {
       ok: false,
       message: `error: job "${jobId}" is already ${meta.status}`,

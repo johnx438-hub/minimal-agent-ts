@@ -14,6 +14,11 @@ export type LlmSlashAction =
   | { kind: 'model'; mode: 'list' | 'set' | 'reset'; model?: string }
   | { kind: 'reasoning'; mode: 'list' | 'set' | 'reset'; level?: string };
 
+export type JobsSlashAction =
+  | { kind: 'list' }
+  | { kind: 'status'; jobId: string }
+  | { kind: 'tail'; jobId: string };
+
 export interface SlashResult {
   handled: boolean;
   message?: string;
@@ -32,6 +37,7 @@ export interface SlashResult {
   /** Usage or error text when memoryAction could not be parsed. */
   memoryMessage?: string;
   llmAction?: LlmSlashAction;
+  jobsAction?: JobsSlashAction;
 }
 
 /** Single source of truth for slash help, aliases, and autocomplete hints. */
@@ -230,6 +236,23 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
     hintEn: 'List spawn_agent presets',
   },
   {
+    command: '/jobs',
+    hintZh: '后台 spawn job 列表',
+    hintEn: 'List background spawn jobs',
+  },
+  {
+    command: '/jobs status <job_id>',
+    autocomplete: false,
+    hintZh: '查看 job meta 与最近 events',
+    hintEn: 'Show job meta and recent events',
+  },
+  {
+    command: '/jobs tail <job_id>',
+    autocomplete: false,
+    hintZh: '滚动查看 job events',
+    hintEn: 'Scroll job events log',
+  },
+  {
     command: '/help',
     aliases: ['/h', '?'],
     hintZh: '显示本帮助',
@@ -308,6 +331,30 @@ function parseTranscriptSlash(parts: string[]): SlashResult {
   return {
     handled: true,
     message: id ? `__transcript__:${id}` : '__transcript__',
+  };
+}
+
+function parseJobsSlash(parts: string[]): SlashResult {
+  const sub = parts[1]?.toLowerCase();
+  if (!sub) {
+    return { handled: true, jobsAction: { kind: 'list' } };
+  }
+  const jobId = parts[2]?.trim();
+  if (sub === 'status') {
+    if (!jobId) {
+      return { handled: true, message: 'Usage: /jobs status <job_id>' };
+    }
+    return { handled: true, jobsAction: { kind: 'status', jobId } };
+  }
+  if (sub === 'tail') {
+    if (!jobId) {
+      return { handled: true, message: 'Usage: /jobs tail <job_id>' };
+    }
+    return { handled: true, jobsAction: { kind: 'tail', jobId } };
+  }
+  return {
+    handled: true,
+    message: 'Usage: /jobs | /jobs status <job_id> | /jobs tail <job_id>',
   };
 }
 
@@ -521,6 +568,9 @@ export function parseSlashLine(line: string): SlashResult | null {
 
     case '/spawns':
       return { handled: true, message: '__spawns__' };
+
+    case '/jobs':
+      return parseJobsSlash(parts);
 
     case '/cwd': {
       const path = parts.slice(1).join(' ');

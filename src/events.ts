@@ -165,7 +165,28 @@ export type RuntimeEvent =
     }
   | { type: 'spawn_start'; preset: string }
   | { type: 'spawn_end'; preset: string; ok: boolean; detail?: string }
-  | { type: 'action_flush'; flush_ms: number; count: number; pending: number };
+  | { type: 'action_flush'; flush_ms: number; count: number; pending: number }
+  | {
+      type: 'job_list';
+      jobs: Array<{
+        job_id: string;
+        status: string;
+        preset: string;
+        llm_tag: string;
+        task_preview: string;
+        stale: boolean;
+      }>;
+      running_count: number;
+    }
+  | {
+      type: 'job_status';
+      job_id: string;
+      status: string;
+      preset: string;
+      stale: boolean;
+      event_count: number;
+      has_result: boolean;
+    };
 
 export function formatRunStartLlmSummary(llm: RunStartLlmMeta): string {
   const parts = [`${llm.profile}/${llm.model}`];

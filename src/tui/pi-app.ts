@@ -176,8 +176,10 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
 
   const printStatus = (): void => {
     const wf = uiState.armedWorkflow ? `  workflow armed: ${uiState.armedWorkflow}` : '';
+    const runningJobs = runtime.countRunningBackgroundJobs();
+    const jobsTag = runningJobs > 0 ? `  jobs:${runningJobs} running` : '';
     say(
-      `[${runtime.sessionLabel()}] ${runtime.formatSessionLlmShortLine()}  shell:${runtime.config.allowShell ? 'on' : 'off'} web:${runtime.config.allowWeb ? 'on' : 'off'}${wf}`,
+      `[${runtime.sessionLabel()}] ${runtime.formatSessionLlmShortLine()}  shell:${runtime.config.allowShell ? 'on' : 'off'} web:${runtime.config.allowWeb ? 'on' : 'off'}${jobsTag}${wf}`,
       true,
     );
   };

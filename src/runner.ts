@@ -54,6 +54,17 @@ import {
   readHandoffFile,
   writeHandoffFile,
 } from './handoff.js';
+import {
+  countRunningJobs,
+  formatJobEventsTail,
+  formatJobList,
+  formatJobStatus,
+  getJobStatusDetail,
+  listSpawnJobs,
+  toJobListEntry,
+  type ListJobsOptions,
+} from './spawn/job-query.js';
+import type { SpawnJobMeta } from './spawn/job-store.js';
 import { listWorkflowMetaForCwd } from './workflow/catalog.js';
 import { runWorkflow } from './workflow/runner.js';
 import { appendTaskTranscript } from './session-transcript.js';
@@ -879,6 +890,45 @@ export class AgentRuntime {
   }> {
     if (!toolRegistry.isInitialized()) return [];
     return toolRegistry.listMcpTools();
+  }
+
+  /** Background spawn jobs (workspace/jobs); emits `job_list` for listeners. */
+  listBackgroundJobs(opts?: ListJobsOptions): SpawnJobMeta[] {
+    const jobs = listSpawnJobs(opts);
+    this.emit({
+      type: 'job_list',
+      jobs: jobs.map(toJobListEntry),
+      running_count: countRunningJobs(jobs),
+    });
+    return jobs;
+  }
+
+  formatBackgroundJobList(opts?: ListJobsOptions): string {
+    return formatJobList(opts);
+  }
+
+  /** Job detail text; emits `job_status` when found. */
+  getBackgroundJobStatus(jobId: string, eventTail = 5): string | null {
+    const detail = getJobStatusDetail(jobId, eventTail);
+    if (!detail) return null;
+    this.emit({
+      type: 'job_status',
+      job_id: detail.meta.job_id,
+      status: detail.meta.status,
+      preset: detail.meta.preset,
+      stale: detail.stale,
+      event_count: detail.event_total,
+      has_result: detail.result !== null,
+    });
+    return formatJobStatus(jobId, eventTail);
+  }
+
+  getBackgroundJobEventsText(jobId: string, maxLines = 200): string | null {
+    return formatJobEventsTail(jobId, maxLines);
+  }
+
+  countRunningBackgroundJobs(): number {
+    return countRunningJobs(listSpawnJobs({ limit: 50 }));
   }
 
   listSkills(): Array<{ name: string; description: string }> {

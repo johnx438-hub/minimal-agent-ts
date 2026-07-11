@@ -200,7 +200,7 @@ CLI：`npm run spawn:{list,status,kill,tail}`。
 
 见 **[docs/ROADMAP.md](./docs/ROADMAP.md)**：
 
-- [ ] **M-Prod-1** TUI `/jobs` + job-query 层
+- [x] **M-Prod-1** TUI `/jobs` + job-query 层
 - [ ] **M-Prod-2** `web_search` 工具
 - [ ] **压测 harness** stress preset + 并行 `spawn_background` dev-worker
 - [ ] **MessageBridge** hook（IM 预留，见 docs/ROADMAP §6）

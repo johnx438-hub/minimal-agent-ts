@@ -40,7 +40,7 @@ npm start -- "列出当前目录文件，读 README，用一句话总结"
 | 同步子 Agent | Agent 调用 `spawn_agent(preset=…)` |
 | 后台子 Agent | Agent 调用 `spawn_background(preset=…)` → 拿 `job_id` |
 | 代码审查 | `code_review(scope=HEAD~3)` 或 `background=true` |
-| 查看后台 job | `npm run spawn:list` / `spawn:status -- <job_id>` |
+| 查看后台 job | TUI：`/jobs`、`/jobs status <id>`、`/jobs tail <id>`；CLI：`npm run spawn:list` |
 | 查看工具列表 | `npm start -- --list-tools` |
 | 关闭流式 | `STREAM=0 npm start -- "任务"` |
 

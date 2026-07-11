@@ -32,6 +32,15 @@ describe('slash registry', () => {
     assert.equal(parseSlashLine('/memory')?.memoryAction?.type, 'status');
     assert.equal(parseSlashLine('/memory init')?.memoryAction?.type, 'init');
     assert.equal(parseSlashLine('/memory show profile')?.memoryAction?.file, 'profile');
+    assert.deepEqual(parseSlashLine('/jobs')?.jobsAction, { kind: 'list' });
+    assert.deepEqual(parseSlashLine('/jobs status job_abc')?.jobsAction, {
+      kind: 'status',
+      jobId: 'job_abc',
+    });
+    assert.deepEqual(parseSlashLine('/jobs tail job_abc')?.jobsAction, {
+      kind: 'tail',
+      jobId: 'job_abc',
+    });
   });
 
   it('exposes autocomplete items with bilingual descriptions', () => {

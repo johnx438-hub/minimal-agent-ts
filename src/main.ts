@@ -221,6 +221,18 @@ function onRuntimeEvent(event: RuntimeEvent, jsonEvents: boolean): void {
     }
     return;
   }
+  if (event.type === 'job_list') {
+    console.error(
+      `jobs ▶ ${event.jobs.length} listed (${event.running_count} running)`,
+    );
+    return;
+  }
+  if (event.type === 'job_status') {
+    console.error(
+      `job status ▶ ${event.job_id} ${event.status}${event.stale ? ' [stale]' : ''}`,
+    );
+    return;
+  }
   if (
     event.type === 'run_start' ||
     event.type === 'run_stopping' ||
