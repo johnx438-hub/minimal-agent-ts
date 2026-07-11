@@ -16,7 +16,7 @@ function clampMaxTurns(
   const raw = value ?? fallback;
   return Math.min(Math.max(1, Math.floor(raw)), Math.max(1, Math.floor(cap)));
 }
-const FORBIDDEN_CHILD_TOOLS = new Set(['spawn_agent']);
+const FORBIDDEN_CHILD_TOOLS = new Set(['spawn_agent', 'spawn_background']);
 
 function parseFrontmatter(raw: string): {
   meta: Record<string, string>;
@@ -83,7 +83,7 @@ export function resolveSpawnPreset(
 
   const toolLine =
     tools.length > 0
-      ? `\n\nAllowed tools: ${tools.join(', ')}. Do not call spawn_agent.`
+      ? `\n\nAllowed tools: ${tools.join(', ')}. Do not call spawn_agent or spawn_background.`
       : '\n\nNo tools enabled for this preset.';
 
   const description =
