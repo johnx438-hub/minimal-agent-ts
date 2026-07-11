@@ -848,13 +848,13 @@ export class AgentRuntime {
     return buildSessionOverview(session);
   }
 
-  /** Session for /log; defaults to active session. */
+  /** Session for /actions; defaults to active session. */
   resolveLogSession(sessionId?: string): SessionFile | null {
     if (sessionId) return loadSession(sessionId);
     return this.session;
   }
 
-  /** Alias for /history — same resolution as /log. */
+  /** Session for /transcript — same resolution as /actions. */
   resolveHistorySession(sessionId?: string): SessionFile | null {
     return this.resolveLogSession(sessionId);
   }

@@ -38,15 +38,12 @@ describe('TUI llm slash (G2-c)', () => {
     savedEnv = snapshotEnv();
   });
 
-  it('parses /profile /provider and /model', () => {
+  it('parses /profile and /model', () => {
     assert.deepEqual(parseSlashLine('/profile'), {
       handled: true,
       llmAction: { kind: 'profile', mode: 'list' },
     });
-    assert.deepEqual(parseSlashLine('/provider glm-main'), {
-      handled: true,
-      llmAction: { kind: 'profile', mode: 'set', name: 'glm-main' },
-    });
+    assert.match(parseSlashLine('/provider glm-main')?.message ?? '', /use \/profile/);
     assert.deepEqual(parseSlashLine('/profile reset'), {
       handled: true,
       llmAction: { kind: 'profile', mode: 'reset' },

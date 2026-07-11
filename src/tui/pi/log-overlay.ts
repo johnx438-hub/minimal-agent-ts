@@ -68,7 +68,7 @@ async function showTaskLogOverlay(
   for (;;) {
     const picked = await showPickerOverlay(tui, {
       title: [
-        `Log · ${taskLabel}`,
+        `Actions · ${taskLabel}`,
         session.session_id,
         'Enter action detail · Esc back',
       ].join('\n'),
@@ -95,7 +95,7 @@ export async function showLogBrowser(
   const tasks = listLogTasks(session);
   if (tasks.length === 0) {
     await showPickerOverlay(tui, {
-      title: `Log · ${session.session_id}\n(no tasks or in-flight context)`,
+      title: `Actions · ${session.session_id}\n(no tasks or in-flight context)`,
       items: buildSelectItems([
         { value: 'empty', label: '(empty session)', description: 'Run a task first' },
       ]),
@@ -113,7 +113,7 @@ export async function showLogBrowser(
 
   const picked = await showPickerOverlay(tui, {
     title: [
-      `Log · ${session.session_id}`,
+      `Actions · ${session.session_id}`,
       'Pick a task · Enter drill-down · Esc cancel',
     ].join('\n'),
     items: taskItems,

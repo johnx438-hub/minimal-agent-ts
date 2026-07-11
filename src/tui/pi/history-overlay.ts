@@ -52,7 +52,7 @@ async function showTaskHistoryOverlay(
   for (;;) {
     const picked = await showPickerOverlay(tui, {
       title: [
-        `History · ${taskLabel}`,
+        `Transcript · ${taskLabel}`,
         session.session_id,
         'Enter message/action · Esc back',
       ].join('\n'),
@@ -86,7 +86,7 @@ export async function showHistoryBrowser(
   const tasks = listHistoryTasks(session);
   if (tasks.length === 0) {
     await showPickerOverlay(tui, {
-      title: `History · ${session.session_id}\n(no tasks or messages)`,
+      title: `Transcript · ${session.session_id}\n(no tasks or messages)`,
       items: buildSelectItems([
         { value: 'empty', label: '(empty session)', description: 'Run a task first' },
       ]),
@@ -104,7 +104,7 @@ export async function showHistoryBrowser(
 
   const picked = await showPickerOverlay(tui, {
     title: [
-      `History · ${session.session_id}`,
+      `Transcript · ${session.session_id}`,
       'Pick a task · Enter drill-down · Esc cancel',
     ].join('\n'),
     items: taskItems,

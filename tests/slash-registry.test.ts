@@ -20,16 +20,15 @@ describe('slash registry', () => {
   });
 
   it('resolves aliases to primary commands', () => {
-    assert.equal(parseSlashLine('/session')?.message, '__sessions__');
     assert.equal(parseSlashLine('/r last')?.message, '__resume_last__');
     assert.equal(parseSlashLine('/wf')?.message, '__workflow_list__');
     assert.equal(parseSlashLine('?')?.message, '__help__');
     assert.equal(parseSlashLine('/mcp')?.message, '__mcp_list__');
     assert.equal(parseSlashLine('/mcp list')?.message, '__mcp_list__');
-    assert.equal(parseSlashLine('/log')?.message, '__log__');
-    assert.equal(parseSlashLine('/log session_x')?.message, '__log__:session_x');
-    assert.equal(parseSlashLine('/history')?.message, '__history__');
-    assert.equal(parseSlashLine('/history session_x')?.message, '__history__:session_x');
+    assert.equal(parseSlashLine('/actions')?.message, '__actions__');
+    assert.equal(parseSlashLine('/actions session_x')?.message, '__actions__:session_x');
+    assert.equal(parseSlashLine('/transcript')?.message, '__transcript__');
+    assert.equal(parseSlashLine('/transcript session_x')?.message, '__transcript__:session_x');
     assert.equal(parseSlashLine('/memory')?.memoryAction?.type, 'status');
     assert.equal(parseSlashLine('/memory init')?.memoryAction?.type, 'init');
     assert.equal(parseSlashLine('/memory show profile')?.memoryAction?.file, 'profile');
@@ -49,14 +48,17 @@ describe('slash registry', () => {
     assert.ok(workflow);
     assert.match(workflow!.description, /选择并武装 workflow/);
 
-    const log = SLASH_HELP_LINES.find((l) => l.includes('/log'));
-    assert.ok(log);
-    assert.match(log!, /审计当前会话/);
+    const actions = SLASH_HELP_LINES.find((l) => l.includes('/actions'));
+    assert.ok(actions);
+    assert.match(actions!, /审计当前会话/);
 
-    const history = SLASH_HELP_LINES.find((l) => l.includes('/history'));
-    assert.ok(history);
-    assert.match(history!, /对话时间线/);
-    assert.match(history!, /conversation timeline/);
+    const transcript = SLASH_HELP_LINES.find((l) => l.includes('/transcript'));
+    assert.ok(transcript);
+    assert.match(transcript!, /对话时间线/);
+    assert.match(transcript!, /conversation timeline/);
     assert.equal(items.some((i) => i.name === 'session'), false);
+    assert.equal(items.some((i) => i.name === 'actions'), true);
+    assert.equal(items.some((i) => i.name === 'transcript'), true);
+    assert.equal(items.some((i) => i.name === 'brief'), true);
   });
 });

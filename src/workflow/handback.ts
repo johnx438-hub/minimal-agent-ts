@@ -64,7 +64,7 @@ export function formatWorkflowHandbackMessage(hb: WorkflowHandback): string {
   lines.push(
     '',
     'Workflow ended — you are back at the main prompt.',
-    'Next: continue in chat, /handoff, revise the task, or re-arm workflow.',
+    'Next: continue in chat, /brief, revise the task, or re-arm workflow.',
     '═'.repeat(60),
   );
 

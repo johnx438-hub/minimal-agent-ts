@@ -77,19 +77,19 @@ export function createPiWorkflowConfirm(
 
 export function createPiFatiguePrompter(
   tui: TUI,
-): (stats: { compressions: number; totalPruned: number }) => Promise<'continue' | 'handoff' | 'clear'> {
+): (stats: { compressions: number; totalPruned: number }) => Promise<'continue' | 'brief' | 'clear'> {
   return async (stats) => {
     const item = await showSelectOverlay(
       tui,
       `Context compression fatigue (${stats.compressions} compressions, ${stats.totalPruned} pruned)`,
       [
         { value: 'continue', label: 'Continue', description: 'Keep in this session' },
-        { value: 'handoff', label: 'Handoff + new session', description: 'Write handoff and start fresh' },
+        { value: 'brief', label: 'Brief + new session', description: 'Write session brief and start fresh' },
         { value: 'clear', label: 'Clear context', description: 'Truncate in-flight messages' },
       ],
     );
     const v = item?.value;
-    if (v === 'handoff' || v === 'clear') return v;
+    if (v === 'brief' || v === 'clear') return v;
     return 'continue';
   };
 }

@@ -118,7 +118,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     bannerLines.push('CLI: npm run tui -- --resume <session_id>');
   }
   if (runtime.hasPendingHandoff()) {
-    bannerLines.push('(handoff loaded — will inject on next task)');
+    bannerLines.push('(brief queued — will inject on next task)');
   }
   if (prefs.alwaysShell || prefs.alwaysWeb) {
     const always: string[] = [];
@@ -197,17 +197,17 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     if (!lastRunAborted && fatigueTracker.shouldPrompt()) {
       const choice = await fatiguePrompter(fatigueTracker.stats());
       fatigueTracker.snooze();
-      if (choice === 'handoff') {
-        const handoff = runtime.newSessionWithHandoff();
-        if (!handoff) {
-          say('(no active session — nothing to hand off)');
+      if (choice === 'brief') {
+        const brief = runtime.newSessionWithHandoff();
+        if (!brief) {
+          say('(no active session — nothing to brief)');
         } else {
-          const { path, fromSessionId } = handoff;
+          const { path, fromSessionId } = brief;
           armedWorkflow = null;
           runtime.armWorkflow(null);
           fatigueTracker.reset();
-          say(`Handoff from ${fromSessionId} → ${path}`);
-          say(`New session: ${runtime.sessionLabel()} (handoff queued)`);
+          say(`Brief from ${fromSessionId} → ${path}`);
+          say(`New session: ${runtime.sessionLabel()} (brief queued)`);
           printStatus();
         }
       } else if (choice === 'clear') {
@@ -244,7 +244,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
 
   const runTask = async (task: string, workflowPath?: string): Promise<void> => {
     if (runtime.hasPendingHandoff()) {
-      say('(injecting handoff context)', true);
+      say('(injecting brief context)', true);
     }
     chat.appendMarkdown(`**›** ${task}`);
     armedWorkflow = null;
@@ -264,6 +264,10 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
 
   const handleSlash = async (result: ReturnType<typeof parseSlashLine>): Promise<void> => {
     if (!result) return;
+
+    if (result.deprecatedSlash) {
+      say(result.deprecatedSlash, true);
+    }
 
     if (result.stop) {
       if (runtime.isRunning()) {
@@ -339,9 +343,9 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
       return;
     }
 
-    if (result.message === '__log__' || result.message?.startsWith('__log__:')) {
-      const sid = result.message.startsWith('__log__:')
-        ? result.message.slice('__log__:'.length)
+    if (result.message === '__actions__' || result.message?.startsWith('__actions__:')) {
+      const sid = result.message.startsWith('__actions__:')
+        ? result.message.slice('__actions__:'.length)
         : undefined;
       const session = runtime.resolveLogSession(sid);
       if (!session) {
@@ -357,9 +361,9 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
       return;
     }
 
-    if (result.message === '__history__' || result.message?.startsWith('__history__:')) {
-      const sid = result.message.startsWith('__history__:')
-        ? result.message.slice('__history__:'.length)
+    if (result.message === '__transcript__' || result.message?.startsWith('__transcript__:')) {
+      const sid = result.message.startsWith('__transcript__:')
+        ? result.message.slice('__transcript__:'.length)
         : undefined;
       const session = runtime.resolveHistorySession(sid);
       if (!session) {
@@ -440,17 +444,17 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
       return;
     }
 
-    if (result.newSessionHandoff) {
-      const handoff = runtime.newSessionWithHandoff();
-      if (!handoff) {
-        say('(no active session — nothing to hand off)');
+    if (result.newSessionBrief) {
+      const brief = runtime.newSessionWithHandoff();
+      if (!brief) {
+        say('(no active session — nothing to brief)');
       } else {
-        const { path, fromSessionId } = handoff;
+        const { path, fromSessionId } = brief;
         armedWorkflow = null;
         runtime.armWorkflow(null);
         fatigueTracker.reset();
-        say(`Handoff from ${fromSessionId} → ${path}`);
-        say(`New session: ${runtime.sessionLabel()} (handoff queued)`);
+        say(`Brief from ${fromSessionId} → ${path}`);
+        say(`New session: ${runtime.sessionLabel()} (brief queued)`);
         printStatus();
       }
       resumeEditor();
@@ -468,23 +472,23 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
       return;
     }
 
-    if (result.handoffWrite) {
+    if (result.briefWrite) {
       const path = runtime.writeHandoff();
       if (!path) say('(no active session)');
-      else say(`Handoff written: ${path}`);
+      else say(`Brief written: ${path}`);
       resumeEditor();
       return;
     }
 
-    if (result.handoffLoad !== undefined) {
-      const sid = result.handoffLoad || undefined;
+    if (result.briefLoad !== undefined) {
+      const sid = result.briefLoad || undefined;
       const path = runtime.loadHandoffForNextTask(sid);
       if (!path) {
         say(
-          sid ? `No handoff for session ${sid}` : '(no handoff file for current session)',
+          sid ? `No brief for session ${sid}` : '(no brief file for current session)',
         );
       } else {
-        say(`Handoff loaded from ${path} — queued for next task`);
+        say(`Brief loaded from ${path} — queued for next task`);
       }
       resumeEditor();
       return;

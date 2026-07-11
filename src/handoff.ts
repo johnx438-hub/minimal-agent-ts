@@ -91,7 +91,7 @@ export function buildHandoffMarkdown(session: SessionFile, cwd: string): string 
     formatActionHandles(session.session_id),
     '',
     '## Resume hint',
-    'Load this file in a new session (`/handoff load` or `--handoff`).',
+    'Load this file in a new session (`/brief load` or `--handoff`).',
     'Large tool output is in cold storage — `recall_query(action_id="...")` for full text.',
   );
 

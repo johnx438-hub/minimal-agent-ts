@@ -337,6 +337,22 @@ v0.1 **不** 做 `/skills unload`（可 v0.2）。
 - `/inject` 运行中插话
 - 自然语言 alias
 
+### 6.8 Slash 迁移（2026-07 rename）
+
+减少与 Codex `/handoff`（git/worktree 迁移）及通用词歧义：
+
+| 新命令 | 旧命令（deprecated，仍解析） | 说明 |
+|--------|------------------------------|------|
+| `/actions [id]` | `/log` | 任务与工具调用审计 |
+| `/transcript [id]` | `/history` | user/assistant 对话时间线 |
+| `/brief` | `/handoff` | 写 session 摘要 markdown（**非** git 迁移） |
+| `/brief load [id]` | `/handoff load` | 排队注入下条 task |
+| `/new brief` | `/new handoff` | 写摘要并新建 session |
+
+**已删除别名**：`/session`（用 `/sessions`）、`/provider`（用 `/profile`）。
+
+内部仍写 `.sessions/handoff_<id>.md`；CLI `--handoff` 不变。
+
 ---
 
 ## 7. `/stop`（Abort）语义

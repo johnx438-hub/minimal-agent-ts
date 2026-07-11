@@ -22,16 +22,18 @@ export interface SlashResult {
   runWorkflow?: { path: string; task: string };
   armWorkflow?: string | null;
   stop?: boolean;
-  newSessionHandoff?: boolean;
+  newSessionBrief?: boolean;
   clearContext?: boolean;
-  handoffWrite?: boolean;
+  briefWrite?: boolean;
   /** Session id to load; omit = current session. */
-  handoffLoad?: string;
+  briefLoad?: string;
   approveAction?: ApproveAction;
   memoryAction?: MemorySlashAction;
   /** Usage or error text when memoryAction could not be parsed. */
   memoryMessage?: string;
   llmAction?: LlmSlashAction;
+  /** Shown once when a deprecated slash alias was used. */
+  deprecatedSlash?: string;
 }
 
 /** Single source of truth for slash help, aliases, and autocomplete hints. */
@@ -51,7 +53,6 @@ export interface SlashHelpEntry {
 const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
   {
     command: '/sessions',
-    aliases: ['/session'],
     hintZh: '选择并恢复已保存会话',
     hintEn: 'Pick and resume a saved session',
   },
@@ -67,21 +68,21 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
     hintEn: 'Start a new session',
   },
   {
-    command: '/new handoff',
+    command: '/new brief',
     autocomplete: false,
-    hintZh: '写交接并新建会话',
-    hintEn: 'Write handoff, new session, queue load',
+    hintZh: '写会话摘要并新建会话',
+    hintEn: 'Write session brief, new session, queue load',
   },
   {
-    command: '/handoff',
-    hintZh: '为当前会话写交接文件',
-    hintEn: 'Write handoff file for current session',
+    command: '/brief',
+    hintZh: '写会话交接摘要（非 git/worktree 迁移）',
+    hintEn: 'Write session brief markdown (not git/worktree transfer)',
   },
   {
-    command: '/handoff load [id]',
+    command: '/brief load [id]',
     autocomplete: false,
-    hintZh: '排队加载交接（下条任务注入）',
-    hintEn: 'Queue handoff for next task',
+    hintZh: '排队加载摘要（下条任务注入）',
+    hintEn: 'Queue brief for next task injection',
   },
   {
     command: '/memory',
@@ -101,12 +102,12 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
     hintEn: 'Create memory file templates',
   },
   {
-    command: '/log [session_id]',
+    command: '/actions [session_id]',
     hintZh: '审计当前会话任务与工具调用',
     hintEn: 'Audit task and tool actions in session',
   },
   {
-    command: '/history [session_id]',
+    command: '/transcript [session_id]',
     hintZh: '浏览会话对话时间线（user/assistant）',
     hintEn: 'Browse session conversation timeline',
   },
@@ -122,7 +123,6 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
   },
   {
     command: '/profile [name|reset]',
-    aliases: ['/provider'],
     hintZh: '切换 api profile（仅主 Agent 本会话）',
     hintEn: 'Switch api profile (main agent, this session)',
   },
@@ -297,6 +297,35 @@ export function normalizeSlashLine(line: string): string {
   return `/${trimmed.slice(1)}`;
 }
 
+function withDeprecated(result: SlashResult, hint: string): SlashResult {
+  return { ...result, deprecatedSlash: hint };
+}
+
+function parseActionsSlash(parts: string[]): SlashResult {
+  const id = parts[1];
+  return {
+    handled: true,
+    message: id ? `__actions__:${id}` : '__actions__',
+  };
+}
+
+function parseTranscriptSlash(parts: string[]): SlashResult {
+  const id = parts[1];
+  return {
+    handled: true,
+    message: id ? `__transcript__:${id}` : '__transcript__',
+  };
+}
+
+function parseBriefSlash(parts: string[]): SlashResult {
+  const sub = parts[1]?.toLowerCase();
+  if (sub === 'load') {
+    const id = parts[2];
+    return { handled: true, briefLoad: id ?? '' };
+  }
+  return { handled: true, briefWrite: true };
+}
+
 export function parseSlashLine(line: string): SlashResult | null {
   const input = normalizeReplInput(line);
   if (!isSlashCommand(input)) return null;
@@ -320,8 +349,15 @@ export function parseSlashLine(line: string): SlashResult | null {
       return { handled: true, message: '__sessions__' };
 
     case '/new': {
-      if (parts[1]?.toLowerCase() === 'handoff') {
-        return { handled: true, newSessionHandoff: true };
+      const sub = parts[1]?.toLowerCase();
+      if (sub === 'brief') {
+        return { handled: true, newSessionBrief: true };
+      }
+      if (sub === 'handoff') {
+        return withDeprecated(
+          { handled: true, newSessionBrief: true },
+          'deprecated: /new handoff → use /new brief',
+        );
       }
       return { handled: true, message: '__new__' };
     }
@@ -329,30 +365,32 @@ export function parseSlashLine(line: string): SlashResult | null {
     case '/clear':
       return { handled: true, clearContext: true };
 
-    case '/log': {
-      const id = parts[1];
-      return {
-        handled: true,
-        message: id ? `__log__:${id}` : '__log__',
-      };
-    }
+    case '/actions':
+      return parseActionsSlash(parts);
 
-    case '/history': {
-      const id = parts[1];
-      return {
-        handled: true,
-        message: id ? `__history__:${id}` : '__history__',
-      };
-    }
+    case '/log':
+      return withDeprecated(
+        parseActionsSlash(parts),
+        'deprecated: /log → use /actions',
+      );
 
-    case '/handoff': {
-      const sub = parts[1]?.toLowerCase();
-      if (sub === 'load') {
-        const id = parts[2];
-        return { handled: true, handoffLoad: id ?? '' };
-      }
-      return { handled: true, handoffWrite: true };
-    }
+    case '/transcript':
+      return parseTranscriptSlash(parts);
+
+    case '/history':
+      return withDeprecated(
+        parseTranscriptSlash(parts),
+        'deprecated: /history → use /transcript',
+      );
+
+    case '/brief':
+      return parseBriefSlash(parts);
+
+    case '/handoff':
+      return withDeprecated(
+        parseBriefSlash(parts),
+        'deprecated: /handoff → use /brief (session summary, not git transfer)',
+      );
 
     case '/memory': {
       const parsed = parseMemorySlash(parts);
@@ -370,8 +408,7 @@ export function parseSlashLine(line: string): SlashResult | null {
       return { handled: true, message: `__resume__:${id}` };
     }
 
-    case '/profile':
-    case '/provider': {
+    case '/profile': {
       const sub = parts[1]?.trim();
       if (!sub) {
         return { handled: true, llmAction: { kind: 'profile', mode: 'list' } };
@@ -522,6 +559,18 @@ export function parseSlashLine(line: string): SlashResult | null {
       }
       return { handled: true, runWorkflow: { path: nameOrPath, task } };
     }
+
+    case '/session':
+      return {
+        handled: true,
+        message: 'Unknown command: /session (use /sessions)',
+      };
+
+    case '/provider':
+      return {
+        handled: true,
+        message: 'Unknown command: /provider (use /profile)',
+      };
 
     default:
       return {

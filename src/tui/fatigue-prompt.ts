@@ -1,6 +1,6 @@
 import * as readline from 'node:readline';
 
-export type FatigueChoice = 'continue' | 'handoff' | 'clear';
+export type FatigueChoice = 'continue' | 'brief' | 'clear';
 
 function promptLine(question: string): Promise<string> {
   const rl = readline.createInterface({
@@ -22,10 +22,14 @@ export function createFatiguePrompter(
     console.log(
       `\n⚠ Context compression fatigue (${stats.compressions} events, ${stats.totalPruned} messages pruned recently)`,
     );
-    console.log('  [1] continue   [2] handoff + new session   [3] clear context');
+    console.log('  [1] continue   [2] brief + new session   [3] clear context');
     const answer = await promptLine('› fatigue ');
     const a = answer.trim().toLowerCase();
-    if (a === '2' || a === 'handoff' || a === 'h') return 'handoff';
+    if (a === '2' || a === 'brief' || a === 'b') return 'brief';
+    if (a === 'handoff' || a === 'h') {
+      console.log('  (deprecated: handoff → use brief)');
+      return 'brief';
+    }
     if (a === '3' || a === 'clear' || a === 'c') return 'clear';
     return 'continue';
   };

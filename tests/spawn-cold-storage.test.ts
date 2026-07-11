@@ -69,7 +69,7 @@ describe('spawn cold storage', () => {
     resetActionWriteQueueForTests();
   });
 
-  it('lists spawn runs in /log task browser', () => {
+  it('lists spawn runs in /actions task browser', () => {
     const dir = mkdtempSync(join(tmpdir(), 'ma-spawn-log-'));
     setWorkspaceRoot(dir);
 

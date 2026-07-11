@@ -113,7 +113,7 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
   printBanner(runtime, shellOn, webOn);
 
   if (runtime.hasPendingHandoff()) {
-    console.log('(handoff loaded — will inject on next task)');
+    console.log('(brief queued — will inject on next task)');
   }
 
   if (prefs.alwaysShell || prefs.alwaysWeb) {
@@ -184,18 +184,18 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
       rl.pause();
       const choice = await createFatiguePrompter(fatigueTracker.stats())();
       fatigueTracker.snooze();
-      if (choice === 'handoff') {
-        const handoff = runtime.newSessionWithHandoff();
-        if (!handoff) {
-          console.log('(no active session — nothing to hand off)');
+      if (choice === 'brief') {
+        const brief = runtime.newSessionWithHandoff();
+        if (!brief) {
+          console.log('(no active session — nothing to brief)');
         } else {
-          const { path, fromSessionId } = handoff;
+          const { path, fromSessionId } = brief;
           armedWorkflow = null;
           runtime.armWorkflow(null);
           fatigueTracker.reset();
-          console.log(`Handoff from ${fromSessionId} → ${path}`);
+          console.log(`Brief from ${fromSessionId} → ${path}`);
           console.log(
-            `New session: ${runtime.sessionLabel()} (handoff queued for next task)`,
+            `New session: ${runtime.sessionLabel()} (brief queued for next task)`,
           );
         }
         printStatus(runtime, armedWorkflow);
@@ -238,6 +238,10 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
     result: ReturnType<typeof parseSlashLine>,
   ): Promise<void> => {
     if (!result) return;
+
+    if (result.deprecatedSlash) {
+      console.log(result.deprecatedSlash);
+    }
 
     if (result.stop) {
       if (runtime.isRunning()) {
@@ -306,17 +310,17 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
       return;
     }
 
-    if (result.newSessionHandoff) {
-      const handoff = runtime.newSessionWithHandoff();
-      if (!handoff) {
-        console.log('(no active session — nothing to hand off)');
+    if (result.newSessionBrief) {
+      const brief = runtime.newSessionWithHandoff();
+      if (!brief) {
+        console.log('(no active session — nothing to brief)');
       } else {
-        const { path, fromSessionId } = handoff;
+        const { path, fromSessionId } = brief;
         armedWorkflow = null;
         runtime.armWorkflow(null);
         fatigueTracker.reset();
-        console.log(`Handoff from ${fromSessionId} → ${path}`);
-        console.log(`New session: ${runtime.sessionLabel()} (handoff queued)`);
+        console.log(`Brief from ${fromSessionId} → ${path}`);
+        console.log(`New session: ${runtime.sessionLabel()} (brief queued)`);
         printStatus(runtime, armedWorkflow);
       }
       showPrompt();
@@ -334,23 +338,23 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
       return;
     }
 
-    if (result.handoffWrite) {
+    if (result.briefWrite) {
       const path = runtime.writeHandoff();
       if (!path) console.log('(no active session)');
-      else console.log(`Handoff written: ${path}`);
+      else console.log(`Brief written: ${path}`);
       showPrompt();
       return;
     }
 
-    if (result.handoffLoad !== undefined) {
-      const sid = result.handoffLoad || undefined;
+    if (result.briefLoad !== undefined) {
+      const sid = result.briefLoad || undefined;
       const path = runtime.loadHandoffForNextTask(sid);
       if (!path) {
         console.log(
-          sid ? `No handoff for session ${sid}` : '(no handoff file for current session)',
+          sid ? `No brief for session ${sid}` : '(no brief file for current session)',
         );
       } else {
-        console.log(`Handoff loaded from ${path} — queued for next task`);
+        console.log(`Brief loaded from ${path} — queued for next task`);
       }
       showPrompt();
       return;
@@ -368,20 +372,20 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
       return;
     }
 
-    if (result.message === '__log__' || result.message?.startsWith('__log__:')) {
-      const sid = result.message.startsWith('__log__:')
-        ? result.message.slice('__log__:'.length)
+    if (result.message === '__actions__' || result.message?.startsWith('__actions__:')) {
+      const sid = result.message.startsWith('__actions__:')
+        ? result.message.slice('__actions__:'.length)
         : undefined;
       const session = runtime.resolveLogSession(sid);
       if (!session) {
         console.log(
           sid
             ? `Session not found: ${sid}`
-            : '(no active session — use pi TUI /log or /resume first)',
+            : '(no active session — use pi TUI /actions or /resume first)',
         );
       } else {
         const tasks = listLogTasks(session);
-        console.log(`Log for ${session.session_id}:`);
+        console.log(`Actions for ${session.session_id}:`);
         for (const t of tasks) {
           console.log(`  ${t.label}`);
           console.log(`    ${t.description}`);
@@ -395,26 +399,26 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
             console.log(`      … +${lines.length - 8} more actions`);
           }
         }
-        console.log('  (pi TUI: /log opens interactive browser)');
+        console.log('  (pi TUI: /actions opens interactive browser)');
       }
       showPrompt();
       return;
     }
 
-    if (result.message === '__history__' || result.message?.startsWith('__history__:')) {
-      const sid = result.message.startsWith('__history__:')
-        ? result.message.slice('__history__:'.length)
+    if (result.message === '__transcript__' || result.message?.startsWith('__transcript__:')) {
+      const sid = result.message.startsWith('__transcript__:')
+        ? result.message.slice('__transcript__:'.length)
         : undefined;
       const session = runtime.resolveHistorySession(sid);
       if (!session) {
         console.log(
           sid
             ? `Session not found: ${sid}`
-            : '(no active session — use pi TUI /history or /resume first)',
+            : '(no active session — use pi TUI /transcript or /resume first)',
         );
       } else {
         const tasks = listHistoryTasks(session);
-        console.log(`History for ${session.session_id}:`);
+        console.log(`Transcript for ${session.session_id}:`);
         for (const t of tasks) {
           console.log(`  ${t.label}`);
           console.log(`    ${t.description}`);
@@ -428,7 +432,7 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
             console.log(`      … +${lines.length - 6} more messages`);
           }
         }
-        console.log('  (pi TUI: /history opens interactive browser)');
+        console.log('  (pi TUI: /transcript opens interactive browser)');
       }
       showPrompt();
       return;
@@ -697,7 +701,7 @@ export async function runTuiApp(opts: TuiAppOptions): Promise<void> {
 
   const runTask = async (task: string, workflowPath?: string): Promise<void> => {
     if (runtime.hasPendingHandoff()) {
-      console.log('(injecting handoff context)');
+      console.log('(injecting brief context)');
     }
     console.log(`\n▶ ${task.slice(0, 120)}${task.length > 120 ? '…' : ''}`);
     armedWorkflow = null;

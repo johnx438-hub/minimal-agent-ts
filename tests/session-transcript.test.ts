@@ -133,7 +133,7 @@ describe('appendTaskTranscript', () => {
     resetTranscriptWriteQueueForTests();
   });
 
-  it('exposes pending records before flush for /history', async () => {
+  it('exposes pending records before flush for /transcript', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'ma-transcript-pending-'));
     setWorkspaceRoot(dir);
     resetTranscriptWriteQueueForTests();

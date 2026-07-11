@@ -561,7 +561,6 @@ function buildChatBody(model, messages, tools, stream, extraBody?) {
 | `/profile` | pi-tui：**picker**；classic TUI：**文本列表**（与现 `/sessions`、`/skills` 分工一致） |
 | `/profile <name>` | 直接设 session profile override |
 | `/profile reset` | 清 profile + model override，恢复 `default_api_profile` / env |
-| `/provider` | `/profile` 的别名（cc-connect 习惯） |
 | `/model` | 列出**当前生效 profile** 的模型；多项时 pi picker / classic 列表 |
 | `/model <id>` | 直接设 session model override |
 | `/model reset` | 仅清 model override |
