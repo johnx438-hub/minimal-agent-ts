@@ -48,6 +48,29 @@ export interface RecallPolicy {
   auto_full_max_chars?: number;
 }
 
+export interface WebSearchCachePolicy {
+  enabled?: boolean;
+  /** Relative to workspace root. Default `.cache/web-fetch`. */
+  search_spill_dir?: string;
+}
+
+export interface WebSearchBudgetPolicy {
+  max_external_per_task?: number;
+  warn_after?: number;
+}
+
+export interface WebSearchPolicy {
+  allowed?: boolean;
+  /** v1: `ddgr` only; v2 may add `searxng`. */
+  backend?: 'ddgr' | 'searxng';
+  max_results_default?: number;
+  max_results_cap?: number;
+  ddgr_path?: string;
+  cache?: WebSearchCachePolicy;
+  budget?: WebSearchBudgetPolicy;
+  domain_hints?: string[];
+}
+
 export interface WebFetchPolicy {
   /** Allowed host patterns: exact host, `*.example.com`, or `*`. Default `["*"]` when web fetch enabled. */
   allow_domains?: string[];
@@ -146,6 +169,7 @@ export interface AgentPluginConfig {
   pointerize_policy?: PointerizePolicy;
   recall_policy?: RecallPolicy;
   web_fetch_policy?: WebFetchPolicy;
+  web_search?: WebSearchPolicy;
   transcript_policy?: TranscriptPolicy;
   /** Skill names to prepend into system prompt for this session. */
   loaded_skills?: string[];

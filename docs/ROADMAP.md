@@ -46,7 +46,7 @@
 
 | 优先级 | 轨 | 内容 |
 |:------:|-----|------|
-| **P0 产品** | 产品 | ~~TUI `/jobs`、job-query 抽取~~ ✅；`web_search` |
+| **P0 产品** | 产品 | ~~TUI `/jobs`、job-query~~ ✅；~~`web_search` v1+v1.5~~ ✅ |
 | **P1 产品** | 产品 | `/spawns` 实装、TUI `turn_io`、pi overlay 统一 |
 | **P1 压测** | B | 高压场景 harness（§5）；填压测表 |
 | **P1 底座** | 底座 | ToolProvider 拆分、context pipeline、**MessageBridge hook**（§6） |
@@ -79,14 +79,13 @@ Wave 3   /spawns、turn_io TUI、pi overlay 统一
 
 **约束**: TUI 只调 `AgentRuntime` 或 job-query；不穿透 `agent.ts`。
 
-### M-Prod-2：`web_search`（~1 天）
+### M-Prod-2：`web_search`（✅ 2026-07-12）
 
 见 **[SPEC_TOOLS.md](../SPEC_TOOLS.md)** §3（v0.2）：
 
-- **v1**：子进程 `ddgr --json`；权限同 `web_fetch`；pointerize
-- **v1.5**（可同 PR 或紧随）：spill cache 先查 + 单 task 外搜 budget
-- **v2**（可选）：`agent.json` `backend: searxng` 或 MCP HTTP 外置
-- 顺带：`registerCliTool` 或 CliToolProvider 雏形（底座 L1 预埋）
+- **v1** ✅：`ddgr --json`；权限同 `web_fetch`
+- **v1.5** ✅：spill cache 先查 + 单 task 外搜 budget
+- **v2**（可选）：`backend: searxng` 或 MCP HTTP 外置
 
 ### M-Prod-3：体验抛光（按需）
 

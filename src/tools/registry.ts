@@ -17,6 +17,7 @@ import { RECALL_DEFINITIONS, runRecallTool } from './recall.js';
 import { SHELL_DEFINITIONS, runShellTool } from './shell.js';
 import { SKILLS_TOOL_DEFINITIONS, runSkillsTool } from './skills-tool.js';
 import { WEB_FETCH_DEFINITIONS, runWebFetchTool } from './web-fetch.js';
+import { WEB_SEARCH_DEFINITIONS, runWebSearchTool } from './web-search.js';
 import { loadSpawnPresets } from '../spawn/load-preset.js';
 import { configureSpawnSemaphore } from '../spawn/semaphore.js';
 import type { ResolvedSpawnPreset } from '../spawn/types.js';
@@ -41,6 +42,7 @@ const ALL_BUILTIN: Record<string, { defs: ToolDefinition[]; handler: BuiltinHand
   run_shell: { defs: SHELL_DEFINITIONS, handler: runShellTool },
   invoke_skill: { defs: SKILLS_TOOL_DEFINITIONS, handler: async () => null },
   web_fetch: { defs: WEB_FETCH_DEFINITIONS, handler: runWebFetchTool },
+  web_search: { defs: WEB_SEARCH_DEFINITIONS, handler: runWebSearchTool },
   code_review: { defs: CODE_REVIEW_DEFINITIONS, handler: runCodeReviewTool },
 };
 
@@ -162,6 +164,7 @@ export class ToolRegistry {
     for (const toolName of this.enabledBuiltin) {
       if (toolName === 'run_shell' && !isCapabilityEnabled(config, 'shell')) continue;
       if (toolName === 'web_fetch' && !isCapabilityEnabled(config, 'web')) continue;
+      if (toolName === 'web_search' && !isCapabilityEnabled(config, 'web')) continue;
       if (!this.isToolAllowed(toolName, allowlist)) continue;
       const entry = ALL_BUILTIN[toolName];
       if (!entry) continue;
@@ -269,6 +272,13 @@ export class ToolRegistry {
           if (!gate || !(await gate.ensureWeb(config, 'web_fetch'))) {
             if (config.abortSignal?.aborted) return '[aborted]';
             return 'error: web_fetch is disabled. Use /web on or approve when prompted.';
+          }
+        }
+        if (name === 'web_search' && !isCapabilityEnabled(config, 'web')) {
+          const gate = config.permissionGate;
+          if (!gate || !(await gate.ensureWeb(config, 'web_search'))) {
+            if (config.abortSignal?.aborted) return '[aborted]';
+            return 'error: web_search is disabled. Use /web on or approve when prompted.';
           }
         }
         const result = await builtin.handler(name, args, config);

@@ -10,6 +10,7 @@ const PARALLEL_SAFE = new Set([
   'recall_query',
   'invoke_skill',
   'web_fetch',
+  'web_search',
   'spawn_agent',
 ]);
 

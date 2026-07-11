@@ -145,6 +145,7 @@ async function runSpawnAgentInner(opts: {
     toolAllowlist: preset.tools.length > 0 ? preset.tools : undefined,
     spawnDepth: depth + 1,
     spawnLifecycle: undefined,
+    webSearchTaskState: { externalCount: 0 },
   };
 
   if (parentConfig.llmPluginConfig) {

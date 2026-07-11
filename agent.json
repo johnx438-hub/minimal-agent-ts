@@ -58,6 +58,7 @@
     "invoke_skill",
     "run_shell",
     "web_fetch",
+    "web_search",
     "spawn_agent",
     "spawn_background",
     "code_review"
@@ -121,6 +122,14 @@
   },
   "recall_policy": {
     "auto_full_max_chars": 24000
+  },
+  "web_search": {
+    "allowed": true,
+    "backend": "ddgr",
+    "max_results_default": 5,
+    "max_results_cap": 10,
+    "cache": { "enabled": true, "search_spill_dir": ".cache/web-fetch" },
+    "budget": { "max_external_per_task": 5, "warn_after": 3 }
   },
   "web_fetch_policy": {
     "allow_domains": ["*"],

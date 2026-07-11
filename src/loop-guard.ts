@@ -109,6 +109,8 @@ function normalizeArgs(toolName: string, args: Record<string, unknown>): Record<
       return { path: String(args.path ?? '') };
     case 'web_fetch':
       return { url: String(args.url ?? '').trim() };
+    case 'web_search':
+      return { query: String(args.query ?? '').trim() };
     case 'run_shell': {
       const decoded = decodeShellCommand(args);
       const out: Record<string, unknown> = {

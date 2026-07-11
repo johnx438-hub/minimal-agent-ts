@@ -200,19 +200,19 @@ web_search({
 
 ### 3.12 验收
 
-**v1（M-Prod-2 首 PR）**
+**v1（M-Prod-2 首 PR）** ✅
 
-- [ ] `ddgr` 可用时返回 ≥1 条结构化结果
-- [ ] 无 `ddgr` 时 `error:` 可读，ReAct 继续
-- [ ] `web_search.allowed: false` 或 `ALLOW_WEB=0` 时工具不可用
-- [ ] 结果超阈值时 pointerize
-- [ ] `npm test` mock 路径全绿
+- [x] `ddgr` 可用时返回 ≥1 条结构化结果
+- [x] 无 `ddgr` 时 `error:` 可读，ReAct 继续
+- [x] `web_search.allowed: false` 或 `ALLOW_WEB=0` 时工具不可用
+- [x] 结果超阈值时 inline 截断；pointerize 规则已注册
+- [x] `npm test` mock 路径全绿
 
-**v1.5**
+**v1.5** ✅
 
-- [ ] spill cache 命中时不再调 ddgr
-- [ ] 外搜次数超 `warn_after` 有前缀提示；超 `max_external_per_task` 拒绝
-- [ ] cache 命中不计入 budget
+- [x] spill cache 命中时不再调 ddgr
+- [x] 外搜次数超 `warn_after` 有前缀提示；超 `max_external_per_task` 拒绝
+- [x] cache 命中不计入 budget
 
 **v2**
 

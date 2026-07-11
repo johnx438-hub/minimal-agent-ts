@@ -68,6 +68,11 @@ function toolGuidanceLine(name: string, description: string): string | null {
         `${firstSentence(description)} Respect domain allowlist in agent.json. ` +
         'If the result is [web_spill], the page is on disk as Markdown only — read with read_file(offset/limit); open source_url in a browser if conversion looks wrong.'
       );
+    case 'web_search':
+      return (
+        `${firstSentence(description)} Cache hits skip external search. ` +
+        'Pick a promising URL, then web_fetch for full content.'
+      );
     case 'edit_file':
       return (
         `Prefer read_file before editing; ${firstSentence(description)} ` +
@@ -111,7 +116,7 @@ export function buildSystemPrompt(config: AgentConfig): string {
     `You have builtin tools (${toolList}) plus any MCP tools exposed as mcp_<server>_<tool>.`,
   ];
 
-  for (const name of ['web_fetch', 'write_file', 'edit_file', 'invoke_skill', 'spawn_agent'] as const) {
+  for (const name of ['web_search', 'web_fetch', 'write_file', 'edit_file', 'invoke_skill', 'spawn_agent'] as const) {
     const def = findDefinition(defs, name);
     if (!def) continue;
     const hint = toolGuidanceLine(name, def.function.description);

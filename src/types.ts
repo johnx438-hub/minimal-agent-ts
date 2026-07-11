@@ -10,6 +10,7 @@ import type {
   LlmWire,
   SpawnPolicy,
   WebFetchPolicy,
+  WebSearchPolicy,
 } from './plugins/types.js';
 
 /** Resolved LLM connection for one agent run (轨 G). */
@@ -104,6 +105,9 @@ export interface AgentConfig {
   allowShell: boolean;
   allowWeb: boolean;
   webFetchPolicy?: WebFetchPolicy;
+  webSearchPolicy?: WebSearchPolicy;
+  /** Per-task external web_search count (cache hits do not increment). */
+  webSearchTaskState?: { externalCount: number };
   /** Set at runtime for recall_query session scoping. */
   sessionId?: string;
   loopGuard?: LoopGuardConfig;

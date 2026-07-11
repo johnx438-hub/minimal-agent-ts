@@ -32,6 +32,7 @@ npm start -- "列出当前目录文件，读 README，用一句话总结"
 | 续接会话 | `npm start -- --resume <session_id> "继续"` |
 | 允许 shell | `npm start -- --allow-shell "npm run typecheck"` |
 | 允许联网抓取 | `npm start -- --allow-web "抓取 https://example.com 并总结"` |
+| 网页搜索（需 ddgr） | `npm start -- --allow-web "web_search 查 …，再 web_fetch 深读"` |
 | 长命令 shell | Agent 可对 `run_shell` 传 `auto_extend: true`、`timeout_ms`、`max_timeout_ms` |
 | 多角色 workflow | `npm start -- --workflow workflows/review-loop.json "任务"` |
 | 锚点编辑 | `read_file` 返回 `[file_meta hash=…]` → `edit_file` 带 `expected_hash` |

@@ -185,7 +185,7 @@ CLI：`npm run spawn:{list,status,kill,tail}`。
 | 6 | 多角色 workflow（config 驱动） | ✅ |
 | 1a–1d | 后台 spawn：`JobRegistry` + `spawn_background` + `code_review` 后台模式 | ✅ |
 
-当前测试：**372** 用例（`npm test`）。
+当前测试：**382** 用例（`npm test`）。
 
 ## 建议学习顺序
 
@@ -201,7 +201,7 @@ CLI：`npm run spawn:{list,status,kill,tail}`。
 见 **[docs/ROADMAP.md](./docs/ROADMAP.md)**：
 
 - [x] **M-Prod-1** TUI `/jobs` + job-query 层
-- [ ] **M-Prod-2** `web_search` 工具
+- [x] **M-Prod-2** `web_search` 工具（ddgr + cache + budget）
 - [ ] **压测 harness** stress preset + 并行 `spawn_background` dev-worker
 - [ ] **MessageBridge** hook（IM 预留，见 docs/ROADMAP §6）
 - [ ] 底座 L1–L3（ToolProvider、context pipeline、hooks）

@@ -122,6 +122,7 @@ function isSmartTool(toolName: string): boolean {
     toolName === 'read_file' ||
     toolName === 'run_shell' ||
     toolName === 'web_fetch' ||
+    toolName === 'web_search' ||
     isMcpTool(toolName)
   );
 }
@@ -183,6 +184,16 @@ export function buildSmartToolPreview(
           policy,
         ),
         preview_lines: [truncateLine(text, 100)],
+      };
+    }
+
+    case 'web_search': {
+      const query = String(args.query ?? '?');
+      const source = text.match(/\[source: (\w+)\]/)?.[1] ?? 'search';
+      const lines = nonEmptyLines(text, policy.preview_max_lines);
+      return {
+        summary: clipSummary(`web_search: "${query}" (${source})`, policy),
+        preview_lines: lines.slice(0, policy.preview_max_lines).map((l) => truncateLine(l, 100)),
       };
     }
 

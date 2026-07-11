@@ -52,6 +52,7 @@ function mergeConfig(base: AgentPluginConfig, patch: Partial<AgentPluginConfig>)
     pointerize_policy: { ...base.pointerize_policy, ...patch.pointerize_policy },
     recall_policy: { ...base.recall_policy, ...patch.recall_policy },
     web_fetch_policy: { ...base.web_fetch_policy, ...patch.web_fetch_policy },
+    web_search: { ...base.web_search, ...patch.web_search },
     loaded_skills: patch.loaded_skills ?? base.loaded_skills,
     spawn_presets: patch.spawn_presets ?? base.spawn_presets,
     spawn_policy: { ...base.spawn_policy, ...patch.spawn_policy },

@@ -88,6 +88,10 @@ export function formatToolBreadcrumb(name: string, argsJson: string, output: str
       const skill = clipText(String(args.name ?? 'list'));
       return `← skill: ${skill}`;
     }
+    case 'web_search': {
+      const q = clipText(String(args.query ?? '?'), 48);
+      return `← search: ${q}`;
+    }
     case 'web_fetch': {
       const url = clipText(String(args.url ?? '?'), 60);
       if (output.includes('[web_spill]') || output.includes('.cache/web-fetch')) {

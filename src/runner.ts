@@ -159,6 +159,7 @@ export function buildAgentConfig(opts: BuildConfigOptions): {
     allowShell: opts.allowShell ?? false,
     allowWeb: opts.allowWeb ?? false,
     webFetchPolicy: pluginConfig.web_fetch_policy,
+    webSearchPolicy: pluginConfig.web_search,
     loopGuard: {
       enabled: loopGuardMode !== 'off',
       mode: loopGuardMode,
@@ -664,6 +665,12 @@ export class AgentRuntime {
     this.persistSessionLlmOverride();
   }
 
+  private webSearchTaskState = { externalCount: 0 };
+
+  private resetWebSearchTaskBudget(): void {
+    this.webSearchTaskState.externalCount = 0;
+  }
+
   private buildRunConfig(signal: AbortSignal): AgentConfig {
     const session = this.ensureSession();
     const runConfig: AgentConfig = {
@@ -673,6 +680,7 @@ export class AgentRuntime {
       permissionGate: this.permissionGate,
       spawnLifecycle: this.onSpawnLifecycle,
       workspacePrompt: this.runWorkspacePrompt ?? undefined,
+      webSearchTaskState: this.webSearchTaskState,
     };
     const override = this.getSessionLlmOverride();
     configureAgentLlmBinding(runConfig, this.pluginConfig, {
@@ -983,6 +991,7 @@ export class AgentRuntime {
       throw new Error('Agent is already running');
     }
 
+    this.resetWebSearchTaskBudget();
     const session = this.ensureSession();
 
     const resolved = this.resolveWorkflowPath(workflowPath) ?? workflowPath;
@@ -1113,6 +1122,7 @@ export class AgentRuntime {
 
   private async runSingleTask(prompt: string): Promise<AgentResult> {
     const session = this.ensureSession();
+    this.resetWebSearchTaskBudget();
     this.running = true;
     this.abortController = new AbortController();
     const signal = this.abortController.signal;
