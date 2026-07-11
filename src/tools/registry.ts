@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { isCapabilityEnabled } from '../permission-gate.js';
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import { loadAgentPluginConfig } from '../plugins/config-loader.js';
+import { CliToolProvider } from './providers/cli-provider.js';
 import { McpToolProvider } from './providers/mcp-provider.js';
 import { SkillsToolProvider } from './providers/skills-provider.js';
 import { SpawnToolProvider } from './providers/spawn-provider.js';
@@ -16,7 +17,6 @@ import { RECALL_DEFINITIONS, runRecallTool } from './recall.js';
 import { SHELL_DEFINITIONS, runShellTool } from './shell.js';
 import { SKILLS_TOOL_DEFINITIONS } from './skills-tool.js';
 import { WEB_FETCH_DEFINITIONS, runWebFetchTool } from './web-fetch.js';
-import { WEB_SEARCH_DEFINITIONS, runWebSearchTool } from './web-search.js';
 import { parseToolArgsJson } from './tool-args.js';
 
 type BuiltinHandler = (
@@ -35,17 +35,21 @@ const ALL_BUILTIN: Record<string, { defs: ToolDefinition[]; handler: BuiltinHand
   recall_query: { defs: RECALL_DEFINITIONS, handler: runRecallTool },
   run_shell: { defs: SHELL_DEFINITIONS, handler: runShellTool },
   web_fetch: { defs: WEB_FETCH_DEFINITIONS, handler: runWebFetchTool },
-  web_search: { defs: WEB_SEARCH_DEFINITIONS, handler: runWebSearchTool },
   code_review: { defs: CODE_REVIEW_DEFINITIONS, handler: runCodeReviewTool },
 };
 
-const DEFAULT_BUILTIN_TOOLS = [...Object.keys(ALL_BUILTIN), 'invoke_skill'] as const;
+const DEFAULT_BUILTIN_TOOLS = [
+  ...Object.keys(ALL_BUILTIN),
+  'invoke_skill',
+  'web_search',
+] as const;
 
 export class ToolRegistry {
   private pluginConfig: AgentPluginConfig = loadAgentPluginConfig(process.cwd());
   private readonly mcpProvider = new McpToolProvider();
   private readonly spawnProvider = new SpawnToolProvider();
   private readonly skillsProvider = new SkillsToolProvider();
+  private readonly cliProvider = new CliToolProvider();
   private initialized = false;
   private enabledBuiltin = new Set<string>();
   private registryCwd = process.cwd();
@@ -54,6 +58,7 @@ export class ToolRegistry {
     await this.mcpProvider.shutdown();
     await this.spawnProvider.shutdown();
     await this.skillsProvider.shutdown();
+    await this.cliProvider.shutdown();
     this.initialized = false;
     await this.initialize(cwd, pluginConfig);
   }
@@ -62,6 +67,7 @@ export class ToolRegistry {
     await this.mcpProvider.shutdown();
     await this.spawnProvider.shutdown();
     await this.skillsProvider.shutdown();
+    await this.cliProvider.shutdown();
 
     this.registryCwd = cwd;
     this.pluginConfig = pluginConfig ?? loadAgentPluginConfig(cwd);
@@ -78,11 +84,13 @@ export class ToolRegistry {
       await this.mcpProvider.load(providerCtx);
       await this.spawnProvider.load(providerCtx);
       await this.skillsProvider.load(providerCtx);
+      await this.cliProvider.load(providerCtx);
       this.initialized = true;
     } catch (err) {
       await this.mcpProvider.shutdown();
       await this.spawnProvider.shutdown();
       await this.skillsProvider.shutdown();
+      await this.cliProvider.shutdown();
       this.initialized = false;
       throw err;
     }
@@ -147,7 +155,6 @@ export class ToolRegistry {
     for (const toolName of this.enabledBuiltin) {
       if (toolName === 'run_shell' && !isCapabilityEnabled(config, 'shell')) continue;
       if (toolName === 'web_fetch' && !isCapabilityEnabled(config, 'web')) continue;
-      if (toolName === 'web_search' && !isCapabilityEnabled(config, 'web')) continue;
       if (!isRoleToolAllowlisted(toolName, allowlist)) continue;
       const entry = ALL_BUILTIN[toolName];
       if (!entry) continue;
@@ -173,6 +180,16 @@ export class ToolRegistry {
     }
 
     for (const def of this.skillsProvider.getDefinitions({
+      ...this.providerContext(),
+      config,
+    })) {
+      const name = def.function.name;
+      if (seen.has(name)) continue;
+      seen.add(name);
+      defs.push(def);
+    }
+
+    for (const def of this.cliProvider.getDefinitions({
       ...this.providerContext(),
       config,
     })) {
@@ -223,6 +240,12 @@ export class ToolRegistry {
       });
       if (spawnResult !== null) return spawnResult;
 
+      const cliResult = await this.cliProvider.execute(name, args, {
+        ...this.providerContext(),
+        config,
+      });
+      if (cliResult !== null) return cliResult;
+
       const builtin = ALL_BUILTIN[name];
       if (builtin && this.enabledBuiltin.has(name)) {
         if (name === 'run_shell' && !isCapabilityEnabled(config, 'shell')) {
@@ -237,13 +260,6 @@ export class ToolRegistry {
           if (!gate || !(await gate.ensureWeb(config, 'web_fetch'))) {
             if (config.abortSignal?.aborted) return '[aborted]';
             return 'error: web_fetch is disabled. Use /web on or approve when prompted.';
-          }
-        }
-        if (name === 'web_search' && !isCapabilityEnabled(config, 'web')) {
-          const gate = config.permissionGate;
-          if (!gate || !(await gate.ensureWeb(config, 'web_search'))) {
-            if (config.abortSignal?.aborted) return '[aborted]';
-            return 'error: web_search is disabled. Use /web on or approve when prompted.';
           }
         }
         const result = await builtin.handler(name, args, config);
@@ -267,6 +283,7 @@ export class ToolRegistry {
     await this.mcpProvider.shutdown();
     await this.spawnProvider.shutdown();
     await this.skillsProvider.shutdown();
+    await this.cliProvider.shutdown();
     this.initialized = false;
   }
 }
