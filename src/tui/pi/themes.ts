@@ -66,8 +66,24 @@ export const piMarkdownTheme: MarkdownTheme = {
 };
 
 export const piEditorTheme: EditorTheme = {
-  borderColor: (text: string) => chalk.dim(text),
+  borderColor: (text: string) => chalk.gray(text),
   selectList: piSelectListTheme,
 };
 
 export const piChalk = chalk;
+
+/** Semantic stylers for chat scrollback (SPEC_TUI_POLISH §4.1). */
+export type TextStyler = (text: string) => string;
+
+export const piSemantic = {
+  userLine: (text: string) => chalk.bold.white(text),
+  metaLine: (text: string) => chalk.dim(text),
+  toolOk: (text: string) => chalk.green(text),
+  toolErr: (text: string) => chalk.red(text),
+  toolRunning: (text: string) => chalk.cyan(text),
+  statusOk: (text: string) => chalk.green(text),
+  statusErr: (text: string) => chalk.red(text),
+  accent: (text: string) => chalk.cyan(text),
+  statusBar: (text: string) => chalk.dim(text),
+  hint: (text: string) => chalk.dim(text),
+} as const satisfies Record<string, TextStyler>;

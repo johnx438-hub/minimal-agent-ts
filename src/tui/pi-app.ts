@@ -13,6 +13,7 @@ import { isActionIoMetricsEnabled } from '../action-io-metrics.js';
 import type { AgentRuntime } from '../runner.js';
 import { CompressionFatigueTracker } from '../compression-fatigue.js';
 import {
+  applyVerboseEnv,
   defaultPrefs,
   loadPrefs,
   mergePrefs,
@@ -36,7 +37,7 @@ import {
   createPiWorkflowConfirm,
   runPiFirstRunConfirm,
 } from './pi/prompts.js';
-import { piEditorTheme } from './pi/themes.js';
+import { piEditorTheme, piSemantic } from './pi/themes.js';
 
 const SLASH_AUTOCOMPLETE = slashAutocompleteItems();
 
@@ -49,7 +50,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
   const saved = loadPrefs(prefsAnchor);
   const needsConfirm = saved === null;
   const uiState: PiSlashUiState = {
-    prefs: saved ?? defaultPrefs(),
+    prefs: applyVerboseEnv(saved ?? defaultPrefs()),
     shellOn: false,
     webOn: false,
     confirmShell: false,
@@ -102,7 +103,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     `cwd:     ${runtime.config.cwd}`,
     `session: ${runtime.sessionLabel()}`,
     `shell:   ${uiState.shellOn ? 'on' : 'off'}   web: ${uiState.webOn ? 'on' : 'off'}`,
-    'slash: /help   /stop or Esc while running',
+    'Enter send · Esc abort · /help · /stop',
   ];
   if (!runtime.hasActiveSession()) {
     bannerLines.push('(no session yet — /resume, /new, or first task)');
@@ -118,7 +119,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     bannerLines.push(`⚠ always-approve: ${always.join(', ')}`);
   }
 
-  tui.addChild(new Text(bannerLines.join('\n'), 1, 1));
+  tui.addChild(new Text(bannerLines.join('\n'), 1, 1, piSemantic.metaLine));
 
   const editor = new Editor(tui, piEditorTheme);
   const autocomplete = new CombinedAutocompleteProvider(
@@ -131,11 +132,28 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
 
   const chat = new PiChatLog(tui, editor);
 
+  /** Docked footer: status + hint stay above the editor (TUI-E). */
+  const statusBar = new Text('', 1, 0, piSemantic.statusBar);
+  const hintLine = new Text(
+    'Enter send · Esc abort while running · / for commands',
+    1,
+    0,
+    piSemantic.hint,
+  );
+  // Insert footers before editor, then register so chat content inserts above them.
+  {
+    const edIdx = tui.children.indexOf(editor);
+    tui.children.splice(edIdx, 0, statusBar, hintLine);
+  }
+  chat.setStickyFooter([statusBar, hintLine]);
+
   const say = (msg: string, dim = false): void => {
     chat.appendText(msg, dim);
   };
 
   let lastRunAborted = false;
+  let lastTurn = 0;
+  let lastTurnIoTag = '';
 
   const resumeEditor = (): void => {
     // Keep Enter enabled — onSubmit blocks non-slash input while running.
@@ -143,6 +161,23 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     tui.setFocus(editor);
     tui.requestRender();
   };
+
+  const printStatus = (): void => {
+    const wf = uiState.armedWorkflow ? ` · wf:${uiState.armedWorkflow}` : '';
+    const runningJobs = runtime.countRunningBackgroundJobs();
+    const jobsTag = runningJobs > 0 ? ` · jobs:${runningJobs}` : '';
+    const ioTag = isActionIoMetricsEnabled() && lastTurnIoTag ? ` · ${lastTurnIoTag}` : '';
+    const turnTag = lastTurn > 0 ? ` · turn:${lastTurn}` : '';
+    const line =
+      `${runtime.sessionLabel()} · ${runtime.formatSessionLlmShortLine()}` +
+      ` · shell:${runtime.config.allowShell ? 'on' : 'off'}` +
+      ` · web:${runtime.config.allowWeb ? 'on' : 'off'}` +
+      `${jobsTag}${ioTag}${turnTag}${wf}`;
+    statusBar.setText(line);
+    tui.requestRender();
+  };
+
+  let presenter!: PiEventPresenter;
 
   const requestStop = (): void => {
     if (!runtime.isRunning()) return;
@@ -152,10 +187,16 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     runtime.abort();
   };
 
-  const presenter = new PiEventPresenter({
+  presenter = new PiEventPresenter({
     chat,
     tui,
     onAbort: () => requestStop(),
+    getCwd: () => runtime.config.cwd,
+    getDisplayPrefs: () => applyVerboseEnv(uiState.prefs),
+    onTurn: (turn) => {
+      lastTurn = turn;
+      printStatus();
+    },
   });
 
   runtime.permissionGate.setPrompter(
@@ -167,6 +208,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
         runtime.setAllowWeb(true);
         uiState.webOn = true;
       }
+      printStatus();
     }),
   );
   runtime.setWorkflowConfirmFn(createPiWorkflowConfirm(tui));
@@ -174,18 +216,8 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
 
   const fatigueTracker = new CompressionFatigueTracker();
   const fatiguePrompter = createPiFatiguePrompter(tui);
-  let lastTurnIoTag = '';
 
-  const printStatus = (): void => {
-    const wf = uiState.armedWorkflow ? `  workflow armed: ${uiState.armedWorkflow}` : '';
-    const runningJobs = runtime.countRunningBackgroundJobs();
-    const jobsTag = runningJobs > 0 ? `  jobs:${runningJobs} running` : '';
-    const ioTag = isActionIoMetricsEnabled() && lastTurnIoTag ? `  ${lastTurnIoTag}` : '';
-    say(
-      `[${runtime.sessionLabel()}] ${runtime.formatSessionLlmShortLine()}  shell:${runtime.config.allowShell ? 'on' : 'off'} web:${runtime.config.allowWeb ? 'on' : 'off'}${jobsTag}${ioTag}${wf}`,
-      true,
-    );
-  };
+  printStatus();
 
   const finishRun = async (): Promise<void> => {
     mode = 'idle';
@@ -221,12 +253,16 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
       mode = 'running';
       lastRunAborted = false;
       lastTurnIoTag = '';
+      lastTurn = 0;
+      printStatus();
     }
     if (event.type === 'turn_io' && isActionIoMetricsEnabled()) {
       lastTurnIoTag = `io:T${event.turn} ${event.actions_saved}/${event.action_save_ms}ms q=${event.queue_depth}`;
+      printStatus();
     }
     if (event.type === 'run_stopping') {
       mode = 'stopping';
+      printStatus();
     }
     if (event.type === 'compression') {
       fatigueTracker.onCompression(event);
@@ -234,6 +270,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     presenter.handle(event);
     if (event.type === 'run_end') {
       lastRunAborted = event.reason === 'aborted';
+      printStatus();
       void finishRun();
     }
   });
@@ -242,8 +279,9 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     if (runtime.hasPendingHandoff()) {
       say('(injecting brief context)', true);
     }
-    chat.appendMarkdown(`**›** ${task}`);
+    chat.appendUserMessage(task);
     uiState.armedWorkflow = null;
+    printStatus();
     try {
       if (workflowPath) {
         await runtime.runWorkflowTask(task, workflowPath);
@@ -252,7 +290,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      say(`✗ ${msg}`);
+      chat.appendText(`✗ ${msg}`, false, piSemantic.statusErr);
       mode = 'idle';
       resumeEditor();
     }

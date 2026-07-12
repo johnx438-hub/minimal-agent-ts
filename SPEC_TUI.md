@@ -1,7 +1,8 @@
 # minimal-agent-ts TUI Spec（v0.1 草案）
 
 > **范围**: 原版 `minimal-agent-ts` 的终端 UI 层；**不修改** ReAct 内核语义（`agent.ts` 主循环、pointerize、compression 策略保持不变）。  
-> **目标**: 比纯 CLI 更易用；slash 覆盖日常操作；事件驱动、可后接 GUI。
+> **目标**: 比纯 CLI 更易用；slash 覆盖日常操作；事件驱动、可后接 GUI。  
+> **呈现层美化（密度 / 语义色 / 降噪）**: 见 **[SPEC_TUI_POLISH.md](./SPEC_TUI_POLISH.md)**（与本文正交，只动 presenter）。
 
 ---
 

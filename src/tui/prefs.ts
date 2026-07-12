@@ -9,6 +9,14 @@ export interface TuiPrefs {
   alwaysShell?: boolean;
   /** L3: persist web approval across sessions (startup warning). */
   alwaysWeb?: boolean;
+  /** Show [turn N] lines (default false — SPEC_TUI_POLISH TUI-B). */
+  verbose_turns?: boolean;
+  /** Show every action_flush / turn_io when metrics on (default false). */
+  verbose_io?: boolean;
+  /** Multi-line run_start details (default false). */
+  verbose_run_header?: boolean;
+  /** Full shell bodies without height cap (default false). */
+  verbose_tools?: boolean;
 }
 
 const DEFAULT_PREFS: TuiPrefs = {
@@ -16,6 +24,10 @@ const DEFAULT_PREFS: TuiPrefs = {
   allowWeb: false,
   alwaysShell: false,
   alwaysWeb: false,
+  verbose_turns: false,
+  verbose_io: false,
+  verbose_run_header: false,
+  verbose_tools: false,
 };
 
 function localPrefsPath(root: string): string {
@@ -60,6 +72,11 @@ export function prefsPath(cwd: string): string {
   return globalPrefsPath();
 }
 
+function parseBool(v: unknown, fallback: boolean): boolean {
+  if (typeof v === 'boolean') return v;
+  return fallback;
+}
+
 export function loadPrefs(cwd: string): TuiPrefs | null {
   const root = resolvePrefsRoot(cwd);
   const local = localPrefsPath(root);
@@ -68,10 +85,14 @@ export function loadPrefs(cwd: string): TuiPrefs | null {
   try {
     const raw = JSON.parse(readFileSync(path, 'utf8')) as Partial<TuiPrefs>;
     return {
-      allowShell: raw.allowShell ?? DEFAULT_PREFS.allowShell,
-      allowWeb: raw.allowWeb ?? DEFAULT_PREFS.allowWeb,
-      alwaysShell: raw.alwaysShell ?? false,
-      alwaysWeb: raw.alwaysWeb ?? false,
+      allowShell: parseBool(raw.allowShell, DEFAULT_PREFS.allowShell),
+      allowWeb: parseBool(raw.allowWeb, DEFAULT_PREFS.allowWeb),
+      alwaysShell: parseBool(raw.alwaysShell, false),
+      alwaysWeb: parseBool(raw.alwaysWeb, false),
+      verbose_turns: parseBool(raw.verbose_turns, false),
+      verbose_io: parseBool(raw.verbose_io, false),
+      verbose_run_header: parseBool(raw.verbose_run_header, false),
+      verbose_tools: parseBool(raw.verbose_tools, false),
     };
   } catch {
     return null;
@@ -100,6 +121,20 @@ export function normalizePrefs(prefs: TuiPrefs): TuiPrefs {
   return out;
 }
 
+/**
+ * Apply TUI_VERBOSE=1 → all verbose_* true (debug override, not persisted).
+ */
+export function applyVerboseEnv(prefs: TuiPrefs): TuiPrefs {
+  if (process.env.TUI_VERBOSE?.trim() !== '1') return prefs;
+  return {
+    ...prefs,
+    verbose_turns: true,
+    verbose_io: true,
+    verbose_run_header: true,
+    verbose_tools: true,
+  };
+}
+
 /** Merge partial prefs with saved (or defaults) and persist. */
 export function mergePrefs(cwd: string, patch: Partial<TuiPrefs>): TuiPrefs {
   const current = loadPrefs(cwd) ?? defaultPrefs();
@@ -114,4 +149,14 @@ export function formatApproveStatus(prefs: TuiPrefs): string {
     `web:   ${prefs.allowWeb ? 'on' : 'off'}${prefs.alwaysWeb ? ' (always)' : ''}`,
   ];
   return lines.join('\n');
+}
+
+/** Display prefs snapshot for /status-style diagnostics. */
+export function formatVerbosePrefs(prefs: TuiPrefs): string {
+  return [
+    `verbose_turns: ${prefs.verbose_turns ? 'on' : 'off'}`,
+    `verbose_io: ${prefs.verbose_io ? 'on' : 'off'}`,
+    `verbose_run_header: ${prefs.verbose_run_header ? 'on' : 'off'}`,
+    `verbose_tools: ${prefs.verbose_tools ? 'on' : 'off'}`,
+  ].join('\n');
 }

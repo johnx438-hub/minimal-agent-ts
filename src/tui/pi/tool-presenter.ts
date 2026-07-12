@@ -22,7 +22,7 @@ import {
   formatWriteSummaryLine,
 } from './write-display.js';
 import type { PiChatLog } from './chat-log.js';
-import { piChalk, piMarkdownTheme } from './themes.js';
+import { piMarkdownTheme, piSemantic } from './themes.js';
 
 export interface PiToolPresenterOptions {
   chat: PiChatLog;
@@ -30,6 +30,8 @@ export interface PiToolPresenterOptions {
   getAnchor: () => Component | null;
   /** Tiered display: write/edit rich, shell folded on success, breadcrumbs elsewhere. */
   compact?: boolean;
+  getCwd?: () => string;
+  getVerboseTools?: () => boolean;
 }
 
 export interface PiToolPresentOptions {
@@ -52,6 +54,8 @@ export class PiToolPresenter {
   private readonly tui: TUI;
   private readonly getAnchor: () => Component | null;
   private readonly compact: boolean;
+  private readonly getCwd?: () => string;
+  private readonly getVerboseTools?: () => boolean;
 
   private readonly pending = new Map<string, PendingToolCall>();
 
@@ -60,6 +64,8 @@ export class PiToolPresenter {
     this.tui = opts.tui;
     this.getAnchor = opts.getAnchor;
     this.compact = opts.compact ?? true;
+    this.getCwd = opts.getCwd;
+    this.getVerboseTools = opts.getVerboseTools;
   }
 
   reset(): void {
@@ -77,7 +83,7 @@ export class PiToolPresenter {
     if (name === 'write_file') {
       this.pending.set(callId, { name, args });
       this.insertBeforeAnchor(
-        new Text(formatWriteCallLine(args), 1, 0, (s) => piChalk.dim(s)),
+        new Text(formatWriteCallLine(args), 1, 0, piSemantic.metaLine),
       );
       this.tui.requestRender();
       return true;
@@ -86,7 +92,7 @@ export class PiToolPresenter {
     if (name === 'edit_file') {
       this.pending.set(callId, { name, args });
       this.insertBeforeAnchor(
-        new Text(formatEditCallLineFromArgs(parseEditArgs(args)), 1, 0, (s) => piChalk.dim(s)),
+        new Text(formatEditCallLineFromArgs(parseEditArgs(args)), 1, 0, piSemantic.metaLine),
       );
       this.tui.requestRender();
       return true;
@@ -95,16 +101,17 @@ export class PiToolPresenter {
     if (name !== 'run_shell') return false;
 
     const command = parseShellCommand(args);
+    const cwd = this.getCwd?.();
     const loader = new Loader(
       this.tui,
-      (s) => piChalk.cyan(s),
-      (s) => piChalk.dim(s),
-      formatShellLoaderMessage(command),
+      piSemantic.toolRunning,
+      piSemantic.metaLine,
+      formatShellLoaderMessage(command, cwd),
     );
     this.pending.set(callId, { name, args, loader });
 
     this.insertBeforeAnchor(
-      new Text(formatShellCallLine(command), 1, 0, (s) => piChalk.dim(s)),
+      new Text(formatShellCallLine(command, cwd), 1, 0, piSemantic.metaLine),
     );
     this.insertBeforeAnchor(loader);
     loader.start();
@@ -128,8 +135,9 @@ export class PiToolPresenter {
 
     if (name === 'write_file') {
       const parts = buildWriteDisplayParts(argsJson, output, display);
+      const ok = parts.status === 'ok';
       this.insertBeforeAnchor(
-        new Text(formatWriteSummaryLine(parts), 1, 0, (s) => piChalk.dim(s)),
+        new Text(formatWriteSummaryLine(parts), 1, 0, ok ? piSemantic.toolOk : piSemantic.toolErr),
       );
       this.insertBeforeAnchor(
         new Markdown(formatWriteResultMarkdown(parts), 1, 1, piMarkdownTheme),
@@ -140,8 +148,9 @@ export class PiToolPresenter {
 
     if (name === 'edit_file') {
       const parts = buildEditDisplayParts(argsJson, output, display);
+      const ok = !String(output).trim().startsWith('error:');
       this.insertBeforeAnchor(
-        new Text(formatEditSummaryLine(parts), 1, 0, (s) => piChalk.dim(s)),
+        new Text(formatEditSummaryLine(parts), 1, 0, ok ? piSemantic.toolOk : piSemantic.toolErr),
       );
       this.insertBeforeAnchor(new Markdown(formatEditResultMarkdown(parts), 1, 1, piMarkdownTheme));
       this.tui.requestRender();
@@ -156,10 +165,14 @@ export class PiToolPresenter {
       this.chat.remove(loader);
     }
 
-    const parts = buildShellDisplayParts(argsJson, output);
+    const parts = buildShellDisplayParts(argsJson, output, {
+      cwd: this.getCwd?.(),
+      verboseTools: this.getVerboseTools?.() === true,
+    });
     const showBody = !foldShell || parts.status !== 'ok';
+    const ok = parts.status === 'ok';
     this.insertBeforeAnchor(
-      new Text(formatShellSummaryLine(parts), 1, 0, (s) => piChalk.dim(s)),
+      new Text(formatShellSummaryLine(parts), 1, 0, ok ? piSemantic.toolOk : piSemantic.toolErr),
     );
     if (showBody) {
       this.insertBeforeAnchor(new Markdown(formatShellResultMarkdown(parts), 1, 1, piMarkdownTheme));

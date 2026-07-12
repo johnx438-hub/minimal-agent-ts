@@ -9,7 +9,6 @@ import {
   formatCompressionSummary,
   formatLlmFallbackSummary,
   formatLlmRetrySummary,
-  formatRunStartLlmSummary,
   formatToolPlanSummary,
   type AgentStepEvent,
   type RunStartLlmMeta,
@@ -17,7 +16,8 @@ import {
 } from '../../events.js';
 import { shouldFormatFinal } from './final-text.js';
 import type { PiChatLog } from './chat-log.js';
-import { piChalk, piMarkdownTheme } from './themes.js';
+import { formatRunStartLines, shouldShowIoMetric } from './run-header.js';
+import { piMarkdownTheme, piSemantic, type TextStyler } from './themes.js';
 import {
   formatGenericToolFailureLine,
   formatToolBreadcrumb,
@@ -45,31 +45,58 @@ function isAgentStep(event: RuntimeEvent): event is AgentStepEvent {
   );
 }
 
+/** Display density flags (SPEC_TUI_POLISH). */
+export interface PiPresenterDisplayPrefs {
+  verbose_turns?: boolean;
+  verbose_io?: boolean;
+  verbose_run_header?: boolean;
+  verbose_tools?: boolean;
+}
+
 export interface PiEventPresenterOptions {
   chat: PiChatLog;
   tui: TUI;
   onAbort?: () => void;
+  /** Working directory for shell command display compression. */
+  getCwd?: () => string;
+  /** Live prefs reader (defaults compact). */
+  getDisplayPrefs?: () => PiPresenterDisplayPrefs;
+  /** Optional: notify parent of turn number for status bar. */
+  onTurn?: (turn: number) => void;
 }
 
 export class PiEventPresenter {
   private readonly chat: PiChatLog;
   private readonly tui: TUI;
   private readonly onAbort?: () => void;
+  private readonly getCwd?: () => string;
+  private readonly getDisplayPrefs?: () => PiPresenterDisplayPrefs;
+  private readonly onTurn?: (turn: number) => void;
 
   private streamBuffer = '';
   private streamMd: Markdown | null = null;
   private loader: CancellableLoader | null = null;
   private readonly toolPresenter: PiToolPresenter;
+  private lastTurn = 0;
 
   constructor(opts: PiEventPresenterOptions) {
     this.chat = opts.chat;
     this.tui = opts.tui;
     this.onAbort = opts.onAbort;
+    this.getCwd = opts.getCwd;
+    this.getDisplayPrefs = opts.getDisplayPrefs;
+    this.onTurn = opts.onTurn;
     this.toolPresenter = new PiToolPresenter({
       chat: this.chat,
       tui: this.tui,
       getAnchor: () => this.streamMd ?? this.loader,
+      getCwd: opts.getCwd,
+      getVerboseTools: () => this.prefs().verbose_tools === true,
     });
+  }
+
+  private prefs(): PiPresenterDisplayPrefs {
+    return this.getDisplayPrefs?.() ?? {};
   }
 
   handle(event: RuntimeEvent): void {
@@ -89,12 +116,12 @@ export class PiEventPresenter {
         this.endRun(event.reason, event.message);
         break;
       case 'session_saved':
-        this.chat.appendText(`💾 session saved (${event.task_count} tasks)`, true);
+        this.appendStyled(`💾 session saved (${event.task_count} tasks)`, piSemantic.metaLine);
         break;
       case 'runtime':
-        this.chat.appendText(
+        this.appendStyled(
           `⚙ shell:${event.shell ? 'on' : 'off'} web:${event.web ? 'on' : 'off'}`,
-          true,
+          piSemantic.metaLine,
         );
         break;
       case 'permission_prompt_start':
@@ -103,6 +130,7 @@ export class PiEventPresenter {
       case 'permission_prompt_end':
         this.appendRunMeta(
           `permission ${event.approved ? '✓' : '⊗'} ${event.kind} (${event.reason})`,
+          event.approved ? piSemantic.toolOk : piSemantic.toolErr,
         );
         break;
       case 'workflow_confirm_start':
@@ -113,21 +141,20 @@ export class PiEventPresenter {
       case 'workflow_confirm_end':
         this.appendRunMeta(
           `workflow confirm ${event.approved ? '✓' : '⊗'} ${event.workflow} (${event.reason})`,
+          event.approved ? piSemantic.toolOk : piSemantic.toolErr,
         );
         break;
       case 'workflow_step': {
         const round = event.round !== undefined ? ` round ${event.round}` : '';
-        this.chat.appendText(`workflow ▶ ${event.phase} / ${event.role}${round}`);
+        this.appendStyled(`workflow ▶ ${event.phase} / ${event.role}${round}`, piSemantic.metaLine);
         break;
       }
       case 'workflow_handback': {
-        const round =
-          event.round !== undefined
-            ? ` round ${event.round}`
-            : '';
+        const round = event.round !== undefined ? ` round ${event.round}` : '';
         const role = event.role ? `  role: ${event.role}${round}\n` : '';
-        this.chat.appendText(
+        this.appendStyled(
           `workflow handback ▶ ${event.workflow} (${event.reason})\n${role}  ${event.detail}`,
+          piSemantic.accent,
         );
         break;
       }
@@ -136,24 +163,37 @@ export class PiEventPresenter {
         break;
       case 'spawn_end':
         if (event.ok) {
-          this.appendRunMeta(`spawn ✓ ${event.preset}`);
+          this.appendRunMeta(`spawn ✓ ${event.preset}`, piSemantic.toolOk);
         } else {
           this.appendRunMeta(
             `spawn ✗ ${event.preset}${event.detail ? `: ${event.detail}` : ''}`,
+            piSemantic.toolErr,
           );
         }
         break;
       case 'action_flush':
-        if (isActionIoMetricsEnabled()) {
+        if (
+          isActionIoMetricsEnabled() &&
+          shouldShowIoMetric({
+            verboseIo: this.prefs().verbose_io === true,
+            pending: event.pending,
+            flushMs: event.flush_ms,
+          })
+        ) {
           this.appendRunMeta(`💾 ${formatActionFlushSummary(event)}`);
         }
         break;
     }
   }
 
+  private appendStyled(text: string, styler: TextStyler): void {
+    const comp = new Text(text, 1, 0, styler);
+    this.chat.insertBeforeEditor(comp);
+  }
+
   /** Tool / turn meta — always above the streaming LLM block. */
-  private appendRunMeta(text: string, dim = true): void {
-    const comp = new Text(text, 1, 0, dim ? (s) => piChalk.dim(s) : undefined);
+  private appendRunMeta(text: string, styler: TextStyler = piSemantic.metaLine): void {
+    const comp = new Text(text, 1, 0, styler);
     const anchor = this.streamMd ?? this.loader;
     if (anchor) {
       this.chat.insertBefore(comp, anchor);
@@ -163,8 +203,8 @@ export class PiEventPresenter {
   }
 
   /** Status after the reply block (e.g. [done], finish reason). */
-  private appendRunFooter(text: string, dim = true): void {
-    const comp = new Text(text, 1, 0, dim ? (s) => piChalk.dim(s) : undefined);
+  private appendRunFooter(text: string, styler: TextStyler = piSemantic.metaLine): void {
+    const comp = new Text(text, 1, 0, styler);
     if (this.loader) {
       this.chat.insertBefore(comp, this.loader);
     } else {
@@ -199,32 +239,29 @@ export class PiEventPresenter {
   ): void {
     this.streamBuffer = '';
     this.streamMd = null;
+    this.lastTurn = 0;
     this.toolPresenter.reset();
 
     this.loader = new CancellableLoader(
       this.tui,
-      (s) => piChalk.cyan(s),
-      (s) => piChalk.dim(s),
+      piSemantic.toolRunning,
+      piSemantic.metaLine,
       'Running… (Esc to abort)',
     );
     this.loader.onAbort = () => this.onAbort?.();
     this.chat.insertBeforeEditor(this.loader);
     this.loader.start();
 
-    this.appendRunMeta(`▶ task start  session=${sessionId}\n  cwd: ${cwd}`);
-    if (agentMd) {
-      const trunc = agentMd.truncated ? ', truncated' : '';
-      this.appendRunMeta(`📋 ${agentMd.path} (${agentMd.chars} chars${trunc})`);
-    }
-    if (memory) {
-      const total = memory.profile_chars + memory.requirements_chars;
-      const trunc = memory.truncated ? ', truncated' : '';
-      this.appendRunMeta(
-        `🧠 memory: profile ${memory.profile_chars} + requirements ${memory.requirements_chars} = ${total} chars${trunc}`,
-      );
-    }
-    if (llm) {
-      this.appendRunMeta(`🤖 llm: ${formatRunStartLlmSummary(llm)}`);
+    const lines = formatRunStartLines({
+      sessionId,
+      cwd,
+      agentMd,
+      memory,
+      llm,
+      verbose: this.prefs().verbose_run_header === true,
+    });
+    for (const line of lines) {
+      this.appendRunMeta(line);
     }
     this.tui.requestRender();
   }
@@ -240,11 +277,11 @@ export class PiEventPresenter {
     this.streamBuffer = '';
 
     if (reason === 'aborted') {
-      this.chat.appendText('⊗ run aborted (session saved)', true);
+      this.appendStyled('⊗ run aborted (session saved)', piSemantic.statusErr);
     } else if (reason === 'error') {
-      this.chat.appendText(`✗ run error: ${message ?? 'unknown'}`, true);
+      this.appendStyled(`✗ run error: ${message ?? 'unknown'}`, piSemantic.statusErr);
     } else {
-      this.chat.appendText('✓ run completed', true);
+      this.appendStyled('✓ run completed', piSemantic.statusOk);
     }
     this.tui.requestRender();
   }
@@ -252,7 +289,11 @@ export class PiEventPresenter {
   private handleAgentStep(event: AgentStepEvent): void {
     switch (event.type) {
       case 'turn_start':
-        this.appendRunMeta(`[turn ${event.turn}] LLM`);
+        this.lastTurn = event.turn;
+        this.onTurn?.(event.turn);
+        if (this.prefs().verbose_turns) {
+          this.appendRunMeta(`[turn ${event.turn}] LLM`);
+        }
         break;
       case 'token': {
         this.streamBuffer += event.delta;
@@ -266,24 +307,32 @@ export class PiEventPresenter {
         }
         break;
       case 'llm_retry':
-        this.appendRunMeta(formatLlmRetrySummary(event));
+        this.appendRunMeta(formatLlmRetrySummary(event), piSemantic.accent);
         break;
       case 'llm_fallback':
-        this.appendRunMeta(formatLlmFallbackSummary(event));
+        this.appendRunMeta(formatLlmFallbackSummary(event), piSemantic.accent);
         break;
       case 'compression':
-        this.appendRunMeta(formatCompressionSummary(event));
+        this.appendRunMeta(formatCompressionSummary(event), piSemantic.accent);
         break;
       case 'draft_discarded':
-        this.appendRunMeta(`⊗ draft discarded (${event.chars} chars)`);
+        this.appendRunMeta(`⊗ draft discarded (${event.chars} chars)`, piSemantic.toolErr);
         break;
       case 'loop_guard':
         this.appendRunMeta(
           `🔄 loop_guard: ${event.action}${event.reason ? ` (${event.reason})` : ''}`,
+          piSemantic.accent,
         );
         break;
       case 'turn_io':
-        if (isActionIoMetricsEnabled()) {
+        if (
+          isActionIoMetricsEnabled() &&
+          shouldShowIoMetric({
+            verboseIo: this.prefs().verbose_io === true,
+            pending: event.queue_depth,
+            flushMs: event.action_save_ms,
+          })
+        ) {
           this.appendRunMeta(`💾 ${formatTurnIoSummary(event)}`);
         }
         break;
@@ -294,7 +343,7 @@ export class PiEventPresenter {
         break;
       case 'tool_batch':
         if (event.parallel > 1) {
-          this.appendRunMeta(`⚡ parallel batch: ${event.parallel}/${event.total}`);
+          this.appendRunMeta(`⚡ parallel batch: ${event.parallel}/${event.total}`, piSemantic.accent);
         }
         break;
       case 'tool_call':
@@ -311,9 +360,13 @@ export class PiEventPresenter {
           if (failed) {
             this.appendRunMeta(
               formatGenericToolFailureLine(event.name, event.output, event.preview),
+              piSemantic.toolErr,
             );
           } else {
-            this.appendRunMeta(formatToolBreadcrumb(event.name, argsJson, event.output));
+            this.appendRunMeta(
+              formatToolBreadcrumb(event.name, argsJson, event.output),
+              piSemantic.toolOk,
+            );
           }
           break;
         }
@@ -329,15 +382,14 @@ export class PiEventPresenter {
         if (failed && !handled) {
           this.appendRunMeta(
             formatGenericToolFailureLine(event.name, event.output, event.preview),
+            piSemantic.toolErr,
           );
         }
         break;
       }
       case 'final': {
         const text = event.text;
-        if (shouldFormatFinal(text)) {
-          this.ensureStreamMd().setText(text);
-        } else if (text.trim()) {
+        if (shouldFormatFinal(text) || text.trim()) {
           this.ensureStreamMd().setText(text);
         }
         this.appendRunFooter(`[done @ turn ${event.turn}]`);
