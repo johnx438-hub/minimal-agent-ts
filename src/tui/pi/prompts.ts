@@ -94,6 +94,32 @@ export function createPiFatiguePrompter(
   };
 }
 
+/**
+ * Confirm abort of the current agent run (Esc when no other overlay).
+ * Esc on this panel cancels (keep running); Enter on Stop aborts.
+ */
+export function createPiAbortConfirm(tui: TUI): () => Promise<boolean> {
+  return async () => {
+    const item = await showSelectOverlay(
+      tui,
+      'Stop current run?\n  Background jobs keep running unless you cancel them separately.',
+      [
+        {
+          value: 'stop',
+          label: 'Stop run',
+          description: 'Abort main agent (session is saved)',
+        },
+        {
+          value: 'keep',
+          label: 'Keep running',
+          description: 'Dismiss and continue (Esc)',
+        },
+      ],
+    );
+    return item?.value === 'stop';
+  };
+}
+
 export async function runPiFirstRunConfirm(
   tui: TUI,
   getShell: () => boolean,

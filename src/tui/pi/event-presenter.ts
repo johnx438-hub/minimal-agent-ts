@@ -246,7 +246,7 @@ export class PiEventPresenter {
       this.tui,
       piSemantic.toolRunning,
       piSemantic.metaLine,
-      'Running… (Esc to abort)',
+      'Running… (Esc → confirm stop)',
     );
     this.loader.onAbort = () => this.onAbort?.();
     this.chat.insertBeforeEditor(this.loader);

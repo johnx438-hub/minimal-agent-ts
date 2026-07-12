@@ -9,6 +9,7 @@ import {
   type TUI,
 } from '@earendil-works/pi-tui';
 
+import { popOverlay, pushOverlay } from './overlay-stack.js';
 import { piChalk, piOverlayBgHex } from './themes.js';
 import {
   clampLineOffset,
@@ -195,15 +196,22 @@ export function showPaginatedTextOverlay(
   return new Promise((resolve) => {
     let settled = false;
     let handle: { hide: () => void; focus?: () => void } | null = null;
+    let stacked = false;
 
     const finish = (): void => {
       if (settled) return;
       settled = true;
       handle?.hide();
+      if (stacked) {
+        popOverlay();
+        stacked = false;
+      }
       resolve();
     };
 
     const panel = new PaginatedTextPanel(opts, finish, () => tui.requestRender());
+    pushOverlay();
+    stacked = true;
     handle = tui.showOverlay(panel);
     handle.focus?.();
     tui.requestRender();

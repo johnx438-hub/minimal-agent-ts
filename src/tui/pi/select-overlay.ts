@@ -8,6 +8,7 @@ import {
   type TUI,
 } from '@earendil-works/pi-tui';
 
+import { popOverlay, pushOverlay } from './overlay-stack.js';
 import { piChalk, piOverlayBgHex, piSelectListOverlayTheme } from './themes.js';
 
 export type PickerFinish = (item: SelectItem | null) => void;
@@ -106,12 +107,17 @@ export function showSelectOverlay(
   return new Promise((resolve) => {
     let settled = false;
     let handle: { hide: () => void; focus?: () => void } | null = null;
+    let stacked = false;
 
     const finish = (item: SelectItem | null): void => {
       if (settled) return;
       settled = true;
       abortSignal?.removeEventListener('abort', onAbort);
       handle?.hide();
+      if (stacked) {
+        popOverlay();
+        stacked = false;
+      }
       resolve(item);
     };
 
@@ -131,6 +137,8 @@ export function showSelectOverlay(
     };
 
     const panel = new SelectOverlayPanel(title, list, finish, opts?.onInfo, opts?.onKey);
+    pushOverlay();
+    stacked = true;
     handle = tui.showOverlay(panel);
     handle.focus?.();
     tui.requestRender();

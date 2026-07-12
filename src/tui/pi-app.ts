@@ -30,7 +30,9 @@ import { handlePiSlash, type PiSlashUiState } from './slash-handlers.js';
 import type { TuiAppOptions } from './types.js';
 import { PiChatLog } from './pi/chat-log.js';
 import { PiEventPresenter } from './pi/event-presenter.js';
+import { isOverlayOpen } from './pi/overlay-stack.js';
 import {
+  createPiAbortConfirm,
   createPiCwdChangeConfirm,
   createPiFatiguePrompter,
   createPiPermissionPrompter,
@@ -103,7 +105,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     `cwd:     ${runtime.config.cwd}`,
     `session: ${runtime.sessionLabel()}`,
     `shell:   ${uiState.shellOn ? 'on' : 'off'}   web: ${uiState.webOn ? 'on' : 'off'}`,
-    'Enter send · Esc abort · /help · /stop',
+    'Enter send · Esc stop (confirm) · /help · /stop',
   ];
   if (!runtime.hasActiveSession()) {
     bannerLines.push('(no session yet — /resume, /new, or first task)');
@@ -135,7 +137,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
   /** Docked footer: status + hint stay above the editor (TUI-E). */
   const statusBar = new Text('', 1, 0, piSemantic.statusBar);
   const hintLine = new Text(
-    'Enter send · Esc abort while running · / for commands',
+    'Enter send · Esc closes panels / confirms stop · / for commands',
     1,
     0,
     piSemantic.hint,
@@ -178,13 +180,46 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
   };
 
   let presenter!: PiEventPresenter;
+  let stopConfirmBusy = false;
+  const confirmAbort = createPiAbortConfirm(tui);
 
-  const requestStop = (): void => {
+  /** Immediate abort (after user confirmed, or hard path). */
+  const forceStop = (): void => {
     if (!runtime.isRunning()) return;
     mode = 'stopping';
     presenter.setStopping();
     say('… stopping', true);
     runtime.abort();
+    printStatus();
+  };
+
+  /**
+   * Soft stop: Esc / loader / /stop → confirm panel.
+   * Global Esc is ignored while any overlay is open (panel owns Esc).
+   * /stop and loader always open confirm (even if another overlay was open — rare).
+   */
+  const requestStop = (opts?: { fromGlobalEsc?: boolean }): void => {
+    void requestStopWithConfirm(opts);
+  };
+
+  const requestStopWithConfirm = async (opts?: {
+    fromGlobalEsc?: boolean;
+  }): Promise<void> => {
+    if (!runtime.isRunning()) return;
+    if (mode === 'stopping') return;
+    if (stopConfirmBusy) return;
+    // Esc while jobs/transcript/etc. is open: do not abort — overlay handles Esc.
+    if (opts?.fromGlobalEsc && isOverlayOpen()) return;
+
+    stopConfirmBusy = true;
+    try {
+      const shouldStop = await confirmAbort();
+      if (shouldStop && runtime.isRunning()) {
+        forceStop();
+      }
+    } finally {
+      stopConfirmBusy = false;
+    }
   };
 
   presenter = new PiEventPresenter({
@@ -357,12 +392,15 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
   const kb = getKeybindings();
   tui.addInputListener((data) => {
     if (mode !== 'running' && mode !== 'stopping') return { data };
+    // Overlay has focus: never steal Esc for abort (fixes jobs/transcript conflict).
+    if (isOverlayOpen()) return { data };
     if (kb.matches(data, 'tui.select.cancel')) {
-      requestStop();
+      requestStop({ fromGlobalEsc: true });
       return { consume: true };
     }
+    // Ctrl+C while running: soft confirm (not process exit).
     if (kb.matches(data, 'tui.input.copy')) {
-      requestStop();
+      requestStop({ fromGlobalEsc: true });
       return { consume: true };
     }
     return { data };
@@ -370,7 +408,8 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
 
   process.on('SIGINT', () => {
     if (runtime.isRunning()) {
-      requestStop();
+      // Hard path: terminal SIGINT skips confirm (escape hatch).
+      forceStop();
       return;
     }
     runtime.saveIfDirty();

@@ -98,7 +98,7 @@ export async function handlePiSlash(
       result.armWorkflow !== undefined ||
       result.runWorkflow)
   ) {
-    say('Busy — /stop or Esc first');
+    say('Busy — /stop or Esc (confirm) first');
     resumeEditor();
     return;
   }
