@@ -196,7 +196,7 @@ export function buildEarlyContextSummary(tasks: TaskSummaryDoc[]): ChatMessage {
   };
 }
 
-function buildMidContextSummary(task: TaskSummaryDoc): ChatMessage {
+export function buildMidContextSummary(task: TaskSummaryDoc): ChatMessage {
   return {
     role: 'user',
     content:
@@ -204,6 +204,20 @@ function buildMidContextSummary(task: TaskSummaryDoc): ChatMessage {
       `Files: ${(task.files_touched ?? []).join(', ') || '(none)'}\n` +
       `Tools: ${(task.tools_used ?? []).join(', ') || '(none)'}\n` +
       `Current work: ${task.current_work}`,
+  };
+}
+
+export interface LayerBudgets {
+  recent: number;
+  mid: number;
+  early: number;
+}
+
+export function layerBudgets(budget: BudgetConfig): LayerBudgets {
+  return {
+    recent: Math.min(budget.total * budget.recent_pct, budget.recent_max_tokens),
+    mid: budget.total * budget.mid_pct,
+    early: budget.total * budget.early_pct,
   };
 }
 
@@ -217,21 +231,31 @@ export function buildContext(session: SessionFile, budget: BudgetConfig): ChatMe
   }
 
   const { recent, mid, early } = selectTaskLayers(session.tasks, budget);
+  const { recent: recentBudget, mid: midBudget, early: earlyBudget } = layerBudgets(budget);
   const context: ChatMessage[] = [];
-  const recentBudget = Math.min(
-    budget.total * budget.recent_pct,
-    budget.recent_max_tokens,
-  );
-  let recentMsgTokens = 0;
+  const midOverflow: TaskSummaryDoc[] = [];
+  let midMsgTokens = 0;
 
   for (const task of mid) {
-    context.push(buildMidContextSummary(task));
+    const summaryMsg = buildMidContextSummary(task);
+    const msgTokens = estimateTokens([summaryMsg]);
+    if (midMsgTokens + msgTokens > midBudget) {
+      midOverflow.push(task);
+      continue;
+    }
+    context.push(summaryMsg);
+    midMsgTokens += msgTokens;
   }
 
-  if (early.length > 0) {
-    context.unshift(buildEarlyContextSummary(early));
+  const earlyTasks = [...early, ...midOverflow];
+  if (earlyTasks.length > 0) {
+    const earlySummary = buildEarlyContextSummary(earlyTasks);
+    if (estimateTokens([earlySummary]) <= earlyBudget) {
+      context.unshift(earlySummary);
+    }
   }
 
+  let recentMsgTokens = 0;
   for (const task of [...recent].reverse()) {
     const msg: ChatMessage = {
       role: 'user',

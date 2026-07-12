@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { buildContext, createBudgetConfig } from '../src/context/budget.js';
+import {
+  buildContext,
+  createBudgetConfig,
+  estimateTokens,
+  layerBudgets,
+} from '../src/context/budget.js';
 import { buildTaskSummaryMessages } from '../src/context/heavy-compression.js';
 import type { SessionFile, TaskSummaryDoc } from '../src/types.js';
 
@@ -56,6 +61,70 @@ describe('buildContext mid layer', () => {
       midSummaries.length > 0,
       `mid layer should survive a large recent layer; got ${midSummaries.length} mid summaries`,
     );
+  });
+});
+
+describe('buildContext token budgets', () => {
+  const savedContextLimit = process.env.MAX_CONTEXT_TOKENS;
+
+  function restoreContextLimit(): void {
+    if (savedContextLimit === undefined) {
+      delete process.env.MAX_CONTEXT_TOKENS;
+    } else {
+      process.env.MAX_CONTEXT_TOKENS = savedContextLimit;
+    }
+  }
+
+  it('caps mid summaries by mid_pct token budget', () => {
+    process.env.MAX_CONTEXT_TOKENS = '30000';
+    const budget = createBudgetConfig('unknown-model');
+    const { mid: midBudget } = layerBudgets(budget);
+
+    const tasks = [
+      ...Array.from({ length: 10 }, (_, i) => makeTask(`mid-${i}`, 'm'.repeat(3_000))),
+      makeTask('recent-only', 'r'.repeat(8_000)),
+    ];
+    const session: SessionFile = {
+      session_id: 's1',
+      tasks,
+      current_messages: [{ role: 'user', content: 'current' }],
+    };
+
+    try {
+      const built = buildContext(session, budget);
+      const midSummaries = built.filter((m) => (m.content ?? '').includes('[Task mid-'));
+      const midTokens = estimateTokens(midSummaries);
+
+      assert.ok(midSummaries.length < 10);
+      assert.ok(midTokens <= midBudget);
+    } finally {
+      restoreContextLimit();
+    }
+  });
+
+  it('rolls mid overflow into early aggregate when early_pct allows', () => {
+    process.env.MAX_CONTEXT_TOKENS = '30000';
+    const budget = createBudgetConfig('unknown-model');
+
+    const tasks = [
+      ...Array.from({ length: 6 }, (_, i) => makeTask(`mid-${i}`, 'm'.repeat(3_000))),
+      makeTask('recent-only', 'r'.repeat(8_000)),
+    ];
+    const session: SessionFile = {
+      session_id: 's1',
+      tasks,
+      current_messages: [{ role: 'user', content: 'current' }],
+    };
+
+    try {
+      const built = buildContext(session, budget);
+      const early = built.find((m) => (m.content ?? '').startsWith('[Earlier context]'));
+
+      assert.ok(early, 'mid overflow should appear in early aggregate');
+      assert.match(early.content ?? '', /additional tasks completed/);
+    } finally {
+      restoreContextLimit();
+    }
   });
 });
 
