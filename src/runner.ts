@@ -102,8 +102,14 @@ import {
   type MergedModelListSource,
 } from './llm-models-remote.js';
 import { listReasoningLevels, resolveReasoningPatch } from './llm-reasoning.js';
+import {
+  buildUserTaskMessage,
+  createMessageBridge,
+  type MessageBridge,
+} from './hooks/message-bridge.js';
 
 export type { SessionLlmOverride };
+export type { MessageBridge } from './hooks/message-bridge.js';
 
 export interface SessionProfileChoice {
   name: string;
@@ -206,6 +212,11 @@ export interface AgentRuntimeOptions {
   loadHandoffFrom?: string;
   /** TUI: do not create a session until first task, /new, or /resume. */
   deferSession?: boolean;
+  /**
+   * Optional MessageBridge (L3). Default empty bridge (emit is free with zero sinks).
+   * Does not replace RuntimeEvent / --json-events.
+   */
+  messageBridge?: MessageBridge;
 }
 
 export class AgentRuntime {
@@ -220,6 +231,7 @@ export class AgentRuntime {
   private running = false;
   private readonly jsonEvents: boolean;
   private readonly useStream: boolean;
+  private readonly messageBridge: MessageBridge;
   readonly permissionGate = new PermissionGate();
   private workflowConfirmFn?: WorkflowConfirmFn;
   private pendingHandoffPrefix: string | null = null;
@@ -242,6 +254,7 @@ export class AgentRuntime {
     this.pluginConfig = built.pluginConfig;
     this.jsonEvents = opts.jsonEvents ?? false;
     this.useStream = env('STREAM', '1') !== '0';
+    this.messageBridge = opts.messageBridge ?? createMessageBridge();
     this.permissionGate.setLifecycle((event) => this.emit(event));
 
     configureActionWriteQueue({
@@ -376,6 +389,16 @@ export class AgentRuntime {
   onEvent(listener: RuntimeListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /** L3 MessageBridge (IM / multi-UI reserved). Zero sinks by default. */
+  getMessageBridge(): MessageBridge {
+    return this.messageBridge;
+  }
+
+  /** Emit user task full text to MessageBridge (H1). No-op when no sinks. */
+  private emitBridgeUserTask(sessionId: string, prompt: string): void {
+    this.messageBridge.emit(buildUserTaskMessage(sessionId, prompt));
   }
 
   private emit(event: RuntimeEvent): void {
@@ -1028,6 +1051,7 @@ export class AgentRuntime {
     const wsMeta = workspacePromptRunStartMeta(this.beginRunWorkspacePrompt());
     this.emitRunStart(session.session_id, signal, wsMeta);
     setActiveActionSessionId(session.session_id);
+    this.emitBridgeUserTask(session.session_id, prompt);
 
     try {
       this.emit(workflowConfirmStartEvent(checkpoint));
@@ -1150,6 +1174,8 @@ export class AgentRuntime {
     const wsMeta = workspacePromptRunStartMeta(this.beginRunWorkspacePrompt());
     this.emitRunStart(session.session_id, signal, wsMeta);
     setActiveActionSessionId(session.session_id);
+    // H1: user task as submitted (before handoff prefix injection into the model).
+    this.emitBridgeUserTask(session.session_id, prompt);
 
     const runConfig = this.buildRunConfig(signal);
 
