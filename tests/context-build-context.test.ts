@@ -18,6 +18,23 @@ function makeTask(id: string, intentPad = ''): TaskSummaryDoc {
   };
 }
 
+describe('buildContext recent layer', () => {
+  it('includes every recent-layer task up to budget, not a hard cap of three', () => {
+    const budget = createBudgetConfig('deepseek/deepseek-chat');
+    const tasks = Array.from({ length: 6 }, (_, i) => makeTask(`recent-${i}`));
+    const session: SessionFile = {
+      session_id: 's1',
+      tasks,
+      current_messages: [{ role: 'user', content: 'current' }],
+    };
+
+    const built = buildContext(session, budget);
+    const recentMsgs = built.filter((m) => (m.content ?? '').startsWith('[Recent task '));
+
+    assert.equal(recentMsgs.length, 6);
+  });
+});
+
 describe('buildContext mid layer', () => {
   it('keeps mid tasks when recent layer is large', () => {
     const budget = createBudgetConfig('deepseek/deepseek-chat');

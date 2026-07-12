@@ -159,71 +159,89 @@ export function shouldCompress(currentTokens: number, budget: BudgetConfig): boo
   return shouldRunHeavyCompression(currentTokens, budget, false);
 }
 
+export interface TaskLayers {
+  recent: TaskSummaryDoc[];
+  mid: TaskSummaryDoc[];
+  early: TaskSummaryDoc[];
+}
+
+/** Split session tasks into recent / mid / early layers (most-recent-first selection). */
+export function selectTaskLayers(tasks: TaskSummaryDoc[], budget: BudgetConfig): TaskLayers {
+  const allTasks = [...tasks].reverse();
+  const recentBudget = Math.min(
+    budget.total * budget.recent_pct,
+    budget.recent_max_tokens,
+  );
+
+  const recent: TaskSummaryDoc[] = [];
+  let recentSelectionTokens = 0;
+  for (const task of allTasks) {
+    const taskTokens = estimateSummaryTokens(task) * 3;
+    if (recentSelectionTokens + taskTokens > recentBudget) break;
+    recent.push(task);
+    recentSelectionTokens += taskTokens;
+  }
+
+  const mid = allTasks.slice(recent.length).slice(0, budget.mid_max_summaries);
+  const early = allTasks.slice(recent.length + mid.length);
+  return { recent, mid, early };
+}
+
+export function buildEarlyContextSummary(tasks: TaskSummaryDoc[]): ChatMessage {
+  return {
+    role: 'user',
+    content:
+      `[Earlier context] ${tasks.length} additional tasks completed. ` +
+      `Topics: ${[...new Set(tasks.flatMap((t) => t.tech_concepts ?? []))].join(', ') || '(none)'}`,
+  };
+}
+
+function buildMidContextSummary(task: TaskSummaryDoc): ChatMessage {
+  return {
+    role: 'user',
+    content:
+      `[Task ${task.task_id}] ${task.user_intent}\n` +
+      `Files: ${(task.files_touched ?? []).join(', ') || '(none)'}\n` +
+      `Tools: ${(task.tools_used ?? []).join(', ') || '(none)'}\n` +
+      `Current work: ${task.current_work}`,
+  };
+}
+
 /**
  * Build context messages from session history using sliding window.
  * Returns compressed messages that fit within budget.
  */
 export function buildContext(session: SessionFile, budget: BudgetConfig): ChatMessage[] {
-  const allTasks = [...session.tasks].reverse(); // Most recent first
-  if (allTasks.length === 0) {
+  if (session.tasks.length === 0) {
     return session.current_messages;
   }
-  
+
+  const { recent, mid, early } = selectTaskLayers(session.tasks, budget);
   const context: ChatMessage[] = [];
-  let usedTokens = 0;
-  
   const recentBudget = Math.min(
     budget.total * budget.recent_pct,
-    budget.recent_max_tokens
+    budget.recent_max_tokens,
   );
-  const midBudget = budget.total * budget.mid_pct;
-  
-  // Layer 1: Recent - full task messages (up to recent_budget or recent_max_tokens)
-  let recentTasks: TaskSummaryDoc[] = [];
-  for (const task of allTasks) {
-    const taskTokens = estimateSummaryTokens(task) * 3; // Estimate full task is ~3x summary
-    if (usedTokens + taskTokens > recentBudget) break;
-    
-    recentTasks.push(task);
-    usedTokens += taskTokens;
+  let recentMsgTokens = 0;
+
+  for (const task of mid) {
+    context.push(buildMidContextSummary(task));
   }
-  
-  // Layer 2: Mid-term - task summaries (up to mid_max_summaries after recent layer)
-  const midTasks = allTasks
-    .slice(recentTasks.length)
-    .slice(0, budget.mid_max_summaries);
-  for (const task of midTasks) {
-    const summaryMsg: ChatMessage = {
-      role: 'user',
-      content: `[Task ${task.task_id}] ${task.user_intent}\n` +
-               `Files: ${(task.files_touched ?? []).join(', ') || '(none)'}\n` +
-               `Tools: ${(task.tools_used ?? []).join(', ') || '(none)'}\n` +
-               `Current work: ${task.current_work}`,
-    };
-    
-    context.push(summaryMsg);
-    usedTokens += estimateTokens([summaryMsg]);
+
+  if (early.length > 0) {
+    context.unshift(buildEarlyContextSummary(early));
   }
-  
-  // Layer 3: Early - session-level summary (if more tasks remain)
-  const remainingTasks = allTasks.slice(recentTasks.length + midTasks.length);
-  if (remainingTasks.length > 0) {
-    const earlySummary: ChatMessage = {
-      role: 'user',
-      content: `[Earlier context] ${remainingTasks.length} additional tasks completed. ` +
-               `Topics: ${[...new Set(remainingTasks.flatMap(t => t.tech_concepts))].join(', ')}`,
-    };
-    context.unshift(earlySummary); // Add to beginning
-  }
-  
-  // Add recent full messages (simulated - in Phase 2+, these would be actual action_blocks)
-  for (const task of recentTasks.slice(-3)) { // Last 3 tasks as "recent"
+
+  for (const task of [...recent].reverse()) {
     const msg: ChatMessage = {
       role: 'user',
       content: `[Recent task ${task.task_id}] ${task.current_work}`,
     };
+    const msgTokens = estimateTokens([msg]);
+    if (recentMsgTokens + msgTokens > recentBudget) break;
     context.push(msg);
+    recentMsgTokens += msgTokens;
   }
-  
+
   return [...context, ...session.current_messages];
 }

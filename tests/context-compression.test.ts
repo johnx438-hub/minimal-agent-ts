@@ -12,7 +12,8 @@ import {
   hasCompressionNotice,
   runCompressionEvent,
 } from '../src/context-policy.js';
-import type { ChatMessage } from '../src/types.js';
+import type { ChatMessage, SessionFile, TaskSummaryDoc } from '../src/types.js';
+import { TASK_SUMMARY_PREFIX } from '../src/context/estimate.js';
 
 const budget = createBudgetConfig('deepseek/deepseek-chat');
 
@@ -87,6 +88,69 @@ describe('runCompressionEvent', () => {
       userCountAfterFirst,
       'repeat compression must not replay user task',
     );
+  });
+
+  it('injects mid/early summaries only, not recent tasks still in context', () => {
+    const savedContextLimit = process.env.MAX_CONTEXT_TOKENS;
+    process.env.MAX_CONTEXT_TOKENS = '30000';
+    const smallBudget = createBudgetConfig('unknown-model');
+
+    const userTask: ChatMessage = { role: 'user', content: 'do the thing' };
+    const makeTask = (id: string): TaskSummaryDoc => ({
+      task_id: id,
+      user_intent: `intent ${id}`,
+      user_messages: [],
+      files_touched: [`${id}.ts`],
+      tech_concepts: ['ts'],
+      tools_used: ['read_file'],
+      pending_tasks: [],
+      current_work: `work ${id}`,
+    });
+
+    const session: SessionFile = {
+      session_id: 's1',
+      tasks: [
+        makeTask('mid-old'),
+        makeTask('mid-old-2'),
+        {
+          ...makeTask('recent-live'),
+          user_intent: `intent recent-live${'z'.repeat(7_100)}`,
+        },
+      ],
+      current_messages: [],
+    };
+
+    const messages: ChatMessage[] = [
+      { role: 'system', content: 'sys' },
+      {
+        role: 'user',
+        content: fillerTokens(heavyCompressionThreshold(smallBudget, false) + 1000),
+      },
+    ];
+
+    try {
+      runCompressionEvent({
+        messages,
+        session,
+        currentTurn: 3,
+        budget: smallBudget,
+        userTask,
+      });
+
+      const summaryBodies = messages
+        .filter((m) => (m.content ?? '').startsWith(TASK_SUMMARY_PREFIX))
+        .map((m) => m.content ?? '');
+
+      assert.ok(summaryBodies.some((c) => c.includes('mid-old')));
+      assert.ok(summaryBodies.some((c) => c.includes('mid-old-2')));
+      assert.ok(!summaryBodies.some((c) => c.includes('recent-live')));
+    } finally {
+      if (savedContextLimit === undefined) {
+        delete process.env.MAX_CONTEXT_TOKENS;
+      } else {
+        process.env.MAX_CONTEXT_TOKENS = savedContextLimit;
+      }
+    }
   });
 
   it('does not run repeat compression below 90% usable', () => {

@@ -1,5 +1,7 @@
 import {
+  buildEarlyContextSummary,
   estimateTokens,
+  selectTaskLayers,
   shouldRunHeavyCompression,
   type BudgetConfig,
 } from './budget.js';
@@ -73,10 +75,16 @@ export function runCompressionEvent(opts: CompressionEventOptions): boolean {
   }
 
   if (session && session.tasks.length > 0 && !hasTaskSummaryBlock(messages)) {
-    const summaries = buildTaskSummaryMessages(session.tasks);
-    const systemIdx = messages.findIndex((m) => m.role === 'system');
-    const insertAt = systemIdx >= 0 ? systemIdx + 1 : 0;
-    messages.splice(insertAt, 0, ...summaries);
+    const { mid, early } = selectTaskLayers(session.tasks, budget);
+    const summaries: ChatMessage[] = [
+      ...buildTaskSummaryMessages(mid),
+      ...(early.length > 0 ? [buildEarlyContextSummary(early)] : []),
+    ];
+    if (summaries.length > 0) {
+      const systemIdx = messages.findIndex((m) => m.role === 'system');
+      const insertAt = systemIdx >= 0 ? systemIdx + 1 : 0;
+      messages.splice(insertAt, 0, ...summaries);
+    }
   }
 
   if (!isRepeat) {
