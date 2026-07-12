@@ -186,7 +186,7 @@ flowchart TD
 | L2-2 | 迁 `assemble.ts` | ✅ |
 | L2-3 | 迁 `prune.ts` | ✅ |
 | L2-4 | 迁 `pointer-compact.ts` | ✅ |
-| L2-5 | 迁 `heavy-compression.ts` + `estimate.ts`；`context-policy.ts` 瘦成 wrapper | ⬜ |
+| L2-5 | 迁 `heavy-compression.ts` + `estimate.ts`；`context-policy.ts` 瘦成 wrapper | ✅ |
 | L2-6 |（可选）`TurnPipelineResult` 观测 / 删死代码 | ⬜ |
 
 **原则**：每 PR 只动一个 stage；不改 prune 门槛与 compression 比例；420+ tests 全绿。
@@ -345,6 +345,7 @@ interface MessageSink {
 
 | 日期 | 说明 |
 |------|------|
+| 2026-07-12 | L2-5 `estimate.ts` + `heavy-compression.ts`；`context-policy` 纯 re-export wrapper |
 | 2026-07-12 | L2-4 `context/pointer-compact.ts` 迁入；`context-policy` re-export |
 | 2026-07-12 | L2-3 `context/prune.ts` 迁入；`protectedIndices`/`isImmune` 暂 export 供 pointer-compact |
 | 2026-07-12 | L2-2 `context/assemble.ts` 迁入；`context-policy` re-export |

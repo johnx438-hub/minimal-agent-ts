@@ -1,4 +1,4 @@
-import { runCompressionEvent } from '../context-policy.js';
+import { runCompressionEvent } from './heavy-compression.js';
 import { maybeCompactPointerCards } from './pointer-compact.js';
 import { maybePrune } from './prune.js';
 import { runPointerizeStage } from './pointerize-stage.js';
@@ -10,7 +10,7 @@ import {
 
 /**
  * Turn-end context pipeline (L2-0 scaffold).
- * Stages delegate to context modules / pointerize until L2-5 file split.
+ * Turn-end context pipeline: pointerize → prune → pointer-compact → heavy compression.
  */
 export function runTurnEndPipeline(ctx: TurnContext): TurnPipelineResult {
   if (ctx.turn <= 1) {

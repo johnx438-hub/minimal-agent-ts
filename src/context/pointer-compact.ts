@@ -5,7 +5,7 @@ import {
   type BudgetConfig,
 } from './budget.js';
 import { assembleApiMessages } from './assemble.js';
-import { isImmune, protectedIndices } from './prune.js';
+import { isImmune, protectedIndices } from './estimate.js';
 import type { ChatMessage } from '../types.js';
 
 /** Max pointer cards downgraded per turn (secondary compact). */
