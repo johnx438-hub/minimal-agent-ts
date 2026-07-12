@@ -2,7 +2,7 @@ import { awaitWithAbort, resolveAbortSignal } from './agent-abort.js';
 import { beginTurnIo, buildTurnIoEvent } from './action-io-metrics.js';
 import { saveAction } from './action-store.js';
 import { flushActionWritesSync } from './action-write-queue.js';
-import { runTurnEndPipeline } from './context/pipeline.js';
+import { runTurnEndCompression } from './context/pipeline.js';
 import { assembleApiMessages } from './context/assemble.js';
 import { invokeLlmTurnWithFallback } from './llm-fallback.js';
 import {
@@ -77,42 +77,6 @@ const ABORTED_TOOL_OUTPUT = '[aborted]';
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) {
     throw new DOMException('Aborted', 'AbortError');
-  }
-}
-
-function applyTurnEndCompression(opts: {
-  messages: ChatMessage[];
-  turn: number;
-  config: AgentConfig;
-  session?: SessionFile;
-  budget: BudgetConfig;
-  userTask: ChatMessage;
-  onStep?: RunAgentOptions['onStep'];
-}): void {
-  const { messages, turn, config, session, budget, userTask, onStep } = opts;
-
-  const result = runTurnEndPipeline({
-    messages,
-    turn,
-    budget,
-    userTask,
-    session,
-    keepInlineTurns: config.keepInlineTurns ?? 2,
-    previewPolicy: config.previewPolicy ?? DEFAULT_PREVIEW_POLICY,
-  });
-
-  if (result.pruned > 0) {
-    onStep?.({ type: 'compression', turn, pruned: result.pruned });
-  }
-  if (result.pointer_compacted > 0) {
-    onStep?.({
-      type: 'compression',
-      turn,
-      pointer_compacted: result.pointer_compacted,
-    });
-  }
-  if (result.heavy_compression) {
-    onStep?.({ type: 'compression', turn });
   }
 }
 
@@ -284,15 +248,18 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         reason: 'repeated tool calls with no progress',
       });
 
-      applyTurnEndCompression({
-        messages,
-        turn,
-        config,
-        session,
-        budget,
-        userTask,
+      runTurnEndCompression(
+        {
+          messages,
+          turn,
+          budget,
+          userTask,
+          session,
+          keepInlineTurns: config.keepInlineTurns ?? 2,
+          previewPolicy: config.previewPolicy ?? DEFAULT_PREVIEW_POLICY,
+        },
         onStep,
-      });
+      );
 
       const { message, finishReason, usage } = await invokeLlmTurnWithFallback({
         turn,
@@ -339,15 +306,18 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
       continue;
     }
 
-    applyTurnEndCompression({
-      messages,
-      turn,
-      config,
-      session,
-      budget,
-      userTask,
+    runTurnEndCompression(
+      {
+        messages,
+        turn,
+        budget,
+        userTask,
+        session,
+        keepInlineTurns: config.keepInlineTurns ?? 2,
+        previewPolicy: config.previewPolicy ?? DEFAULT_PREVIEW_POLICY,
+      },
       onStep,
-    });
+    );
 
     const toolDefs = getToolDefinitions(toolConfig);
     const { message, finishReason, usage } = await invokeLlmTurnWithFallback({

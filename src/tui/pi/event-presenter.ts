@@ -6,6 +6,7 @@ import {
   isActionIoMetricsEnabled,
 } from '../../action-io-metrics.js';
 import {
+  formatCompressionSummary,
   formatLlmFallbackSummary,
   formatLlmRetrySummary,
   formatRunStartLlmSummary,
@@ -271,13 +272,7 @@ export class PiEventPresenter {
         this.appendRunMeta(formatLlmFallbackSummary(event));
         break;
       case 'compression':
-        this.appendRunMeta(
-          event.pruned
-            ? `📦 pruned ${event.pruned} messages`
-            : event.pointer_compacted
-              ? `📦 compacted ${event.pointer_compacted} pointer cards`
-              : '📦 compression: summaries + replay',
-        );
+        this.appendRunMeta(formatCompressionSummary(event));
         break;
       case 'draft_discarded':
         this.appendRunMeta(`⊗ draft discarded (${event.chars} chars)`);

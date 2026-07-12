@@ -56,7 +56,7 @@ export function isImmune(msg: ChatMessage): boolean {
   return false;
 }
 
-export function canPrune(msg: ChatMessage): boolean {
+function canPrune(msg: ChatMessage): boolean {
   if (msg.compacted_at) return false;
   if (msg.pointerized) return false;
   if (isImmune(msg)) return false;

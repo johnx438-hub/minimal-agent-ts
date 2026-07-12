@@ -1,3 +1,5 @@
+import type { CompressionStepEvent } from './events.js';
+
 export interface CompressionFatigueConfig {
   /** Turns to look back from the latest compression event. */
   windowTurns?: number;
@@ -32,9 +34,14 @@ export class CompressionFatigueTracker {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
-  onCompression(turn: number, pruned = 0): void {
-    this.maxTurn = Math.max(this.maxTurn, turn);
-    this.records.push({ turn, pruned });
+  onCompression(event: CompressionStepEvent): void {
+    const pruned = event.pruned + event.pointer_compacted;
+    if (pruned === 0 && !event.heavy_compression) {
+      return;
+    }
+
+    this.maxTurn = Math.max(this.maxTurn, event.turn);
+    this.records.push({ turn: event.turn, pruned });
     const cutoff = this.maxTurn - this.config.windowTurns;
     this.records = this.records.filter((r) => r.turn >= cutoff);
   }

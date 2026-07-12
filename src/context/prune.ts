@@ -1,5 +1,12 @@
-import { estimatePruneSavings, protectedIndices, canPrune } from './estimate.js';
+import { estimatePruneSavings, isImmune, protectedIndices } from './estimate.js';
 import type { ChatMessage } from '../types.js';
+
+function canPrune(msg: ChatMessage): boolean {
+  if (msg.compacted_at) return false;
+  if (msg.pointerized) return false;
+  if (isImmune(msg)) return false;
+  return msg.role === 'tool' || msg.role === 'assistant';
+}
 
 /** OpenCode-style prune thresholds (Phase 2c). */
 export const PRUNE_MIN_SAVINGS = 20_000;

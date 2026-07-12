@@ -91,10 +91,11 @@ export function materializePriorTurnTools(
   messages: ChatMessage[],
   beforeTurn: number,
   opts?: PointerizeOptions,
-): void {
+): number {
   const keepInlineTurns = Math.max(0, opts?.keepInlineTurns ?? 0);
   const pointerizeBeforeTurn = beforeTurn - keepInlineTurns;
   const previewPolicy = opts?.previewPolicy ?? DEFAULT_PREVIEW_POLICY;
+  let pointerized = 0;
 
   for (const msg of messages) {
     if (msg.role !== 'tool' || msg.pointerized || !msg.action_id) {
@@ -113,5 +114,8 @@ export function materializePriorTurnTools(
     msg.content = buildPointerCard(block, { truncated, previewPolicy });
     msg.pointerized = true;
     block.pointerized = true;
+    pointerized++;
   }
+
+  return pointerized;
 }

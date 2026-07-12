@@ -15,12 +15,14 @@ export interface TurnContext {
 
 /** Stage counters emitted by runTurnEndPipeline (maps to compression events). */
 export interface TurnPipelineResult {
+  pointerized: number;
   pruned: number;
   pointer_compacted: number;
   heavy_compression: boolean;
 }
 
 export const EMPTY_PIPELINE_RESULT: TurnPipelineResult = {
+  pointerized: 0,
   pruned: 0,
   pointer_compacted: 0,
   heavy_compression: false,

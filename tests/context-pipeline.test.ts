@@ -5,9 +5,15 @@ import {
   createBudgetConfig,
   heavyCompressionThreshold,
 } from '../src/context-budget.js';
-import { runTurnEndPipeline } from '../src/context/pipeline.js';
+import {
+  buildCompressionStepEvent,
+  emitTurnPipelineSteps,
+  isTurnPipelineNoop,
+  runTurnEndPipeline,
+} from '../src/context/pipeline.js';
 import { EMPTY_PIPELINE_RESULT } from '../src/context/types.js';
 import { appendCompressionNotice } from '../src/context-policy.js';
+import type { AgentStepEvent } from '../src/events.js';
 import type { ChatMessage } from '../src/types.js';
 
 const budget = createBudgetConfig('deepseek/deepseek-chat');
@@ -36,6 +42,8 @@ describe('context pipeline', () => {
     });
 
     assert.deepEqual(result, EMPTY_PIPELINE_RESULT);
+    assert.equal(isTurnPipelineNoop(result), true);
+    assert.equal(buildCompressionStepEvent(1, result), null);
   });
 
   it('runs prune and heavy compression stages on turn > 1', () => {
@@ -93,5 +101,33 @@ describe('context pipeline', () => {
     });
 
     assert.equal(result.heavy_compression, false);
+  });
+
+  it('emits one compression event with full TurnPipelineResult snapshot', () => {
+    const result = {
+      pointerized: 2,
+      pruned: 3,
+      pointer_compacted: 1,
+      heavy_compression: true,
+    };
+    const events: AgentStepEvent[] = [];
+    emitTurnPipelineSteps(5, result, (event) => events.push(event));
+
+    assert.deepEqual(events, [
+      {
+        type: 'compression',
+        turn: 5,
+        pointerized: 2,
+        pruned: 3,
+        pointer_compacted: 1,
+        heavy_compression: true,
+      },
+    ]);
+  });
+
+  it('does not emit compression event when pipeline is noop', () => {
+    const events: AgentStepEvent[] = [];
+    emitTurnPipelineSteps(2, EMPTY_PIPELINE_RESULT, (event) => events.push(event));
+    assert.deepEqual(events, []);
   });
 });

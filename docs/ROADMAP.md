@@ -143,7 +143,7 @@ ToolRegistry（编排）
 迁移顺序：**MCP → spawn → skills → cli → builtin**；接口 `load()` + `getDefinitions()` + `execute()`。  
 `context-budget.ts` / `context-policy.ts` 等旧 import 路径保留。
 
-### L2 — context-policy → Pipeline（进行中）
+### L2 — context-policy → Pipeline（✅ L2-0～L2-6 完成）
 
 **现状**（~776 行）：`context-budget.ts`（budget/resume）、`context-policy.ts`（prune/compact/heavy/assemble）、`pointerize.ts`（turn 末指针化）。`agent.ts` 的 `applyTurnEndCompression` 已委托 `runTurnEndPipeline`（L2-0）。
 
@@ -187,7 +187,7 @@ flowchart TD
 | L2-3 | 迁 `prune.ts` | ✅ |
 | L2-4 | 迁 `pointer-compact.ts` | ✅ |
 | L2-5 | 迁 `heavy-compression.ts` + `estimate.ts`；`context-policy.ts` 瘦成 wrapper | ✅ |
-| L2-6 |（可选）`TurnPipelineResult` 观测 / 删死代码 | ⬜ |
+| L2-6 | `TurnPipelineResult` 观测 + 删死代码 | ✅ |
 
 **原则**：每 PR 只动一个 stage；不改 prune 门槛与 compression 比例；420+ tests 全绿。
 
@@ -345,6 +345,7 @@ interface MessageSink {
 
 | 日期 | 说明 |
 |------|------|
+| 2026-07-12 | L2-6 统一 compression step 事件；`runTurnEndCompression`；删 `applyTurnEndCompression` |
 | 2026-07-12 | L2-5 `estimate.ts` + `heavy-compression.ts`；`context-policy` 纯 re-export wrapper |
 | 2026-07-12 | L2-4 `context/pointer-compact.ts` 迁入；`context-policy` re-export |
 | 2026-07-12 | L2-3 `context/prune.ts` 迁入；`protectedIndices`/`isImmune` 暂 export 供 pointer-compact |

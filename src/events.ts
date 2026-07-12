@@ -68,7 +68,14 @@ export type AgentStepEvent =
       /** Rich TUI payload (e.g. write_file diff); not stored in agent messages. */
       display?: string;
     }
-  | { type: 'compression'; turn: number; pruned?: number; pointer_compacted?: number }
+  | {
+      type: 'compression';
+      turn: number;
+      pointerized: number;
+      pruned: number;
+      pointer_compacted: number;
+      heavy_compression: boolean;
+    }
   | { type: 'draft_discarded'; turn: number; chars: number }
   | {
       type: 'loop_guard';
@@ -227,6 +234,25 @@ export function formatLlmFallbackSummary(event: {
   reason: string;
 }): string {
   return `⇢ LLM fallback ${event.from_profile}/${event.from_model} → ${event.to_profile}/${event.to_model} (${event.reason})`;
+}
+
+export type CompressionStepEvent = Extract<AgentStepEvent, { type: 'compression' }>;
+
+export function formatCompressionSummary(event: CompressionStepEvent): string {
+  const parts: string[] = [];
+  if (event.pointerized > 0) {
+    parts.push(`pointerized ${event.pointerized}`);
+  }
+  if (event.pruned > 0) {
+    parts.push(`pruned ${event.pruned}`);
+  }
+  if (event.pointer_compacted > 0) {
+    parts.push(`compacted ${event.pointer_compacted} pointer cards`);
+  }
+  if (event.heavy_compression) {
+    parts.push('summaries + notice + replay');
+  }
+  return parts.length > 0 ? `📦 ${parts.join(', ')}` : '📦 compression';
 }
 
 export function formatToolPlanSummary(event: {

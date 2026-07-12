@@ -4,14 +4,15 @@ import { basename, isAbsolute, resolve } from 'node:path';
 import { loadAgentPluginConfig } from './plugins/config-loader.js';
 import { discoverSkills } from './plugins/skills.js';
 import { runAgent, type AgentResult } from './agent.js';
-import type { AgentStepEvent } from './events.js';
 import { previewPolicyFromPointerize } from './action-preview.js';
 import {
   emitJsonEvent,
+  formatCompressionSummary,
   formatLlmFallbackSummary,
   formatLlmRetrySummary,
   formatToolPlanSummary,
   isAbortError,
+  type AgentStepEvent,
   type RuntimeEvent,
 } from './events.js';
 import { parseLoopGuardMode, stripLoopGuardInjections } from './loop-guard.js';
@@ -1256,13 +1257,7 @@ export function printStepEvent(event: AgentStepEvent): void {
       console.log(`  ${formatLlmFallbackSummary(event)}`);
       break;
     case 'compression':
-      console.log(
-        event.pruned
-          ? `  📦 pruned ${event.pruned} messages (compacted_at)`
-          : event.pointer_compacted
-            ? `  📦 compacted ${event.pointer_compacted} pointer cards (secondary)`
-            : `  📦 compression event: summaries + notice + replay user task`,
-      );
+      console.log(`  ${formatCompressionSummary(event)}`);
       break;
     case 'draft_discarded':
       console.log(`  ⊗ draft discarded (turn ${event.turn}, ${event.chars} chars)`);
