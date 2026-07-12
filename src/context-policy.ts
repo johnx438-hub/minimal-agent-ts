@@ -4,7 +4,7 @@ import {
   shouldRunHeavyCompression,
   usableContextTokens,
   type BudgetConfig,
-} from './context-budget.js';
+} from './context/budget.js';
 import { isToolArgsJsonValid } from './tools/tool-args.js';
 import type { ChatMessage, SessionFile, TaskSummaryDoc, ToolCall } from './types.js';
 

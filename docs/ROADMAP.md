@@ -182,7 +182,7 @@ flowchart TD
 | PR | 内容 | 状态 |
 |----|------|------|
 | L2-0 | `pipeline.ts` 脚手架 + `agent.ts` 委托 + `tests/context-pipeline.test.ts` | ✅ |
-| L2-1 | 迁 `budget.ts` | ⬜ |
+| L2-1 | 迁 `budget.ts` | ✅ |
 | L2-2 | 迁 `assemble.ts` | ⬜ |
 | L2-3 | 迁 `prune.ts` | ⬜ |
 | L2-4 | 迁 `pointer-compact.ts` | ⬜ |
@@ -345,6 +345,7 @@ interface MessageSink {
 
 | 日期 | 说明 |
 |------|------|
+| 2026-07-12 | L2-1 `context/budget.ts` 迁入；`context-budget.ts` re-export |
 | 2026-07-12 | L2-0 context pipeline 脚手架；L1 ToolProvider 五 provider 完成 |
 | 2026-07-12 | 统一路线图初版：产品/底座双轨、压测 harness、MessageBridge、文档索引 |
 | 2026-07-12 | MCP HTTP（streamable-http + sse）合入 `9bc7425` |

@@ -1,5 +1,5 @@
 import type { PreviewPolicy } from '../action-preview.js';
-import type { BudgetConfig } from '../context-budget.js';
+import type { BudgetConfig } from './budget.js';
 import type { ChatMessage, SessionFile } from '../types.js';
 
 /** Per-turn input for turn-end context management (L2 pipeline). */
