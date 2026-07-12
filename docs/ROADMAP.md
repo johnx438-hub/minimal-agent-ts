@@ -129,30 +129,69 @@ flowchart LR
 - M-Prod-1 顺带完成 `job-query.ts`
 - 为 spawn 状态变更预留 `onJobStateChange`（可先 polling）
 
-### L1 — ToolRegistry → Provider
+### L1 — ToolRegistry → Provider（✅ 2026-07-12）
 
 ```
 ToolRegistry（编排）
   ├── BuiltinToolProvider
-  ├── McpToolProvider
+  ├── CliToolProvider（web_search）
   ├── SkillsToolProvider
   ├── SpawnToolProvider
-  └── CliToolProvider（web_search 起）
+  └── McpToolProvider
 ```
 
-迁移顺序：**MCP → spawn → builtin**；接口 `load()` + `execute()`。
+迁移顺序：**MCP → spawn → skills → cli → builtin**；接口 `load()` + `getDefinitions()` + `execute()`。  
+`context-budget.ts` / `context-policy.ts` 等旧 import 路径保留。
 
-### L2 — context-policy → Pipeline
+### L2 — context-policy → Pipeline（进行中）
 
-按阶段拆文件（对外保留原函数名 wrapper）：
+**现状**（~776 行）：`context-budget.ts`（budget/resume）、`context-policy.ts`（prune/compact/heavy/assemble）、`pointerize.ts`（turn 末指针化）。`agent.ts` 的 `applyTurnEndCompression` 已委托 `runTurnEndPipeline`（L2-0）。
 
-1. budget / estimate  
-2. prune  
-3. heavy compression  
-4. pointer compact  
-5. assembleApiMessages  
+**目标目录**：
 
-**收益**: 调门槛、加策略只改单 stage；测试按 stage 回归。
+```text
+src/context/
+  types.ts              # TurnContext, TurnPipelineResult
+  pipeline.ts           # runTurnEndPipeline, runResumePipeline（后）
+  pointerize-stage.ts   # stage 0 → pointerize.materializePriorTurnTools
+  budget.ts             # ← context-budget.ts
+  estimate.ts           # protectedIndices, estimatePruneSavings
+  prune.ts              # maybePrune, applyPrune, releaseCompacted*
+  pointer-compact.ts    # maybeCompactPointerCards
+  heavy-compression.ts  # runCompressionEvent, notice/summary/replay
+  assemble.ts           # assembleApiMessages, repairToolCallPairs
+
+context-budget.ts / context-policy.ts  → re-export wrapper（行为不变）
+```
+
+**Turn-end 数据流**：
+
+```mermaid
+flowchart TD
+  T0[pointerize]
+  T1[prune: maybePrune]
+  T2[pointer-compact]
+  T3[heavy: runCompressionEvent]
+  T0 --> T1 --> T2 --> T3
+  LLM[assembleApiMessages] 
+  T3 --> LLM
+```
+
+**Resume 路径**（与 turn-end 并列，L2-1 起收编）：`shouldCompress` + `buildContext` → `runResumePipeline`。
+
+| PR | 内容 | 状态 |
+|----|------|------|
+| L2-0 | `pipeline.ts` 脚手架 + `agent.ts` 委托 + `tests/context-pipeline.test.ts` | ✅ |
+| L2-1 | 迁 `budget.ts` | ⬜ |
+| L2-2 | 迁 `assemble.ts` | ⬜ |
+| L2-3 | 迁 `prune.ts` | ⬜ |
+| L2-4 | 迁 `pointer-compact.ts` | ⬜ |
+| L2-5 | 迁 `heavy-compression.ts` + `estimate.ts`；`context-policy.ts` 瘦成 wrapper | ⬜ |
+| L2-6 |（可选）`TurnPipelineResult` 观测 / 删死代码 | ⬜ |
+
+**原则**：每 PR 只动一个 stage；不改 prune 门槛与 compression 比例；420+ tests 全绿。
+
+**非目标（L2）**：子 agent 独立 context 策略、MessageBridge（L3）、新 RuntimeEvent（可 L2+1 小 PR）。
 
 ### L3 — AgentHooks + MessageBridge（含 IM 预留）
 
@@ -295,7 +334,7 @@ interface MessageSink {
           ‖
 [压测]  5.2 stress preset + dev-worker 文档 → 填压测表
           ‖
-[底座]  L1 Provider 迁移 → L2 context pipeline → L3 MessageBridge H1–H5
+[底座]  L1 Provider ✅ → L2 context pipeline（L2-0 ✅）→ L3 MessageBridge H1–H5
           ‖
 [可选]  G5 Anthropic cache / M6 workflow if-else / L4 npm exports
 ```
@@ -306,6 +345,7 @@ interface MessageSink {
 
 | 日期 | 说明 |
 |------|------|
+| 2026-07-12 | L2-0 context pipeline 脚手架；L1 ToolProvider 五 provider 完成 |
 | 2026-07-12 | 统一路线图初版：产品/底座双轨、压测 harness、MessageBridge、文档索引 |
 | 2026-07-12 | MCP HTTP（streamable-http + sse）合入 `9bc7425` |
 | 2026-07-06 | 轨 F、pi-tui、ZVEC opt-out |

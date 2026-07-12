@@ -2,12 +2,8 @@ import { awaitWithAbort, resolveAbortSignal } from './agent-abort.js';
 import { beginTurnIo, buildTurnIoEvent } from './action-io-metrics.js';
 import { saveAction } from './action-store.js';
 import { flushActionWritesSync } from './action-write-queue.js';
-import {
-  assembleApiMessages,
-  maybeCompactPointerCards,
-  maybePrune,
-  runCompressionEvent,
-} from './context-policy.js';
+import { runTurnEndPipeline } from './context/pipeline.js';
+import { assembleApiMessages } from './context-policy.js';
 import { invokeLlmTurnWithFallback } from './llm-fallback.js';
 import {
   commitAssistantText,
@@ -31,7 +27,6 @@ import {
 import { buildSystemPrompt } from './agent-prompt.js';
 import { buildLlmDoneStepEvent } from './llm-cache.js';
 import { isAbortError, type AgentStepEvent } from './events.js';
-import { materializePriorTurnTools } from './pointerize.js';
 import { parseAgentSummary, extractCleanAnswer } from './summary.js';
 import {
   buildContext,
@@ -95,32 +90,28 @@ function applyTurnEndCompression(opts: {
   onStep?: RunAgentOptions['onStep'];
 }): void {
   const { messages, turn, config, session, budget, userTask, onStep } = opts;
-  if (turn <= 1) return;
 
-  materializePriorTurnTools(messages, turn, {
+  const result = runTurnEndPipeline({
+    messages,
+    turn,
+    budget,
+    userTask,
+    session,
     keepInlineTurns: config.keepInlineTurns ?? 2,
     previewPolicy: config.previewPolicy ?? DEFAULT_PREVIEW_POLICY,
   });
 
-  const pruned = maybePrune(messages, turn);
-  if (pruned > 0) {
-    onStep?.({ type: 'compression', turn, pruned });
+  if (result.pruned > 0) {
+    onStep?.({ type: 'compression', turn, pruned: result.pruned });
   }
-
-  const pointerCompacted = maybeCompactPointerCards(messages, turn, budget);
-  if (pointerCompacted > 0) {
-    onStep?.({ type: 'compression', turn, pointer_compacted: pointerCompacted });
+  if (result.pointer_compacted > 0) {
+    onStep?.({
+      type: 'compression',
+      turn,
+      pointer_compacted: result.pointer_compacted,
+    });
   }
-
-  if (
-    runCompressionEvent({
-      messages,
-      session,
-      currentTurn: turn,
-      budget,
-      userTask,
-    })
-  ) {
+  if (result.heavy_compression) {
     onStep?.({ type: 'compression', turn });
   }
 }
