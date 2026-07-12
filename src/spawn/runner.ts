@@ -1,5 +1,10 @@
 import type { AgentStepEvent } from '../events.js';
 import { isAbortError } from '../events.js';
+import {
+  BridgeStepForwarder,
+  buildUserTaskMessage,
+  type SessionMessageSource,
+} from '../hooks/index.js';
 import { isCapabilityEnabled } from '../permission-gate.js';
 import { configureAgentLlmBinding } from '../llm-fallback.js';
 import { resolvePresetLlmBinding } from '../llm-profiles.js';
@@ -11,6 +16,13 @@ import type { ResolvedSpawnPreset } from './types.js';
 
 export const MAX_SPAWN_DEPTH = 2;
 
+/** How MessageBridge should tag this spawn run (MB-4). */
+export interface SpawnBridgeContext {
+  source: Extract<SessionMessageSource, 'spawn' | 'job'>;
+  /** Preset name (spawn) or job_id (job). */
+  source_id: string;
+}
+
 export interface RunSpawnOptions {
   preset: ResolvedSpawnPreset;
   task: string;
@@ -19,6 +31,42 @@ export interface RunSpawnOptions {
   spawnSessionId?: string;
   /** Extra step sink; merged with parentConfig.nestedStepSink when both set. */
   jobOnStep?: (event: AgentStepEvent) => void;
+  /** MessageBridge source tagging; default spawn + preset name. */
+  bridgeContext?: SpawnBridgeContext;
+}
+
+/** Resolve bridge source for a spawn run (exported for tests). */
+export function resolveSpawnBridgeContext(
+  presetName: string,
+  bridgeContext?: SpawnBridgeContext,
+): SpawnBridgeContext {
+  if (bridgeContext?.source_id) {
+    return {
+      source: bridgeContext.source,
+      source_id: bridgeContext.source_id,
+    };
+  }
+  return { source: 'spawn', source_id: presetName };
+}
+
+/**
+ * Compose spawn onStep handlers: bridge → parent nested sink → jobOnStep.
+ * Exported for unit tests.
+ */
+export function composeSpawnOnStep(opts: {
+  bridgeForwarder?: BridgeStepForwarder | null;
+  nestedSink?: (event: AgentStepEvent) => void;
+  jobOnStep?: (event: AgentStepEvent) => void;
+}): ((event: AgentStepEvent) => void) | undefined {
+  const { bridgeForwarder, nestedSink, jobOnStep } = opts;
+  if (!bridgeForwarder && !nestedSink && !jobOnStep) {
+    return undefined;
+  }
+  return (event: AgentStepEvent) => {
+    bridgeForwarder?.onStep(event);
+    nestedSink?.(event);
+    jobOnStep?.(event);
+  };
 }
 
 function presetNeedsShell(preset: ResolvedSpawnPreset): boolean {
@@ -83,6 +131,7 @@ export async function runSpawnAgent(opts: RunSpawnOptions): Promise<string> {
       depth,
       spawnSessionId: opts.spawnSessionId,
       jobOnStep: opts.jobOnStep,
+      bridgeContext: opts.bridgeContext,
     });
   } catch (err) {
     if (isAbortError(err)) {
@@ -128,14 +177,23 @@ async function runSpawnAgentInner(opts: {
   depth: number;
   spawnSessionId?: string;
   jobOnStep?: (event: AgentStepEvent) => void;
+  bridgeContext?: SpawnBridgeContext;
 }): Promise<string> {
-  const { preset, task, parentConfig, depth, spawnSessionId: fixedSpawnSessionId, jobOnStep } =
-    opts;
+  const {
+    preset,
+    task,
+    parentConfig,
+    depth,
+    spawnSessionId: fixedSpawnSessionId,
+    jobOnStep,
+    bridgeContext,
+  } = opts;
   const parentSessionId = parentConfig.sessionId;
   const spawnSessionId =
     fixedSpawnSessionId ?? (parentSessionId ? buildSpawnSessionId(parentSessionId) : undefined);
   const startedAt = Date.now();
   const coldStorage = Boolean(parentSessionId && spawnSessionId);
+  const bridgeMeta = resolveSpawnBridgeContext(preset.name, bridgeContext);
 
   const childConfig: AgentConfig = {
     ...parentConfig,
@@ -145,6 +203,8 @@ async function runSpawnAgentInner(opts: {
     toolAllowlist: preset.tools.length > 0 ? preset.tools : undefined,
     spawnDepth: depth + 1,
     spawnLifecycle: undefined,
+    // Child owns its onStep; do not inherit parent's nested sink on toolConfig.
+    nestedStepSink: undefined,
     webSearchTaskState: { externalCount: 0 },
   };
 
@@ -174,14 +234,31 @@ async function runSpawnAgentInner(opts: {
     }
   }
 
-  const sink = parentConfig.nestedStepSink;
-  const onStep =
-    sink || jobOnStep
-      ? (event: AgentStepEvent) => {
-          sink?.(event);
-          jobOnStep?.(event);
-        }
-      : undefined;
+  const nestedSink = parentConfig.nestedStepSink;
+  const bridge = parentConfig.messageBridge;
+  const bridgeForwarder =
+    bridge && spawnSessionId
+      ? new BridgeStepForwarder(bridge, () => spawnSessionId, {
+          source: bridgeMeta.source,
+          source_id: bridgeMeta.source_id,
+        })
+      : null;
+
+  // H1 for delegated task (tagged spawn|job, child session id).
+  if (bridge && spawnSessionId) {
+    bridge.emit(
+      buildUserTaskMessage(spawnSessionId, task, {
+        source: bridgeMeta.source,
+        source_id: bridgeMeta.source_id,
+      }),
+    );
+  }
+
+  const onStep = composeSpawnOnStep({
+    bridgeForwarder,
+    nestedSink,
+    jobOnStep,
+  });
 
   emitSpawnLifecycle(parentConfig, { phase: 'start', preset: preset.name });
 
@@ -272,5 +349,7 @@ async function runSpawnAgentInner(opts: {
       detail: msg,
     });
     return `error: spawn failed: ${msg}`;
+  } finally {
+    bridgeForwarder?.dispose();
   }
 }

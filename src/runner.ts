@@ -417,10 +417,15 @@ export class AgentRuntime {
     }
   }
 
-  private onStep = (event: AgentStepEvent): void => {
-    // MB-2: throttled assistant deltas + final (orthogonal to RuntimeEvent).
-    this.bridgeStepForwarder.onStep(event);
+  /** RuntimeEvent / --json-events only (used as nestedStepSink for spawn). */
+  private emitStepEvent = (event: AgentStepEvent): void => {
     this.emit(event);
+  };
+
+  private onStep = (event: AgentStepEvent): void => {
+    // MB-2/MB-3: main-session bridge (source=main). Spawn/job use their own forwarders.
+    this.bridgeStepForwarder.onStep(event);
+    this.emitStepEvent(event);
   };
 
   private onSpawnLifecycle = (event: SpawnLifecycleEvent): void => {
@@ -720,6 +725,9 @@ export class AgentRuntime {
       spawnLifecycle: this.onSpawnLifecycle,
       workspacePrompt: this.runWorkspacePrompt ?? undefined,
       webSearchTaskState: this.webSearchTaskState,
+      messageBridge: this.messageBridge,
+      // Nested spawn steps → RuntimeEvent only (MB-4 bridge tags spawn/job separately).
+      nestedStepSink: this.emitStepEvent,
     };
     const override = this.getSessionLlmOverride();
     configureAgentLlmBinding(runConfig, this.pluginConfig, {

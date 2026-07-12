@@ -195,7 +195,10 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
     ...config,
     sessionId: sessionId ?? session?.session_id,
     abortSignal,
-    nestedStepSink: onStep,
+    // Prefer parent-provided sink (RuntimeEvent-only from AgentRuntime) so spawn
+    // steps do not re-enter the main MessageBridge forwarder. Fall back to onStep
+    // when callers wire runAgent without nestedStepSink (tests / direct use).
+    nestedStepSink: config.nestedStepSink ?? onStep,
     spawnDepth: config.spawnDepth ?? 0,
   };
 

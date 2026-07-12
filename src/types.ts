@@ -2,6 +2,7 @@ import type { PreviewPolicy } from './action-preview.js';
 import type { WorkspaceAgentMd } from './workspace-agent-md.js';
 import type { WorkspaceMemoryInjection } from './workspace-memory.js';
 import type { AgentStepEvent } from './events.js';
+import type { MessageBridge } from './hooks/message-bridge.js';
 import type { PermissionGate } from './permission-gate.js';
 import type { LoopGuardConfig } from './loop-guard.js';
 import type {
@@ -124,6 +125,11 @@ export interface AgentConfig {
   spawnDepth?: number;
   /** Forward sub-agent step events to parent (spawn tool). */
   nestedStepSink?: (event: AgentStepEvent) => void;
+  /**
+   * Optional MessageBridge (L3). Spawn/job paths tag source=spawn|job.
+   * Prefer RuntimeEvent-only nestedStepSink so main bridge is not double-fed.
+   */
+  messageBridge?: MessageBridge;
   /** JIT shell/web approval (TUI); unset in headless unless wired. */
   permissionGate?: PermissionGate;
   /** Spawn concurrency and turn limits from agent.json spawn_policy. */

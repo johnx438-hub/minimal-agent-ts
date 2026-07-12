@@ -140,6 +140,7 @@ export async function runSpawnJob(opts: RunSpawnJobOptions): Promise<SpawnJobRes
       parentConfig: childParentConfig,
       spawnSessionId,
       jobOnStep,
+      bridgeContext: { source: 'job', source_id: jobId },
     });
     aborted = abortController.signal.aborted;
     }
