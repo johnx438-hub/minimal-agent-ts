@@ -18,6 +18,7 @@ export {
 export {
   BridgeStepForwarder,
   DEFAULT_TOOL_BRIDGE_SUMMARY_CHARS,
+  MIN_BRIDGE_SUMMARY_CHARS,
   summarizeToolResultForBridge,
   type BridgeStepForwarderOptions,
   type ToolResultSummaryInput,

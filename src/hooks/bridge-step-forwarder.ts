@@ -17,6 +17,9 @@ import {
 /** Max chars for tool bridge body when falling back from full output. */
 export const DEFAULT_TOOL_BRIDGE_SUMMARY_CHARS = 400;
 
+/** Floor for summary clip length (avoid zero/negative maxChars). */
+export const MIN_BRIDGE_SUMMARY_CHARS = 32;
+
 export interface BridgeStepForwarderOptions {
   /** Default main session source. */
   source?: SessionMessageSource;
@@ -42,7 +45,7 @@ export function summarizeToolResultForBridge(
   input: ToolResultSummaryInput,
   maxChars: number = DEFAULT_TOOL_BRIDGE_SUMMARY_CHARS,
 ): string {
-  const limit = Math.max(32, maxChars);
+  const limit = Math.max(MIN_BRIDGE_SUMMARY_CHARS, maxChars);
   const fromPreview = input.preview?.trim();
   if (fromPreview) {
     return clipBridgeText(fromPreview, limit);

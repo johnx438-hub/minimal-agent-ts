@@ -2,7 +2,7 @@ import type { PreviewPolicy } from './action-preview.js';
 import type { WorkspaceAgentMd } from './workspace-agent-md.js';
 import type { WorkspaceMemoryInjection } from './workspace-memory.js';
 import type { AgentStepEvent } from './events.js';
-import type { MessageBridge } from './hooks/message-bridge.js';
+import type { MessageBridge } from './hooks/index.js';
 import type { PermissionGate } from './permission-gate.js';
 import type { LoopGuardConfig } from './loop-guard.js';
 import type {

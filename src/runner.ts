@@ -103,14 +103,14 @@ import {
 } from './llm-models-remote.js';
 import { listReasoningLevels, resolveReasoningPatch } from './llm-reasoning.js';
 import {
+  BridgeStepForwarder,
   buildUserTaskMessage,
   createMessageBridge,
   type MessageBridge,
-} from './hooks/message-bridge.js';
-import { BridgeStepForwarder } from './hooks/bridge-step-forwarder.js';
+} from './hooks/index.js';
 
 export type { SessionLlmOverride };
-export type { MessageBridge } from './hooks/message-bridge.js';
+export type { MessageBridge } from './hooks/index.js';
 
 export interface SessionProfileChoice {
   name: string;
@@ -403,9 +403,13 @@ export class AgentRuntime {
     return this.messageBridge;
   }
 
-  /** Emit user task full text to MessageBridge (H1). No-op when no sinks. */
-  private emitBridgeUserTask(sessionId: string, prompt: string): void {
-    this.messageBridge.emit(buildUserTaskMessage(sessionId, prompt));
+  /**
+   * Emit user task full text to MessageBridge (H1 payload).
+   * Same path as runTask / runWorkflowTask; does not invoke the LLM.
+   */
+  publishUserTaskToBridge(prompt: string): void {
+    const session = this.ensureSession();
+    this.messageBridge.emit(buildUserTaskMessage(session.session_id, prompt));
   }
 
   private emit(event: RuntimeEvent): void {
@@ -1068,7 +1072,7 @@ export class AgentRuntime {
     const wsMeta = workspacePromptRunStartMeta(this.beginRunWorkspacePrompt());
     this.emitRunStart(session.session_id, signal, wsMeta);
     setActiveActionSessionId(session.session_id);
-    this.emitBridgeUserTask(session.session_id, prompt);
+    this.publishUserTaskToBridge(prompt);
 
     try {
       this.emit(workflowConfirmStartEvent(checkpoint));
@@ -1193,7 +1197,7 @@ export class AgentRuntime {
     this.emitRunStart(session.session_id, signal, wsMeta);
     setActiveActionSessionId(session.session_id);
     // H1: user task as submitted (before handoff prefix injection into the model).
-    this.emitBridgeUserTask(session.session_id, prompt);
+    this.publishUserTaskToBridge(prompt);
 
     const runConfig = this.buildRunConfig(signal);
 

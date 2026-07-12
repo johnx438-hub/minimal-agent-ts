@@ -7,7 +7,7 @@ import {
   createThrottledAssistantEmitter,
   DEFAULT_TOKEN_THROTTLE_MS,
   type SessionMessage,
-} from '../src/hooks/message-bridge.js';
+} from '../src/hooks/index.js';
 
 function collectSink(name: string, bag: SessionMessage[]) {
   return {
@@ -156,6 +156,33 @@ describe('createMessageBridge', () => {
     assert.equal(errors[0]?.name, 'async-boom');
     assert.match(String(errors[0]?.err), /async fail/);
   });
+
+  it('swallows errors thrown by onSinkError itself', () => {
+    const ok: SessionMessage[] = [];
+    const bridge = createMessageBridge({
+      onSinkError() {
+        throw new Error('handler boom');
+      },
+    });
+    bridge.addSink({
+      name: 'boom',
+      onMessage() {
+        throw new Error('sink fail');
+      },
+    });
+    bridge.addSink(collectSink('ok', ok));
+
+    assert.doesNotThrow(() =>
+      bridge.emit({
+        session_id: 's',
+        turn: 1,
+        role: 'user',
+        content: 'x',
+        timestamp: 1,
+      }),
+    );
+    assert.equal(ok.length, 1);
+  });
 });
 
 describe('createThrottledAssistantEmitter', () => {
@@ -254,5 +281,40 @@ describe('createThrottledAssistantEmitter', () => {
     emitter.pushDelta('ignored');
     emitter.flushFinal('nope');
     assert.equal(bag.length, 1);
+  });
+
+  it('flushes early when minChars is reached', () => {
+    const bag: SessionMessage[] = [];
+    const bridge = createMessageBridge();
+    bridge.addSink(collectSink('t', bag));
+    let t = 0;
+    const pending: Array<() => void> = [];
+    const emitter = createThrottledAssistantEmitter(
+      bridge,
+      { session_id: 's', turn: 1 },
+      {
+        intervalMs: 10_000,
+        minChars: 5,
+        now: () => t,
+        setTimer: (fn) => {
+          pending.push(fn);
+          return 1 as unknown as ReturnType<typeof setTimeout>;
+        },
+        clearTimer: () => {
+          pending.length = 0;
+        },
+      },
+    );
+
+    emitter.pushDelta('ab');
+    assert.equal(bag.length, 1, 'first delta flushes when lastEmitAt is null');
+    assert.equal(bag[0]?.delta, 'ab');
+    t += 1;
+    emitter.pushDelta('12');
+    assert.equal(bag.length, 1, 'under minChars stays buffered inside throttle window');
+    assert.equal(pending.length, 1);
+    emitter.pushDelta('345');
+    assert.equal(bag.length, 2, 'minChars forces flush before interval');
+    assert.equal(bag[1]?.delta, '12345');
   });
 });

@@ -3,10 +3,10 @@ import { describe, it } from 'node:test';
 
 import type { AgentStepEvent } from '../src/events.js';
 import {
+  BridgeStepForwarder,
   createMessageBridge,
   type SessionMessage,
-} from '../src/hooks/message-bridge.js';
-import { BridgeStepForwarder } from '../src/hooks/bridge-step-forwarder.js';
+} from '../src/hooks/index.js';
 import {
   composeSpawnOnStep,
   resolveSpawnBridgeContext,

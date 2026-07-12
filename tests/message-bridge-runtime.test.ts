@@ -7,7 +7,7 @@ import { afterEach, describe, it } from 'node:test';
 import {
   createMessageBridge,
   type SessionMessage,
-} from '../src/hooks/message-bridge.js';
+} from '../src/hooks/index.js';
 import { AgentRuntime } from '../src/runner.js';
 
 const ENV_KEYS = [
@@ -81,10 +81,10 @@ describe('AgentRuntime MessageBridge (MB-1)', () => {
     assert.equal(injected.getMessageBridge(), custom);
   });
 
-  it('emits full user task text on runTask before the model call', async () => {
+  it('emits full user task text via publishUserTaskToBridge (no LLM)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'ma-bridge-user-'));
     writeMinimalAgentJson(dir);
-    process.env.DEEPSEEK_API_KEY = 'test-key-not-used-long';
+    process.env.DEEPSEEK_API_KEY = 'test-key';
     delete process.env.OPENAI_API_KEY;
 
     const bag: SessionMessage[] = [];
@@ -101,45 +101,28 @@ describe('AgentRuntime MessageBridge (MB-1)', () => {
       deferSession: true,
       messageBridge: bridge,
     });
-    await runtime.initialize();
 
     const userText = 'implement feature X and report';
-    const run = runtime.runTask(userText);
-    // H1 emits synchronously before the LLM call; abort to skip retries.
-    await new Promise((r) => setTimeout(r, 30));
-    runtime.abort();
-    try {
-      await run;
-    } catch {
-      // Expected: closed port / abort / invalid endpoint.
-    }
+    // Same H1 payload as runTask, without invoking the model.
+    runtime.publishUserTaskToBridge(userText);
 
-    const userMsgs = bag.filter((m) => m.role === 'user');
-    assert.ok(userMsgs.length >= 1, 'expected at least one user bridge message');
-    assert.equal(userMsgs[0]?.content, userText);
-    assert.equal(userMsgs[0]?.turn, 0);
-    assert.equal(userMsgs[0]?.source, 'main');
-    assert.ok(userMsgs[0]?.session_id);
-    assert.match(userMsgs[0]?.session_id ?? '', /^session_/);
+    assert.equal(bag.length, 1);
+    assert.equal(bag[0]?.role, 'user');
+    assert.equal(bag[0]?.content, userText);
+    assert.equal(bag[0]?.turn, 0);
+    assert.equal(bag[0]?.source, 'main');
+    assert.ok(bag[0]?.session_id);
+    assert.match(bag[0]?.session_id ?? '', /^session_/);
   });
 
-  it('does not throw when bridge has no sinks', async () => {
+  it('does not throw when bridge has no sinks', () => {
     const dir = mkdtempSync(join(tmpdir(), 'ma-bridge-nosink-'));
     writeMinimalAgentJson(dir);
     process.env.DEEPSEEK_API_KEY = 'test-key';
     delete process.env.OPENAI_API_KEY;
 
     const runtime = new AgentRuntime({ cwd: dir, deferSession: true });
-    await runtime.initialize();
     assert.equal(runtime.getMessageBridge().sinkCount(), 0);
-
-    const run = runtime.runTask('quiet path');
-    await new Promise((r) => setTimeout(r, 30));
-    runtime.abort();
-    try {
-      await run;
-    } catch {
-      // model call may fail; H1 must not throw when bridge has no sinks
-    }
+    assert.doesNotThrow(() => runtime.publishUserTaskToBridge('quiet path'));
   });
 });

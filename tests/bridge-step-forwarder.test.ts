@@ -4,12 +4,11 @@ import { describe, it } from 'node:test';
 import {
   BridgeStepForwarder,
   DEFAULT_TOOL_BRIDGE_SUMMARY_CHARS,
-  summarizeToolResultForBridge,
-} from '../src/hooks/bridge-step-forwarder.js';
-import {
+  MIN_BRIDGE_SUMMARY_CHARS,
   createMessageBridge,
+  summarizeToolResultForBridge,
   type SessionMessage,
-} from '../src/hooks/message-bridge.js';
+} from '../src/hooks/index.js';
 
 function collect(bag: SessionMessage[]) {
   return {
@@ -206,8 +205,9 @@ describe('summarizeToolResultForBridge', () => {
     );
   });
 
-  it('exports default max chars', () => {
+  it('exports default max chars and min floor', () => {
     assert.equal(DEFAULT_TOOL_BRIDGE_SUMMARY_CHARS, 400);
+    assert.equal(MIN_BRIDGE_SUMMARY_CHARS, 32);
   });
 });
 
