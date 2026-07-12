@@ -107,6 +107,7 @@ import {
   createMessageBridge,
   type MessageBridge,
 } from './hooks/message-bridge.js';
+import { BridgeStepForwarder } from './hooks/bridge-step-forwarder.js';
 
 export type { SessionLlmOverride };
 export type { MessageBridge } from './hooks/message-bridge.js';
@@ -232,6 +233,7 @@ export class AgentRuntime {
   private readonly jsonEvents: boolean;
   private readonly useStream: boolean;
   private readonly messageBridge: MessageBridge;
+  private readonly bridgeStepForwarder: BridgeStepForwarder;
   readonly permissionGate = new PermissionGate();
   private workflowConfirmFn?: WorkflowConfirmFn;
   private pendingHandoffPrefix: string | null = null;
@@ -255,6 +257,11 @@ export class AgentRuntime {
     this.jsonEvents = opts.jsonEvents ?? false;
     this.useStream = env('STREAM', '1') !== '0';
     this.messageBridge = opts.messageBridge ?? createMessageBridge();
+    this.bridgeStepForwarder = new BridgeStepForwarder(
+      this.messageBridge,
+      () => this.session?.session_id,
+      { source: 'main' },
+    );
     this.permissionGate.setLifecycle((event) => this.emit(event));
 
     configureActionWriteQueue({
@@ -411,6 +418,8 @@ export class AgentRuntime {
   }
 
   private onStep = (event: AgentStepEvent): void => {
+    // MB-2: throttled assistant deltas + final (orthogonal to RuntimeEvent).
+    this.bridgeStepForwarder.onStep(event);
     this.emit(event);
   };
 
@@ -1158,6 +1167,7 @@ export class AgentRuntime {
       this.emit({ type: 'run_end', reason: 'error', message });
       throw err;
     } finally {
+      this.bridgeStepForwarder.dispose();
       await flushActionWrites().catch(() => undefined);
       await flushTranscriptWrites().catch(() => undefined);
       this.running = false;
@@ -1231,6 +1241,7 @@ export class AgentRuntime {
       this.emit({ type: 'run_end', reason: 'error', message });
       throw err;
     } finally {
+      this.bridgeStepForwarder.dispose();
       await flushActionWrites().catch(() => undefined);
       await flushTranscriptWrites().catch(() => undefined);
       this.running = false;
@@ -1238,6 +1249,7 @@ export class AgentRuntime {
   }
 
   async shutdown(): Promise<void> {
+    this.bridgeStepForwarder.dispose();
     await flushActionWrites().catch(() => undefined);
     await flushTranscriptWrites().catch(() => undefined);
     setActiveActionSessionId(undefined);

@@ -14,3 +14,11 @@ export {
   type ThrottledAssistantEmitter,
   type ThrottledAssistantEmitterOptions,
 } from './message-bridge.js';
+
+export {
+  BridgeStepForwarder,
+  DEFAULT_TOOL_BRIDGE_SUMMARY_CHARS,
+  summarizeToolResultForBridge,
+  type BridgeStepForwarderOptions,
+  type ToolResultSummaryInput,
+} from './bridge-step-forwarder.js';
