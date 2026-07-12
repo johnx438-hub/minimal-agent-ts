@@ -22,8 +22,8 @@ export function buildTaskSummaryMessages(tasks: TaskSummaryDoc[]): ChatMessage[]
     role: 'user' as const,
     content:
       `${TASK_SUMMARY_PREFIX}${task.task_id}] ${task.user_intent}\n` +
-      `Files: ${task.files_touched.join(', ') || '(none)'}\n` +
-      `Tools: ${task.tools_used.join(', ') || '(none)'}\n` +
+      `Files: ${(task.files_touched ?? []).join(', ') || '(none)'}\n` +
+      `Tools: ${(task.tools_used ?? []).join(', ') || '(none)'}\n` +
       `Work: ${task.current_work}`,
   }));
 }
@@ -49,6 +49,8 @@ export interface CompressionEventOptions {
   currentTurn: number;
   budget: BudgetConfig;
   userTask: ChatMessage;
+  /** Skip pointer secondary compact when pipeline stage 2 already ran. */
+  skipPointerCompact?: boolean;
 }
 
 /**
@@ -57,7 +59,7 @@ export interface CompressionEventOptions {
  * Returns true if event was applied.
  */
 export function runCompressionEvent(opts: CompressionEventOptions): boolean {
-  const { messages, session, currentTurn, budget, userTask } = opts;
+  const { messages, session, currentTurn, budget, userTask, skipPointerCompact } = opts;
   const visible = assembleApiMessages(messages);
   const isRepeat = hasCompressionNotice(messages);
 
@@ -66,7 +68,9 @@ export function runCompressionEvent(opts: CompressionEventOptions): boolean {
   }
 
   applyPrune(messages, currentTurn);
-  compactPointerCardsUntilUnderBudget(messages, currentTurn, budget);
+  if (!skipPointerCompact) {
+    compactPointerCardsUntilUnderBudget(messages, currentTurn, budget);
+  }
 
   if (session && session.tasks.length > 0 && !hasTaskSummaryBlock(messages)) {
     const summaries = buildTaskSummaryMessages(session.tasks);

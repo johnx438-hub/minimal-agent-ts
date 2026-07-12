@@ -1,6 +1,7 @@
 import { isCapabilityEnabled } from '../../permission-gate.js';
 import type { ToolDefinition } from '../../types.js';
 import { runWebSearchTool, WEB_SEARCH_DEFINITIONS } from '../web-search.js';
+import { DEFAULT_BUILTIN_TOOLS } from './builtin-provider.js';
 import { isRoleToolAllowlisted } from './tool-allowlist.js';
 import type { ToolProvider, ToolProviderContext, ToolResolveContext } from './types.js';
 
@@ -31,7 +32,7 @@ export class CliToolProvider implements ToolProvider {
 
   async load(ctx: ToolProviderContext): Promise<void> {
     this.enabledBuiltin = new Set(
-      ctx.enabledBuiltin ?? ctx.pluginConfig.builtin_tools ?? [],
+      ctx.enabledBuiltin ?? ctx.pluginConfig.builtin_tools ?? DEFAULT_BUILTIN_TOOLS,
     );
   }
 

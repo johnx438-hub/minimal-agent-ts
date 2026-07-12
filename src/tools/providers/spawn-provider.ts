@@ -4,6 +4,7 @@ import type { ResolvedSpawnPreset } from '../../spawn/types.js';
 import type { ToolDefinition } from '../../types.js';
 import { buildSpawnBackgroundDefinitions, runSpawnBackgroundTool } from '../spawn-background.js';
 import { buildSpawnDefinitions, runSpawnTool } from '../spawn.js';
+import { DEFAULT_BUILTIN_TOOLS } from './builtin-provider.js';
 import { isRoleToolAllowlisted } from './tool-allowlist.js';
 import type { ToolProvider, ToolProviderContext, ToolResolveContext } from './types.js';
 
@@ -22,7 +23,7 @@ export class SpawnToolProvider implements ToolProvider {
     );
     configureSpawnSemaphore(ctx.pluginConfig.spawn_policy?.max_parallel ?? 1);
     this.enabledBuiltin = new Set(
-      ctx.enabledBuiltin ?? ctx.pluginConfig.builtin_tools ?? [],
+      ctx.enabledBuiltin ?? ctx.pluginConfig.builtin_tools ?? DEFAULT_BUILTIN_TOOLS,
     );
   }
 

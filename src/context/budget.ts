@@ -87,19 +87,20 @@ export function createBudgetConfig(model: string): BudgetConfig {
   };
 }
 
-/**
- * Estimate token count for messages.
- * Simplified approach: ~1.3 tokens per word + overhead for special tokens.
- */
+/** Average characters per token (mixed CJK + Latin; ~10% error). */
+export const CHARS_PER_TOKEN = 1.8;
+
+/** Estimate tokens from raw text (CJK-safe; whitespace-agnostic). */
+export function estimateTextTokens(text: string): number {
+  const chars = text.trim().length;
+  return chars > 0 ? Math.ceil(chars / CHARS_PER_TOKEN) : 0;
+}
+
+/** Estimate token count for messages plus role/tool_call overhead. */
 export function estimateTokens(messages: ChatMessage[]): number {
   let total = 0;
   for (const msg of messages) {
-    const text = msg.content ?? '';
-    // Rough estimation: 1.3 tokens per whitespace-separated word
-    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-    total += Math.ceil(words * 1.3);
-    
-    // Add overhead for role and tool_call metadata
+    total += estimateTextTokens(msg.content ?? '');
     total += msg.role === 'tool' ? 5 : 2;
     if (msg.tool_calls) {
       total += msg.tool_calls.length * 10;
@@ -108,21 +109,19 @@ export function estimateTokens(messages: ChatMessage[]): number {
   return total;
 }
 
-/**
- * Estimate token count for a task summary.
- */
+/** Estimate token count for a task summary document. */
 export function estimateSummaryTokens(summary: TaskSummaryDoc): number {
   const text = [
     summary.user_intent,
     ...summary.user_messages,
-    ...summary.files_touched,
-    ...summary.tech_concepts,
-    ...summary.tools_used,
-    ...summary.pending_tasks,
+    ...(summary.files_touched ?? []),
+    ...(summary.tech_concepts ?? []),
+    ...(summary.tools_used ?? []),
+    ...(summary.pending_tasks ?? []),
     summary.current_work,
   ].join(' ');
-  
-  return Math.ceil(text.split(/\s+/).length * 1.3);
+
+  return estimateTextTokens(text);
 }
 
 /** First heavy compression: 80% of usable context. */
@@ -189,14 +188,16 @@ export function buildContext(session: SessionFile, budget: BudgetConfig): ChatMe
     usedTokens += taskTokens;
   }
   
-  // Layer 2: Mid-term - task summaries (up to mid_budget or mid_max_summaries)
-  const midTasks = allTasks.slice(recentTasks.length, budget.mid_max_summaries);
+  // Layer 2: Mid-term - task summaries (up to mid_max_summaries after recent layer)
+  const midTasks = allTasks
+    .slice(recentTasks.length)
+    .slice(0, budget.mid_max_summaries);
   for (const task of midTasks) {
     const summaryMsg: ChatMessage = {
       role: 'user',
       content: `[Task ${task.task_id}] ${task.user_intent}\n` +
-               `Files: ${task.files_touched.join(', ')}\n` +
-               `Tools: ${task.tools_used.join(', ')}\n` +
+               `Files: ${(task.files_touched ?? []).join(', ') || '(none)'}\n` +
+               `Tools: ${(task.tools_used ?? []).join(', ') || '(none)'}\n` +
                `Current work: ${task.current_work}`,
     };
     
@@ -205,7 +206,7 @@ export function buildContext(session: SessionFile, budget: BudgetConfig): ChatMe
   }
   
   // Layer 3: Early - session-level summary (if more tasks remain)
-  const remainingTasks = allTasks.slice(budget.mid_max_summaries);
+  const remainingTasks = allTasks.slice(recentTasks.length + midTasks.length);
   if (remainingTasks.length > 0) {
     const earlySummary: ChatMessage = {
       role: 'user',

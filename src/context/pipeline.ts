@@ -67,6 +67,7 @@ export function runTurnEndPipeline(ctx: TurnContext): TurnPipelineResult {
     currentTurn: ctx.turn,
     budget: ctx.budget,
     userTask: ctx.userTask,
+    skipPointerCompact: true,
   });
 
   return { pointerized, pruned, pointer_compacted, heavy_compression };

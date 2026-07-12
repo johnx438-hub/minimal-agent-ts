@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  CHARS_PER_TOKEN,
   createBudgetConfig,
   heavyCompressionThreshold,
   shouldRunHeavyCompression,
-} from '../src/context-budget.js';
+} from '../src/context/budget.js';
 import {
   appendCompressionNotice,
   hasCompressionNotice,
@@ -15,10 +16,8 @@ import type { ChatMessage } from '../src/types.js';
 
 const budget = createBudgetConfig('deepseek/deepseek-chat');
 
-/** estimateTokens counts ~1.3 tokens per whitespace-separated word. */
 function fillerTokens(targetTokens: number): string {
-  const wordsNeeded = Math.ceil(targetTokens / 1.3) + 50;
-  return 'word '.repeat(wordsNeeded);
+  return 'x'.repeat(Math.ceil(targetTokens * CHARS_PER_TOKEN) + 50);
 }
 
 function overFirstThresholdTokens(): number {

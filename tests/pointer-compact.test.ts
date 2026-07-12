@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { createBudgetConfig } from '../src/context-budget.js';
+import { CHARS_PER_TOKEN, createBudgetConfig } from '../src/context/budget.js';
 import {
   applyPointerSecondaryCompact,
   assembleApiMessages,
@@ -15,8 +15,7 @@ import type { ActionBlock, ChatMessage } from '../src/types.js';
 const budget = createBudgetConfig('deepseek/deepseek-chat');
 
 function fillerTokens(targetTokens: number): string {
-  const wordsNeeded = Math.ceil(targetTokens / 1.3) + 50;
-  return 'word '.repeat(wordsNeeded);
+  return 'x'.repeat(Math.ceil(targetTokens * CHARS_PER_TOKEN) + 50);
 }
 
 function sampleBlock(actionId: string): ActionBlock {

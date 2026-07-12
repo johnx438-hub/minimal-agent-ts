@@ -13,12 +13,15 @@ import { SkillsToolProvider } from './providers/skills-provider.js';
 import { SpawnToolProvider } from './providers/spawn-provider.js';
 import { isRoleToolAllowlisted } from './providers/tool-allowlist.js';
 import type { AgentPluginConfig } from '../plugins/types.js';
+import { CODE_REVIEW_DEFINITIONS } from './code-review.js';
 import { EDIT_FILE_DEFINITIONS } from './edit-file.js';
 import { EXPLORE_DEFINITIONS } from './explore.js';
 import { READ_WRITE_DEFINITIONS } from './read-write.js';
 import { RECALL_DEFINITIONS } from './recall.js';
 import { SHELL_DEFINITIONS } from './shell.js';
 import { SKILLS_TOOL_DEFINITIONS } from './skills-tool.js';
+import { WEB_FETCH_DEFINITIONS } from './web-fetch.js';
+import { WEB_SEARCH_DEFINITIONS } from './web-search.js';
 import { parseToolArgsJson } from './tool-args.js';
 
 export { DEFAULT_BUILTIN_TOOLS };
@@ -124,11 +127,21 @@ export class ToolRegistry {
     const defs: ToolDefinition[] = [];
     const seen = new Set<string>();
 
-    this.appendUniqueDefs(defs, seen, this.builtinProvider.getDefinitions(ctx));
-    this.appendUniqueDefs(defs, seen, this.spawnProvider.getDefinitions(ctx));
-    this.appendUniqueDefs(defs, seen, this.skillsProvider.getDefinitions(ctx));
-    this.appendUniqueDefs(defs, seen, this.cliProvider.getDefinitions(ctx));
-    this.appendUniqueDefs(defs, seen, this.mcpProvider.getDefinitions(ctx));
+    this.appendProviderDefs(defs, seen, 'builtin', () =>
+      this.builtinProvider.getDefinitions(ctx),
+    );
+    this.appendProviderDefs(defs, seen, 'spawn', () =>
+      this.spawnProvider.getDefinitions(ctx),
+    );
+    this.appendProviderDefs(defs, seen, 'skills', () =>
+      this.skillsProvider.getDefinitions(ctx),
+    );
+    this.appendProviderDefs(defs, seen, 'cli', () =>
+      this.cliProvider.getDefinitions(ctx),
+    );
+    this.appendProviderDefs(defs, seen, 'mcp', () =>
+      this.mcpProvider.getDefinitions(ctx),
+    );
 
     return defs;
   }
@@ -174,6 +187,20 @@ export class ToolRegistry {
   async shutdown(): Promise<void> {
     await this.shutdownProviders();
     this.initialized = false;
+  }
+
+  private appendProviderDefs(
+    target: ToolDefinition[],
+    seen: Set<string>,
+    providerName: string,
+    loadDefs: () => ToolDefinition[],
+  ): void {
+    try {
+      this.appendUniqueDefs(target, seen, loadDefs());
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`tool registry: ${providerName} getDefinitions failed: ${msg}`);
+    }
   }
 
   private appendUniqueDefs(
@@ -251,7 +278,10 @@ export function getToolDefinitions(config: AgentConfig): ToolDefinition[] {
       ...EXPLORE_DEFINITIONS,
       ...RECALL_DEFINITIONS,
       ...SKILLS_TOOL_DEFINITIONS,
+      ...CODE_REVIEW_DEFINITIONS,
       ...(isCapabilityEnabled(config, 'shell') ? SHELL_DEFINITIONS : []),
+      ...(isCapabilityEnabled(config, 'web') ? WEB_FETCH_DEFINITIONS : []),
+      ...(isCapabilityEnabled(config, 'web') ? WEB_SEARCH_DEFINITIONS : []),
     ];
   }
   return toolRegistry.getDefinitions(config);

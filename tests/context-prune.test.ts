@@ -13,13 +13,12 @@ import {
   repairToolCallPairs,
   shouldPrune,
 } from '../src/context-policy.js';
+import { CHARS_PER_TOKEN } from '../src/context/budget.js';
 import { buildPointerCard } from '../src/pointerize.js';
 import type { ActionBlock, ChatMessage } from '../src/types.js';
 
-/** estimateTokens counts ~1.3 tokens per whitespace-separated word. */
 function fillerTokens(targetTokens: number): string {
-  const wordsNeeded = Math.ceil(targetTokens / 1.3) + 50;
-  return 'word '.repeat(wordsNeeded);
+  return 'x'.repeat(Math.ceil(targetTokens * CHARS_PER_TOKEN) + 50);
 }
 
 function oldPrunableTool(turn: number, tokens: number): ChatMessage {

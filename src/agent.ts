@@ -34,7 +34,7 @@ import {
   shouldCompress,
   estimateTokens,
   type BudgetConfig,
-} from './context-budget.js';
+} from './context/budget.js';
 import { scheduleToolCalls } from './tool-scheduler.js';
 import { executeTool, getToolDefinitions } from './tools.js';
 import {

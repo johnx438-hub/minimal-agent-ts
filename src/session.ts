@@ -8,7 +8,7 @@ import {
 } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { releaseAllCompactedContent } from './context-policy.js';
+import { releaseAllCompactedContent } from './context/prune.js';
 import type { SessionFile, SessionMeta, SessionOverview } from './types.js';
 import { ensureSessionsDir, sessionPath, sessionsDir } from './workspace.js';
 

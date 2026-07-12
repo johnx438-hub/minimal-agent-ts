@@ -5,6 +5,7 @@ import {
 import type { SkillDefinition } from '../../plugins/types.js';
 import type { ToolDefinition } from '../../types.js';
 import { runSkillsTool, SKILLS_TOOL_DEFINITIONS } from '../skills-tool.js';
+import { DEFAULT_BUILTIN_TOOLS } from './builtin-provider.js';
 import { isRoleToolAllowlisted } from './tool-allowlist.js';
 import type { ToolProvider, ToolProviderContext, ToolResolveContext } from './types.js';
 
@@ -15,7 +16,7 @@ export class SkillsToolProvider implements ToolProvider {
   async load(ctx: ToolProviderContext): Promise<void> {
     this.skills = discoverSkills(ctx.pluginConfig.skills_dirs ?? []);
     this.enabledBuiltin = new Set(
-      ctx.enabledBuiltin ?? ctx.pluginConfig.builtin_tools ?? [],
+      ctx.enabledBuiltin ?? ctx.pluginConfig.builtin_tools ?? DEFAULT_BUILTIN_TOOLS,
     );
   }
 
