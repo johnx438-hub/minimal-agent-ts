@@ -3,7 +3,7 @@ import { beginTurnIo, buildTurnIoEvent } from './action-io-metrics.js';
 import { saveAction } from './action-store.js';
 import { flushActionWritesSync } from './action-write-queue.js';
 import { runTurnEndPipeline } from './context/pipeline.js';
-import { assembleApiMessages } from './context-policy.js';
+import { assembleApiMessages } from './context/assemble.js';
 import { invokeLlmTurnWithFallback } from './llm-fallback.js';
 import {
   commitAssistantText,
