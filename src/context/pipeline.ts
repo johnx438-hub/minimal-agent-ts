@@ -1,7 +1,5 @@
-import {
-  maybeCompactPointerCards,
-  runCompressionEvent,
-} from '../context-policy.js';
+import { runCompressionEvent } from '../context-policy.js';
+import { maybeCompactPointerCards } from './pointer-compact.js';
 import { maybePrune } from './prune.js';
 import { runPointerizeStage } from './pointerize-stage.js';
 import {
@@ -12,7 +10,7 @@ import {
 
 /**
  * Turn-end context pipeline (L2-0 scaffold).
- * Stages delegate to context modules / pointerize until L2-4..L2-5 file split.
+ * Stages delegate to context modules / pointerize until L2-5 file split.
  */
 export function runTurnEndPipeline(ctx: TurnContext): TurnPipelineResult {
   if (ctx.turn <= 1) {

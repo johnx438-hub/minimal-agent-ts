@@ -42,7 +42,7 @@ function estimateOne(msg: ChatMessage): number {
   return estimateTokens([msg]);
 }
 
-/** Protected message indices for prune and pointer-compact (exported for policy until L2-4). */
+/** Protected message indices for prune and pointer-compact (L2-5 → estimate.ts). */
 export function protectedIndices(messages: ChatMessage[], currentTurn: number): Set<number> {
   const protectedSet = new Set<number>();
 

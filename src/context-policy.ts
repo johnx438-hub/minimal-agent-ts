@@ -1,12 +1,11 @@
 import {
   estimateTokens,
-  FIRST_HEAVY_COMPRESSION_RATIO,
   shouldRunHeavyCompression,
-  usableContextTokens,
   type BudgetConfig,
 } from './context/budget.js';
 import { assembleApiMessages } from './context/assemble.js';
-import { applyPrune, isImmune, protectedIndices } from './context/prune.js';
+import { compactPointerCardsUntilUnderBudget } from './context/pointer-compact.js';
+import { applyPrune } from './context/prune.js';
 import type { ChatMessage, SessionFile, TaskSummaryDoc } from './types.js';
 
 export {
@@ -27,93 +26,17 @@ export {
   maybePrune,
 } from './context/prune.js';
 
-/** Max pointer cards downgraded per turn (secondary compact). */
-export const MAX_POINTER_COMPACT_PER_TURN = 20;
+export {
+  MAX_POINTER_COMPACT_PER_TURN,
+  pointerCompactThreshold,
+  shouldCompactPointerCards,
+  applyPointerSecondaryCompact,
+  compactPointerCardsUntilUnderBudget,
+  maybeCompactPointerCards,
+} from './context/pointer-compact.js';
 
 const NOTICE_PREFIX = '[context-notice]';
 const TASK_SUMMARY_PREFIX = '[Task ';
-
-function canCompactPointerCard(msg: ChatMessage): boolean {
-  if (msg.role !== 'tool') return false;
-  if (!msg.pointerized || !msg.action_id) return false;
-  if (msg.compacted_at) return false;
-  if (isImmune(msg)) return false;
-  return true;
-}
-
-export function pointerCompactThreshold(budget: BudgetConfig): number {
-  return usableContextTokens(budget) * FIRST_HEAVY_COMPRESSION_RATIO;
-}
-
-export function shouldCompactPointerCards(
-  currentTokens: number,
-  budget: BudgetConfig,
-): boolean {
-  return currentTokens > pointerCompactThreshold(budget);
-}
-
-function findOldestCompactablePointerIndex(
-  messages: ChatMessage[],
-  currentTurn: number,
-): number {
-  const protectedSet = protectedIndices(messages, currentTurn);
-  for (let i = 0; i < messages.length; i++) {
-    if (protectedSet.has(i)) continue;
-    if (canCompactPointerCard(messages[i])) return i;
-  }
-  return -1;
-}
-
-/** Downgrade one pointer card to a compacted stub; ActionStore recall unchanged. */
-export function applyPointerSecondaryCompact(msg: ChatMessage): void {
-  const actionId = msg.action_id;
-  msg.compacted_at = Date.now();
-  msg.content = actionId
-    ? `[compacted tool action_id=${actionId}]`
-    : '[compacted tool]';
-}
-
-export function compactPointerCardsUntilUnderBudget(
-  messages: ChatMessage[],
-  currentTurn: number,
-  budget: BudgetConfig,
-): number {
-  let compacted = 0;
-
-  while (compacted < MAX_POINTER_COMPACT_PER_TURN) {
-    const visible = assembleApiMessages(messages);
-    const tokens = estimateTokens(visible);
-    if (!shouldCompactPointerCards(tokens, budget)) {
-      break;
-    }
-
-    const index = findOldestCompactablePointerIndex(messages, currentTurn);
-    if (index < 0) {
-      break;
-    }
-
-    applyPointerSecondaryCompact(messages[index]);
-    compacted++;
-  }
-
-  return compacted;
-}
-
-/**
- * Secondary compact for pointer cards when context stays above 80% usable.
- * Fills the gap where pointerized messages are immune to normal prune.
- */
-export function maybeCompactPointerCards(
-  messages: ChatMessage[],
-  currentTurn: number,
-  budget: BudgetConfig,
-): number {
-  const visible = assembleApiMessages(messages);
-  if (!shouldCompactPointerCards(estimateTokens(visible), budget)) {
-    return 0;
-  }
-  return compactPointerCardsUntilUnderBudget(messages, currentTurn, budget);
-}
 
 export function hasCompressionNotice(messages: ChatMessage[]): boolean {
   return messages.some((m) => (m.content ?? '').startsWith(NOTICE_PREFIX));
