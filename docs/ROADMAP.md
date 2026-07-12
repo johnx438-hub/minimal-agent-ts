@@ -184,7 +184,7 @@ flowchart TD
 | L2-0 | `pipeline.ts` 脚手架 + `agent.ts` 委托 + `tests/context-pipeline.test.ts` | ✅ |
 | L2-1 | 迁 `budget.ts` | ✅ |
 | L2-2 | 迁 `assemble.ts` | ✅ |
-| L2-3 | 迁 `prune.ts` | ⬜ |
+| L2-3 | 迁 `prune.ts` | ✅ |
 | L2-4 | 迁 `pointer-compact.ts` | ⬜ |
 | L2-5 | 迁 `heavy-compression.ts` + `estimate.ts`；`context-policy.ts` 瘦成 wrapper | ⬜ |
 | L2-6 |（可选）`TurnPipelineResult` 观测 / 删死代码 | ⬜ |
@@ -345,6 +345,7 @@ interface MessageSink {
 
 | 日期 | 说明 |
 |------|------|
+| 2026-07-12 | L2-3 `context/prune.ts` 迁入；`protectedIndices`/`isImmune` 暂 export 供 pointer-compact |
 | 2026-07-12 | L2-2 `context/assemble.ts` 迁入；`context-policy` re-export |
 | 2026-07-12 | L2-1 `context/budget.ts` 迁入；`context-budget.ts` re-export |
 | 2026-07-12 | L2-0 context pipeline 脚手架；L1 ToolProvider 五 provider 完成 |
