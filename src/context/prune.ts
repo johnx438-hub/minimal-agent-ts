@@ -8,8 +8,12 @@ function canPrune(msg: ChatMessage): boolean {
   return msg.role === 'tool' || msg.role === 'assistant';
 }
 
-/** OpenCode-style prune thresholds (Phase 2c). */
-export const PRUNE_MIN_SAVINGS = 20_000;
+/**
+ * Min estimated savings before prune (Phase 2c).
+ * Legacy design target: 20_000 under whitespace×1.3 → ~70k under char/1.8
+ * (see ESTIMATE_SCALE_VS_LEGACY in estimate.ts).
+ */
+export const PRUNE_MIN_SAVINGS = 70_000;
 
 const COMPACTED_STUB_PREFIX = '[compacted';
 

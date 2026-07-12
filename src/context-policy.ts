@@ -7,6 +7,7 @@ export {
 } from './context/assemble.js';
 
 export {
+  ESTIMATE_SCALE_VS_LEGACY,
   PROTECT_RECENT_TOKENS,
   PROTECT_USER_TURNS,
   estimatePruneSavings,

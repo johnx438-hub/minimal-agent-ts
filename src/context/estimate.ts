@@ -1,8 +1,17 @@
 import { estimateTokens } from './budget.js';
 import type { ChatMessage } from '../types.js';
 
-/** Recent window protected from prune / pointer-compact (OpenCode-style). */
-export const PROTECT_RECENT_TOKENS = 40_000;
+/**
+ * Scale: char/1.8 estimator vs legacy whitespace×1.3 on mixed CJK/Latin corpora.
+ * Thresholds below were designed for the legacy estimator; multiply when porting.
+ */
+export const ESTIMATE_SCALE_VS_LEGACY = 3.5;
+
+/**
+ * Recent window protected from prune / pointer-compact (OpenCode-style).
+ * Legacy design target: 40_000 under whitespace×1.3 → ~140k under char/1.8.
+ */
+export const PROTECT_RECENT_TOKENS = Math.round(40_000 * ESTIMATE_SCALE_VS_LEGACY);
 export const PROTECT_USER_TURNS = 2;
 
 export const NOTICE_PREFIX = '[context-notice]';

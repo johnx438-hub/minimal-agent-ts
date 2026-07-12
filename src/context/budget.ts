@@ -221,9 +221,105 @@ export function layerBudgets(budget: BudgetConfig): LayerBudgets {
   };
 }
 
+/** Minimum live-history tokens kept on resume even when layers are large. */
+const MIN_RESUME_HISTORY_TOKENS = 4_000;
+
+/**
+ * Token budget for live `current_messages` after task-layer summaries are built.
+ * Leaves room for system + new user task; caps by recent_max so long sessions
+ * do not re-send the entire transcript on resume.
+ */
+export function resumeHistoryBudget(
+  budget: BudgetConfig,
+  layerTokens: number,
+): number {
+  const usable = usableContextTokens(budget);
+  const systemReserve = Math.floor(budget.total * budget.system_pct);
+  const currentReserve = Math.floor(budget.total * budget.current_pct);
+  const remaining = usable - layerTokens - currentReserve;
+  const capped = Math.min(budget.recent_max_tokens, remaining);
+  return Math.max(MIN_RESUME_HISTORY_TOKENS, Math.floor(capped));
+}
+
+/**
+ * How many leading messages form one droppable unit (assistant+tools or single msg).
+ * Keeps tool_call groups intact when trimming from the front.
+ */
+function frontGroupSize(messages: ChatMessage[]): number {
+  if (messages.length === 0) return 0;
+  const first = messages[0];
+  if (first.role === 'assistant' && first.tool_calls && first.tool_calls.length > 0) {
+    let n = 1;
+    while (n < messages.length && messages[n].role === 'tool') n++;
+    return n;
+  }
+  return 1;
+}
+
+/**
+ * Select a suffix of session messages under a token budget for resume.
+ *
+ * - Skips system + compacted_at (view only; does not mutate session)
+ * - Never rewrites content (pointer cards stay as-is, including [action:…] text)
+ * - Preserves message object identity and metadata (action_id, pointerized, turn)
+ * - Drops oldest complete assistant/tool groups when over budget
+ */
+export function selectHistoryWithinBudget(
+  messages: ChatMessage[],
+  tokenBudget: number,
+): ChatMessage[] {
+  const candidates = messages.filter(
+    (m) => m.role !== 'system' && !m.compacted_at,
+  );
+  if (candidates.length === 0) return [];
+  if (tokenBudget <= 0) {
+    // Keep the last user message when possible so resume is not empty.
+    for (let i = candidates.length - 1; i >= 0; i--) {
+      if (candidates[i].role === 'user') return [candidates[i]];
+    }
+    return [candidates[candidates.length - 1]];
+  }
+
+  if (estimateTokens(candidates) <= tokenBudget) {
+    return candidates;
+  }
+
+  // Grow a suffix from the end until budget is exhausted.
+  let tokens = 0;
+  let start = candidates.length;
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    const t = estimateTokens([candidates[i]]);
+    if (start < candidates.length && tokens + t > tokenBudget) {
+      break;
+    }
+    tokens += t;
+    start = i;
+  }
+
+  // If the suffix starts mid tool-response, include the parent assistant.
+  while (start > 0 && candidates[start].role === 'tool') {
+    start--;
+  }
+
+  let slice = candidates.slice(start);
+
+  // Drop oldest complete groups until under budget (or a single message remains).
+  while (slice.length > 1 && estimateTokens(slice) > tokenBudget) {
+    const drop = frontGroupSize(slice);
+    // Avoid dropping everything if one huge message remains at the end.
+    if (drop >= slice.length) {
+      slice = slice.slice(-1);
+      break;
+    }
+    slice = slice.slice(drop);
+  }
+
+  return slice;
+}
+
 /**
  * Build context messages from session history using sliding window.
- * Returns compressed messages that fit within budget.
+ * Task-layer summaries + budgeted live history (not full current_messages dump).
  */
 export function buildContext(session: SessionFile, budget: BudgetConfig): ChatMessage[] {
   if (session.tasks.length === 0) {
@@ -267,5 +363,7 @@ export function buildContext(session: SessionFile, budget: BudgetConfig): ChatMe
     recentMsgTokens += msgTokens;
   }
 
-  return [...context, ...session.current_messages];
+  const historyBudget = resumeHistoryBudget(budget, estimateTokens(context));
+  const history = selectHistoryWithinBudget(session.current_messages, historyBudget);
+  return [...context, ...history];
 }

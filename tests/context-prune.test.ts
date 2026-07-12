@@ -31,13 +31,13 @@ function oldPrunableTool(turn: number, tokens: number): ChatMessage {
 }
 
 describe('context prune thresholds', () => {
-  it('exports OpenCode-style prune constants', () => {
-    assert.equal(PRUNE_MIN_SAVINGS, 20_000);
-    assert.equal(PROTECT_RECENT_TOKENS, 40_000);
+  it('exports OpenCode-style prune constants (char/1.8 calibrated)', () => {
+    assert.equal(PRUNE_MIN_SAVINGS, 70_000);
+    assert.equal(PROTECT_RECENT_TOKENS, 140_000);
     assert.equal(PROTECT_USER_TURNS, 2);
   });
 
-  it('does not prune when estimated savings are below 20k tokens', () => {
+  it('does not prune when estimated savings are below PRUNE_MIN_SAVINGS', () => {
     const messages: ChatMessage[] = [
       { role: 'system', content: 'sys' },
       oldPrunableTool(1, 1_000),
@@ -52,7 +52,7 @@ describe('context prune thresholds', () => {
     assert.equal(messages[1]?.compacted_at, undefined);
   });
 
-  it('prunes eligible old tool/assistant bodies when savings reach 20k', () => {
+  it('prunes eligible old tool/assistant bodies when savings reach PRUNE_MIN_SAVINGS', () => {
     const messages: ChatMessage[] = [
       { role: 'system', content: 'sys' },
       oldPrunableTool(1, PRUNE_MIN_SAVINGS + 500),
