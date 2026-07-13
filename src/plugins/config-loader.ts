@@ -17,6 +17,7 @@ const DEFAULT_BUILTIN_TOOLS = [
   'git_status',
   'git_diff',
   'git_log',
+  'lsp_query',
 ];
 
 function expandHome(path: string): string {

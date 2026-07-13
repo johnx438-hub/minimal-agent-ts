@@ -11,6 +11,7 @@ export const POINTER_RULES: Record<
   git_status: { minChars: 800, alwaysIfLines: 40 },
   git_diff: { minChars: 800, alwaysIfLines: 40 },
   git_log: { minChars: 600, alwaysIfLines: 30 },
+  lsp_query: { minChars: 900, alwaysIfLines: 40 },
   write_file: { minChars: Number.POSITIVE_INFINITY },
   edit_file: { minChars: Number.POSITIVE_INFINITY },
   grep_search: { minChars: 500, alwaysIfLines: 20 },

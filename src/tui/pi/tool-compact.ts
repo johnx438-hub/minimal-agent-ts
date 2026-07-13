@@ -99,6 +99,12 @@ export function formatToolBreadcrumb(name: string, argsJson: string, output: str
       const n = args.max_count !== undefined ? String(args.max_count) : '15';
       return `← git log -${n}`;
     }
+    case 'lsp_query': {
+      const op = clipText(String(args.operation ?? '?'), 16);
+      const path = clipText(String(args.path ?? '?'), 40);
+      const line = args.line !== undefined ? String(args.line) : '?';
+      return `← lsp ${op}: ${path}:${line}`;
+    }
     case 'web_search': {
       const q = clipText(String(args.query ?? '?'), 48);
       return `← search: ${q}`;

@@ -60,6 +60,7 @@
     "git_status",
     "git_diff",
     "git_log",
+    "lsp_query",
     "web_fetch",
     "web_search",
     "spawn_agent",
@@ -89,6 +90,7 @@
         "git_status",
         "git_diff",
         "git_log",
+        "lsp_query",
         "web_fetch",
         "web_search"
       ],

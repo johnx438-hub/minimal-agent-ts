@@ -261,9 +261,19 @@ lsp_query({
 
 ### 验收
 
-- [ ] 对 fixture `.ts` 文件 `definition` 命中正确符号
-- [ ] server 未安装时错误可读
-- [ ] abort 时子进程被清理
+- [x] 对 fixture `.ts` 文件 `definition` 命中正确符号（TypeScript LanguageService）
+- [x] 非 TS/JS 扩展错误可读
+- [x] 无外部 language server 依赖（v1 用 `typescript` 包 in-process；abort 无常驻子进程）
+
+### v1 落地说明（2026-07-13）
+
+| 项 | 实现 |
+|----|------|
+| 后端 | in-process `typescript` LanguageService（`src/tools/lsp-typescript.ts`） |
+| 操作 | `hover` · `definition` · `references` · `symbols` |
+| 权限 | 只读 `resolveReadablePath`；**不需** `allowShell` |
+| 注册 | `lsp_query` → BuiltinToolProvider + `dev-worker` |
+| 后续 | 可选 stdio `typescript-language-server` / 多语言映射 |
 
 ---
 
@@ -382,7 +392,7 @@ C0  dev-worker preset + max_turns_cap 提高          ✅ 2026-07-13
   ↓
 C1  git_status / git_diff / git_log                  ✅ 2026-07-13
   ↓
-C2  lsp_query（§4）definition / references / hover  高价值，依赖本机 LSP
+C2  lsp_query（TS/JS LanguageService）               ✅ 2026-07-13
   ↓
 C3  apply_patch 多文件 unified diff（单 tool）       降低 edit 轮次
   ↓
@@ -394,7 +404,7 @@ C5  spawn_shell_policy（命令前缀白名单）             安全压测再开
 | 项 | 形态 | 优先级 | 备注 |
 |----|------|:------:|------|
 | **C1 git_*** | builtin `git_status` / `git_diff` / `git_log` | ✅ | `src/tools/git.ts`；argv spawn；shell gate |
-| **C2 lsp_query** | builtin 子进程 | P1（有 TS 大仓时） | 见 §4；与 dev-worker 叠加收益最大 |
+| **C2 lsp_query** | builtin + TS API | ✅ | `src/tools/lsp.ts`；无 shell；见 §4 |
 | **C3 apply_patch** | builtin | P2 | 输入 unified diff；原子写 + hash 校验 |
 | **C4 test_run** | builtin 或 shell+parser | P3 | 输出 pass/fail 计数进 context，全文 spill |
 | **C5 shell_policy** | spawn 配置 | P2（压测） | `docs/ROADMAP` §5.3 |
@@ -453,6 +463,7 @@ npm start -- --allow-shell --cwd /path/to/sandbox \
 | 2026-07-12 | v0.2：`web_search` 分期（v1 ddgr / v1.5 cache+budget / v2 searxng）、降级链、agent.json 草案 |
 | 2026-07-13 | v0.3：§7 Coding 友好工具；`dev-worker` preset；C1–C5 路线 |
 | 2026-07-13 | v0.3.1：C1 `git_status` / `git_diff` / `git_log` 落地 |
+| 2026-07-13 | v0.3.2：C2 `lsp_query`（TS LanguageService）落地 |
 
 ---
 

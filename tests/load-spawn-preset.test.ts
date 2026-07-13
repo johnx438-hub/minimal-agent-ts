@@ -78,6 +78,7 @@ describe('load spawn preset', () => {
           'git_status',
           'git_diff',
           'git_log',
+          'lsp_query',
           'web_fetch',
           'web_search',
           'spawn_agent',
@@ -92,6 +93,7 @@ describe('load spawn preset', () => {
     assert.equal(preset.maxTurns, 50);
     assert.ok(preset.tools.includes('run_shell'));
     assert.ok(preset.tools.includes('git_status'));
+    assert.ok(preset.tools.includes('lsp_query'));
     assert.ok(preset.tools.includes('edit_file'));
     assert.ok(!preset.tools.includes('spawn_agent'));
     assert.ok(!preset.tools.includes('code_review'));

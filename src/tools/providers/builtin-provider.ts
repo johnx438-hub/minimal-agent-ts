@@ -6,6 +6,7 @@ import { EXPLORE_DEFINITIONS, runExploreTool } from '../explore.js';
 import { READ_WRITE_DEFINITIONS, runReadWriteTool } from '../read-write.js';
 import { RECALL_DEFINITIONS, runRecallTool } from '../recall.js';
 import { GIT_DEFINITIONS, runGitTool } from '../git.js';
+import { LSP_DEFINITIONS, runLspTool } from '../lsp.js';
 import { SHELL_DEFINITIONS, runShellTool } from '../shell.js';
 import { WEB_FETCH_DEFINITIONS, runWebFetchTool } from '../web-fetch.js';
 import { isRoleToolAllowlisted } from './tool-allowlist.js';
@@ -36,6 +37,7 @@ const BUILTIN_TOOLS: Record<string, BuiltinToolEntry> = {
   git_status: { defs: GIT_DEFINITIONS, handler: runGitTool, requiresShell: true },
   git_diff: { defs: GIT_DEFINITIONS, handler: runGitTool, requiresShell: true },
   git_log: { defs: GIT_DEFINITIONS, handler: runGitTool, requiresShell: true },
+  lsp_query: { defs: LSP_DEFINITIONS, handler: runLspTool },
   web_fetch: { defs: WEB_FETCH_DEFINITIONS, handler: runWebFetchTool, requiresWeb: true },
   code_review: { defs: CODE_REVIEW_DEFINITIONS, handler: runCodeReviewTool },
 };
