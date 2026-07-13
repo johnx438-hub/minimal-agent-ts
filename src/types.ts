@@ -10,6 +10,7 @@ import type {
   CachePolicyConfig,
   LlmWire,
   SpawnPolicy,
+  SpawnShellPolicy,
   WebFetchPolicy,
   WebSearchPolicy,
 } from './plugins/types.js';
@@ -134,6 +135,11 @@ export interface AgentConfig {
   permissionGate?: PermissionGate;
   /** Spawn concurrency and turn limits from agent.json spawn_policy. */
   spawnPolicy?: SpawnPolicy;
+  /**
+   * C5: effective shell policy for this agent run (set on spawn children).
+   * Enforced only when spawnDepth > 0 inside run_shell.
+   */
+  spawnShellPolicy?: SpawnShellPolicy;
   /** Spawn lifecycle hooks for TUI / --json-events (main agent only). */
   spawnLifecycle?: (event: SpawnLifecycleEvent) => void;
   /** Parent session id when running as a spawn sub-agent (cold storage path). */

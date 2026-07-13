@@ -398,7 +398,7 @@ C3  apply_patch 多文件 unified diff                  ✅ 2026-07-13
   ↓
 C4  test_run 结构化摘要                               ✅ 2026-07-13
   ↓
-C5  spawn_shell_policy（命令前缀白名单）             安全压测再开
+C5  spawn_shell_policy（命令前缀白名单）             ✅ 2026-07-13
 ```
 
 | 项 | 形态 | 优先级 | 备注 |
@@ -407,7 +407,7 @@ C5  spawn_shell_policy（命令前缀白名单）             安全压测再开
 | **C2 lsp_query** | builtin + TS API | ✅ | `src/tools/lsp.ts`；无 shell；见 §4 |
 | **C3 apply_patch** | builtin | ✅ | `src/tools/apply-patch.ts`；unified multi-file；dry_run |
 | **C4 test_run** | builtin | ✅ | `src/tools/test-run.ts`；node:test/TAP/jest/junit；spill |
-| **C5 shell_policy** | spawn 配置 | P2（压测） | `docs/ROADMAP` §5.3 |
+| **C5 shell_policy** | spawn 配置 | ✅ | `src/spawn/shell-policy.ts`；见下方 C5 |
 
 #### C1 实现要点（已落地）
 
@@ -430,6 +430,17 @@ C5  spawn_shell_policy（命令前缀白名单）             安全压测再开
 - 解析：node:test、TAP、Jest/Vitest 摘要、JUnit XML；否则 exit-only
 - 返回 markdown：PASS/FAIL、计数、失败名列表、可选 log tail
 - 大日志 spill 到 `.cache/test-run/<hash>.log`
+
+#### C5 实现要点（已落地）
+
+- 模块：`src/spawn/shell-policy.ts`（normalize / prefix / deny / merge / evaluate）
+- 配置：`agent.json` → `spawn_policy.shell` + 可选 `spawn_presets[].shell`（preset 覆盖 mode/prefixes/timeout；deny **并集**）
+- 模式：`inherit` | `allowlist` | `deny_only`
+- 强制点：`run_shell` 仅在 **`spawnDepth > 0`** 时 evaluate；主 Agent 不受影响
+- 子 Agent：`load-preset` 合并 → `ResolvedSpawnPreset.shellPolicy` → `runSpawnAgent` 写入 `childConfig.spawnShellPolicy`
+- **豁免**：`git_*` / `test_run` / `lsp_query` / `apply_patch` 不走 `run_shell` 字符串策略
+- 默认：全局 `deny_only` + 危险 deny 表；`dev-worker` 为 `allowlist`（npm/npx/node/git/tsc/tsx）+ timeout cap 300s
+- 测试：`tests/spawn-shell-policy.test.ts`
 
 ### 7.3 并行编码用法（压测 / 日常）
 

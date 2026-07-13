@@ -124,6 +124,26 @@ export interface ApiProfileConfig {
   reasoning_map?: Record<string, Record<string, unknown>>;
 }
 
+/** C5: constrain child-agent run_shell (spawnDepth > 0). */
+export type SpawnShellMode = 'inherit' | 'allowlist' | 'deny_only';
+
+export interface SpawnShellPolicy {
+  /**
+   * inherit — only deny_patterns (if any)
+   * allowlist — must match allowed_prefixes; deny still applies
+   * deny_only — only deny_patterns
+   */
+  mode?: SpawnShellMode;
+  /** Command must start with one of these (after normalize / strip leading cd). */
+  allowed_prefixes?: string[];
+  /** Always-applied regex denylist (string patterns). */
+  deny_patterns?: string[];
+  /** Default timeout for child run_shell when caller omits timeout_ms. */
+  timeout_ms_default?: number;
+  /** Hard cap on timeout_ms / max_timeout_ms for child run_shell. */
+  timeout_ms_cap?: number;
+}
+
 export interface SpawnPresetConfig {
   name: string;
   description?: string;
@@ -133,6 +153,8 @@ export interface SpawnPresetConfig {
   /** G1-c: optional LLM profile + model override for this preset. */
   api_profile?: string;
   model?: string;
+  /** C5: per-preset shell policy (merged over spawn_policy.shell). */
+  shell?: SpawnShellPolicy;
 }
 
 export interface SpawnPolicy {
@@ -142,6 +164,8 @@ export interface SpawnPolicy {
   max_turns_default?: number;
   /** Upper bound on preset max_turns (default 30). */
   max_turns_cap?: number;
+  /** C5: default shell policy for all child agents (preset.shell overrides). */
+  shell?: SpawnShellPolicy;
 }
 
 export interface TranscriptPolicy {

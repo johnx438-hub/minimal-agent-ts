@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 
 import type { SpawnPolicy, SpawnPresetConfig } from '../plugins/types.js';
+import { mergeSpawnShellPolicy } from './shell-policy.js';
 import type { ResolvedSpawnPreset } from './types.js';
 
 const DEFAULT_SPAWN_MAX_TURNS = 15;
@@ -102,6 +103,7 @@ export function resolveSpawnPreset(
     systemPrompt: `${body}${toolLine}`,
     tools,
     maxTurns: clampMaxTurns(maxTurns, policy),
+    shellPolicy: mergeSpawnShellPolicy(policy?.shell, config.shell),
   };
 }
 

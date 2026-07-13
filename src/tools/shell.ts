@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 
 import { sleep } from '../llm-retry.js';
 import { isCapabilityEnabled } from '../permission-gate.js';
+import { evaluateSpawnShellPolicy } from '../spawn/shell-policy.js';
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import { resolveReadablePath } from './path-utils.js';
 import { resolveShellInvocation } from './shell-resolve.js';
@@ -277,6 +278,33 @@ export async function runShellTool(
       }
       const msg = err instanceof Error ? err.message : String(err);
       return `error: ${msg}`;
+    }
+  }
+
+  // C5: enforce spawn shell policy only for nested agents (depth > 0).
+  if ((config.spawnDepth ?? 0) > 0) {
+    const verdict = evaluateSpawnShellPolicy(parsed.command, config.spawnShellPolicy, {
+      cwd: workDir,
+      requestedTimeoutMs: args.timeout_ms !== undefined ? parsed.timeoutMs : undefined,
+      requestedMaxTimeoutMs:
+        args.max_timeout_ms !== undefined ? parsed.maxTimeoutMs : undefined,
+    });
+    if (!verdict.ok) {
+      return `error: ${verdict.reason ?? 'run_shell blocked by spawn_shell_policy'}`;
+    }
+    if (verdict.timeout_ms !== undefined) {
+      parsed.timeoutMs = clampInt(verdict.timeout_ms, DEFAULT_TIMEOUT_MS, 1_000, 600_000);
+    }
+    if (verdict.max_timeout_ms !== undefined) {
+      parsed.maxTimeoutMs = clampInt(
+        verdict.max_timeout_ms,
+        DEFAULT_MAX_TIMEOUT_MS,
+        parsed.timeoutMs,
+        600_000,
+      );
+    }
+    if (parsed.maxTimeoutMs < parsed.timeoutMs) {
+      parsed.maxTimeoutMs = parsed.timeoutMs;
     }
   }
 

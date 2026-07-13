@@ -202,6 +202,8 @@ async function runSpawnAgentInner(opts: {
     maxTurns: preset.maxTurns,
     toolAllowlist: preset.tools.length > 0 ? preset.tools : undefined,
     spawnDepth: depth + 1,
+    // C5: child gets merged preset shell policy (main agent keeps parent's, if any).
+    spawnShellPolicy: preset.shellPolicy,
     spawnLifecycle: undefined,
     // Child owns its onStep; do not inherit parent's nested sink on toolConfig.
     nestedStepSink: undefined,

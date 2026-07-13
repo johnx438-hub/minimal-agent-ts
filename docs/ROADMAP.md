@@ -246,7 +246,7 @@ ACTION_IO_METRICS=1 npm start -- --json-events --allow-shell --cwd /path/to/sand
 | 能力继承 | 子 spawn 继承父 `allowShell` / `permissionGate`；preset 需 shell 时走 JIT | — |
 | 预设工具 | `agent.json` `spawn_presets[].tools` 可列 `run_shell` | stress preset 文档化 |
 | 深度限制 | `MAX_SPAWN_DEPTH = 2`；子 Agent 不能再 spawn | 压测用 `spawn_background` 绕过交互 spawn 深度 |
-| 命令约束 | `run_shell` 全 cwd 内 | **`spawn_shell_policy`**：`allowed_commands` 前缀表、`deny_patterns`、单次 timeout |
+| 命令约束 | `run_shell` 全 cwd 内 | ✅ **`spawn_shell_policy`**（C5）：`allowed_prefixes`、`deny_patterns`、timeout default/cap；仅 `spawnDepth>0` |
 | 后台 job | `jobOnStep` 转发 `AgentStepEvent` 到 `events.jsonl` | 与 MessageBridge 共用 sink |
 
 **不建议**：给子 Agent 无 gate 的 shell；高压场景应 **sandbox cwd + preset 白名单 + 父级先 `/approve session shell`**。
