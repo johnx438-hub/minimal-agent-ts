@@ -14,6 +14,9 @@ const DEFAULT_BUILTIN_TOOLS = [
   'recall_query',
   'invoke_skill',
   'run_shell',
+  'git_status',
+  'git_diff',
+  'git_log',
 ];
 
 function expandHome(path: string): string {

@@ -75,6 +75,9 @@ describe('load spawn preset', () => {
           'recall_query',
           'invoke_skill',
           'run_shell',
+          'git_status',
+          'git_diff',
+          'git_log',
           'web_fetch',
           'web_search',
           'spawn_agent',
@@ -88,6 +91,7 @@ describe('load spawn preset', () => {
     assert.equal(preset.name, 'dev-worker');
     assert.equal(preset.maxTurns, 50);
     assert.ok(preset.tools.includes('run_shell'));
+    assert.ok(preset.tools.includes('git_status'));
     assert.ok(preset.tools.includes('edit_file'));
     assert.ok(!preset.tools.includes('spawn_agent'));
     assert.ok(!preset.tools.includes('code_review'));

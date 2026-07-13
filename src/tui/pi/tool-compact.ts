@@ -88,6 +88,17 @@ export function formatToolBreadcrumb(name: string, argsJson: string, output: str
       const skill = clipText(String(args.name ?? 'list'));
       return `← skill: ${skill}`;
     }
+    case 'git_status':
+      return '← git status';
+    case 'git_diff': {
+      const staged = args.staged === true ? ' --cached' : '';
+      const path = args.path !== undefined ? ` ${clipText(String(args.path), 40)}` : '';
+      return `← git diff${staged}${path}`;
+    }
+    case 'git_log': {
+      const n = args.max_count !== undefined ? String(args.max_count) : '15';
+      return `← git log -${n}`;
+    }
     case 'web_search': {
       const q = clipText(String(args.query ?? '?'), 48);
       return `← search: ${q}`;

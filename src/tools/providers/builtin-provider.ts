@@ -5,6 +5,7 @@ import { EDIT_FILE_DEFINITIONS, runEditFileTool } from '../edit-file.js';
 import { EXPLORE_DEFINITIONS, runExploreTool } from '../explore.js';
 import { READ_WRITE_DEFINITIONS, runReadWriteTool } from '../read-write.js';
 import { RECALL_DEFINITIONS, runRecallTool } from '../recall.js';
+import { GIT_DEFINITIONS, runGitTool } from '../git.js';
 import { SHELL_DEFINITIONS, runShellTool } from '../shell.js';
 import { WEB_FETCH_DEFINITIONS, runWebFetchTool } from '../web-fetch.js';
 import { isRoleToolAllowlisted } from './tool-allowlist.js';
@@ -32,6 +33,9 @@ const BUILTIN_TOOLS: Record<string, BuiltinToolEntry> = {
   diff_file: { defs: EXPLORE_DEFINITIONS, handler: runExploreTool },
   recall_query: { defs: RECALL_DEFINITIONS, handler: runRecallTool },
   run_shell: { defs: SHELL_DEFINITIONS, handler: runShellTool, requiresShell: true },
+  git_status: { defs: GIT_DEFINITIONS, handler: runGitTool, requiresShell: true },
+  git_diff: { defs: GIT_DEFINITIONS, handler: runGitTool, requiresShell: true },
+  git_log: { defs: GIT_DEFINITIONS, handler: runGitTool, requiresShell: true },
   web_fetch: { defs: WEB_FETCH_DEFINITIONS, handler: runWebFetchTool, requiresWeb: true },
   code_review: { defs: CODE_REVIEW_DEFINITIONS, handler: runCodeReviewTool },
 };

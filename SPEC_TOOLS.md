@@ -380,7 +380,7 @@ recall_query invoke_skill run_shell web_fetch web_search
 ```text
 C0  dev-worker preset + max_turns_cap 提高          ✅ 2026-07-13
   ↓
-C1  git_status / git_diff 轻量封装（或 skill）       可选：减少 shell 胡写
+C1  git_status / git_diff / git_log                  ✅ 2026-07-13
   ↓
 C2  lsp_query（§4）definition / references / hover  高价值，依赖本机 LSP
   ↓
@@ -393,11 +393,19 @@ C5  spawn_shell_policy（命令前缀白名单）             安全压测再开
 
 | 项 | 形态 | 优先级 | 备注 |
 |----|------|:------:|------|
-| **C1 git_*** | builtin 或 `skills/git-helper` | P2 | 薄封装 `git status/diff/log`；权限仍走 shell gate |
+| **C1 git_*** | builtin `git_status` / `git_diff` / `git_log` | ✅ | `src/tools/git.ts`；argv spawn；shell gate |
 | **C2 lsp_query** | builtin 子进程 | P1（有 TS 大仓时） | 见 §4；与 dev-worker 叠加收益最大 |
 | **C3 apply_patch** | builtin | P2 | 输入 unified diff；原子写 + hash 校验 |
 | **C4 test_run** | builtin 或 shell+parser | P3 | 输出 pass/fail 计数进 context，全文 spill |
 | **C5 shell_policy** | spawn 配置 | P2（压测） | `docs/ROADMAP` §5.3 |
+
+#### C1 实现要点（已落地）
+
+- 子进程：`spawn('git', args)`，**不用** shell 字符串拼接。
+- 权限：与 `run_shell` 相同 `requiresShell` + JIT。
+- `git_diff` / `git_log` 的 `path` 必须在 cwd 内。
+- 输出默认 `max_chars` 截断；无 diff 时返回 `ok: no differences`。
+- 已加入 `dev-worker` 工具白名单与 `agent.json` `builtin_tools`。
 
 ### 7.3 并行编码用法（压测 / 日常）
 
@@ -444,6 +452,7 @@ npm start -- --allow-shell --cwd /path/to/sandbox \
 | 2026-07-06 | v0.1 初稿：web_search、lsp_query、convert_document、office_* 范围与验收 |
 | 2026-07-12 | v0.2：`web_search` 分期（v1 ddgr / v1.5 cache+budget / v2 searxng）、降级链、agent.json 草案 |
 | 2026-07-13 | v0.3：§7 Coding 友好工具；`dev-worker` preset；C1–C5 路线 |
+| 2026-07-13 | v0.3.1：C1 `git_status` / `git_diff` / `git_log` 落地 |
 
 ---
 
