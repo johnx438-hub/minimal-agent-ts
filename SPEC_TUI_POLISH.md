@@ -213,8 +213,8 @@ verbose_run_header?: boolean;
 | 交付 | 说明 |
 |------|------|
 | 状态行策略 | 避免每次 `printStatus` 都往 chat **追加**永久行；优先 **原地更新** 单行 Text 组件（若 pi-tui 难做，则节流：状态变化才追加） |
-| 内容 | `session · model · shell/web · jobs:N · turn:N · [io] · Σm · Σs · ctx:prompt[/limit]` |
-| Token 分项 | **Σm** = 主 Agent billed 累计；**Σs** = spawn 子 Agent billed（无 spawn 时省略）；**ctx** = 主 Agent 最近一次 `prompt_tokens`/limit；换 session 清零 |
+| 内容 | `session · model · shell/web · jobs:N · turn:N · [io] · Σm · Σs · ctx · c:hit%` |
+| Token 分项 | **Σm** / **Σs** = 主/spawn billed；**ctx** = 主 Agent 最近 `prompt_tokens`/limit；**c** = session 前缀 cache hit%（`llm_done.cache` 累计，无遥测时省略）；换 session 清零 |
 | 输入 hint | Editor 上方或 banner 末行：`Enter send · Esc abort · / commands` |
 | Editor 边框 | `piEditorTheme.borderColor` 略强于纯 dim（仍克制） |
 

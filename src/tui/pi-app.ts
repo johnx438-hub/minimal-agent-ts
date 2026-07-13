@@ -305,7 +305,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
       tokenStatus.onSpawnEnd();
     }
     if (event.type === 'llm_done') {
-      if (tokenStatus.onLlmDone(event.usage)) {
+      if (tokenStatus.onLlmDone(event.usage, event.cache)) {
         printStatus();
       }
     }
