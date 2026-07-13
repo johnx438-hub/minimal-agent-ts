@@ -4,7 +4,6 @@ import type { TUI } from '@earendil-works/pi-tui';
 
 import type { CompressionFatigueTracker } from '../compression-fatigue.js';
 import type { AgentRuntime } from '../runner.js';
-import { formatSessionPickerDescription } from '../session.js';
 import { cwdChangeNeedsConfirm } from '../tools/path-utils.js';
 import { executeMemorySlash } from '../workspace-memory.js';
 import {
@@ -18,7 +17,7 @@ import { showJobsBrowser, showJobStatusOverlay, showJobTailOverlay } from './pi/
 import { showSpawnsBrowser } from './pi/spawns-overlay.js';
 import { showLogBrowser } from './pi/log-overlay.js';
 import { buildSelectItems, showPickerOverlay } from './pi/picker.js';
-import { showSessionDetailOverlay } from './pi/session-detail.js';
+import { showSessionsBrowser } from './pi/sessions-overlay.js';
 import {
   formatApproveStatus,
   loadPrefs,
@@ -204,54 +203,19 @@ export async function handlePiSlash(
   }
 
   if (result.message === '__sessions__') {
-    const sessions = runtime.listSessions().slice(0, 20);
-    if (sessions.length === 0) {
-      say('(no sessions)');
-      resumeEditor();
-      return;
-    }
-
-    const currentId = runtime.sessionLabel();
-    const items = buildSelectItems(
-      sessions.map((s) => {
-        const current = s.session_id === currentId ? ' (current)' : '';
-        return {
-          value: s.session_id,
-          label: `${s.session_id}${current}`,
-          description: formatSessionPickerDescription(s),
-        };
-      }),
-    );
-
-    const picked = await showPickerOverlay(tui, {
-      title: 'Sessions — Enter resume · i info · Esc cancel',
-      items,
-      maxVisible: Math.min(items.length, 10),
-      onInfo: async (item, finish) => {
-        const overview = runtime.getSessionOverview(item.value);
-        if (!overview) {
-          say(`Session not found: ${item.value}`);
-          return;
-        }
-        const fullSession = runtime.resolveHistorySession(item.value);
-        const action = await showSessionDetailOverlay(tui, overview, fullSession);
-        if (action === 'resume') finish(item);
-      },
-    });
-    if (!picked) {
-      resumeEditor();
-      return;
-    }
-    if (!runtime.resumeSession(picked.value)) {
-      say(`Session not found: ${picked.value}`);
-    } else {
-      uiState.armedWorkflow = null;
-      runtime.armWorkflow(null);
-      fatigueTracker.reset();
-      say(
-        `Resumed ${picked.value} (${runtime.session!.tasks.length} tasks)`,
-      );
-      printStatus();
+    const browse = await showSessionsBrowser(tui, runtime, { say });
+    if (browse.kind === 'resume') {
+      if (!runtime.resumeSession(browse.sessionId)) {
+        say(`Session not found: ${browse.sessionId}`);
+      } else {
+        uiState.armedWorkflow = null;
+        runtime.armWorkflow(null);
+        fatigueTracker.reset();
+        say(
+          `Resumed ${browse.sessionId} (${runtime.session!.tasks.length} tasks)`,
+        );
+        printStatus();
+      }
     }
     resumeEditor();
     return;

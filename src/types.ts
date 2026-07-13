@@ -215,6 +215,11 @@ export interface SessionFile {
   current_messages: ChatMessage[];  // Messages for ongoing task
   /** Restored on resume / restart so slash overrides survive process exit. */
   llm_override?: SessionLlmOverride;
+  /**
+   * Optional human note for /sessions picker (max ~80 chars when set via TUI).
+   * Empty / missing = no note.
+   */
+  note?: string;
 }
 
 /** Session metadata for quick lookup. */
@@ -229,6 +234,15 @@ export interface SessionMeta {
   last_user_preview?: string;
   /** Latest completed task user_intent preview. */
   last_task_intent?: string;
+  /**
+   * Best one-line task summary for the list (current_work → intent → user msg).
+   * Prefer this over raw last_user_preview for the right-hand column.
+   */
+  last_task_summary?: string;
+  /** Up to 2 paths from the latest completed task. */
+  last_files_touched?: string[];
+  /** User-authored session note (from SessionFile.note). */
+  note?: string;
   /** Whether current_messages has in-flight context. */
   has_in_flight?: boolean;
 }
@@ -241,6 +255,7 @@ export interface SessionOverview {
   task_count: number;
   in_flight_preview: string;
   has_in_flight: boolean;
+  note?: string;
   tasks: Array<{
     task_id: string;
     user_intent: string;

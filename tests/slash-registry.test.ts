@@ -48,7 +48,7 @@ describe('slash registry', () => {
     const items = slashAutocompleteItems();
     const sessions = items.find((i) => i.name === 'sessions');
     assert.ok(sessions);
-    assert.match(sessions!.description, /选择并恢复已保存会话/);
+    assert.match(sessions!.description, /会话列表/);
 
     const skills = items.find((i) => i.name === 'skills');
     assert.ok(skills);

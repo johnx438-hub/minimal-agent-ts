@@ -30,6 +30,8 @@ import {
   listSessions,
   loadSession,
   saveSessionThrottled,
+  setSessionNote as persistSessionNote,
+  normalizeSessionNote,
 } from './session.js';
 import {
   buildWorkflowCheckpoint,
@@ -776,6 +778,23 @@ export class AgentRuntime {
 
   listSessions(): SessionMeta[] {
     return listSessions();
+  }
+
+  /**
+   * Set or clear a human note on a session (persisted).
+   * Also patches the in-memory active session when ids match.
+   */
+  setSessionNote(sessionId: string, note: string | undefined | null): boolean {
+    const ok = persistSessionNote(sessionId, note);
+    if (!ok) return false;
+    if (this.session?.session_id === sessionId) {
+      const normalized = normalizeSessionNote(note);
+      if (normalized) this.session.note = normalized;
+      else delete this.session.note;
+      // Disk already written by persistSessionNote; avoid dirty thrash.
+      this.sessionDirty = false;
+    }
+    return true;
   }
 
   resumeSession(id: string): boolean {

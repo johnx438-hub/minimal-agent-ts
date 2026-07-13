@@ -119,6 +119,10 @@ export function saveSession(session: SessionFile): void {
 }
 
 const SESSION_PREVIEW_MAX_CHARS = 72;
+const SESSION_NOTE_MAX_CHARS = 80;
+const TASK_SUMMARY_PREVIEW_MAX_CHARS = 56;
+const TASK_INTENT_PREVIEW_MAX_CHARS = 48;
+const LABEL_NOTE_MAX_CHARS = 28;
 
 /** One-line preview of the most recent user message in a session. */
 export function lastUserMessagePreview(
@@ -142,13 +146,11 @@ export function lastUserMessagePreview(
   return '(no user message)';
 }
 
-function clipSessionPreview(text: string, max = SESSION_PREVIEW_MAX_CHARS): string {
+export function clipSessionPreview(text: string, max = SESSION_PREVIEW_MAX_CHARS): string {
   const oneLine = text.replace(/\s+/g, ' ').trim();
   if (oneLine.length <= max) return oneLine;
   return `${oneLine.slice(0, max - 1)}…`;
 }
-
-const TASK_INTENT_PREVIEW_MAX_CHARS = 48;
 
 /** Latest completed task user_intent, clipped for list descriptions. */
 export function lastTaskIntentPreview(
@@ -159,13 +161,132 @@ export function lastTaskIntentPreview(
   return clipSessionPreview(intent, TASK_INTENT_PREVIEW_MAX_CHARS);
 }
 
+/**
+ * Best one-line summary of what the session was about (list right column).
+ * Priority: in-flight user → last task current_work → user_intent → user_messages.
+ */
+export function lastTaskSummaryPreview(
+  session: Pick<SessionFile, 'current_messages' | 'tasks'>,
+): string {
+  if (session.current_messages.length > 0) {
+    for (let i = session.current_messages.length - 1; i >= 0; i--) {
+      const msg = session.current_messages[i];
+      if (msg?.role === 'user') {
+        const text = typeof msg.content === 'string' ? msg.content.trim() : '';
+        if (text) return clipSessionPreview(text, TASK_SUMMARY_PREVIEW_MAX_CHARS);
+      }
+    }
+  }
+
+  const lastTask = session.tasks[session.tasks.length - 1];
+  if (!lastTask) return '(empty)';
+
+  const work = lastTask.current_work?.trim();
+  if (work) return clipSessionPreview(work, TASK_SUMMARY_PREVIEW_MAX_CHARS);
+
+  const intent = lastTask.user_intent?.trim();
+  if (intent) return clipSessionPreview(intent, TASK_SUMMARY_PREVIEW_MAX_CHARS);
+
+  const lastMsg = lastTask.user_messages[lastTask.user_messages.length - 1]?.trim();
+  if (lastMsg) return clipSessionPreview(lastMsg, TASK_SUMMARY_PREVIEW_MAX_CHARS);
+
+  return '(empty)';
+}
+
+/** Up to 2 file basenames from the latest completed task. */
+export function lastTaskFilesPreview(
+  session: Pick<SessionFile, 'tasks'>,
+  max = 2,
+): string[] {
+  const files = session.tasks[session.tasks.length - 1]?.files_touched ?? [];
+  const out: string[] = [];
+  for (const f of files) {
+    const base = f.replace(/\\/g, '/').split('/').pop() || f;
+    if (!base || out.includes(base)) continue;
+    out.push(base);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** Local `MM-DD HH:mm` for picker left column. */
+export function formatSessionActiveShort(meta: Pick<SessionMeta, 'created_at' | 'updated_at'>): string {
+  const d = new Date(meta.updated_at ?? meta.created_at);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${mm}-${dd} ${hh}:${mi}`;
+}
+
+/** Compact id tail for list when no note (e.g. session_…HHMMSS → HHMMSS). */
+export function shortSessionId(sessionId: string): string {
+  const m = sessionId.match(/session_\d{8}(\d{6})$/);
+  if (m) return m[1]!;
+  if (sessionId.length <= 10) return sessionId;
+  return sessionId.slice(-6);
+}
+
+/**
+ * Left column: time + note (or short id) + current marker.
+ * Note is the human anchor when present.
+ */
+export function formatSessionPickerLabel(
+  meta: SessionMeta,
+  opts?: { currentId?: string },
+): string {
+  const ts = formatSessionActiveShort(meta);
+  const cur = opts?.currentId && opts.currentId === meta.session_id ? ' ●' : '';
+  const note = meta.note?.trim();
+  if (note) {
+    return `${ts} · ${clipSessionPreview(note, LABEL_NOTE_MAX_CHARS)}${cur}`;
+  }
+  return `${ts} · ${shortSessionId(meta.session_id)}${cur}`;
+}
+
+/**
+ * Right column: task summary · optional files · Nt · optional ★.
+ * In-flight sessions prefix summary with […].
+ */
 export function formatSessionPickerDescription(meta: SessionMeta): string {
-  const active = new Date(meta.updated_at ?? meta.created_at).toISOString().slice(0, 16);
-  const preview = meta.last_user_preview ?? '(no user message)';
-  const intent = meta.last_task_intent
-    ? `intent: ${meta.last_task_intent}`
-    : 'intent: (none)';
-  return `${preview} · tasks=${meta.task_count} · active=${active} · ${intent}`;
+  const summaryRaw =
+    meta.last_task_summary?.trim() ||
+    meta.last_user_preview?.trim() ||
+    '(empty)';
+  const summary = meta.has_in_flight ? `[…] ${summaryRaw}` : summaryRaw;
+  const files = meta.last_files_touched?.length
+    ? `files: ${meta.last_files_touched.join(', ')}`
+    : '';
+  const tasks = `${meta.task_count}t`;
+  const star = meta.note?.trim() ? '★' : '';
+  return [summary, files, tasks, star].filter(Boolean).join(' · ');
+}
+
+export function normalizeSessionNote(raw: string | undefined | null): string | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  const one = raw.replace(/\s+/g, ' ').trim();
+  if (!one) return undefined;
+  return one.length <= SESSION_NOTE_MAX_CHARS
+    ? one
+    : `${one.slice(0, SESSION_NOTE_MAX_CHARS - 1)}…`;
+}
+
+/**
+ * Persist a human note on a session file. Empty/whitespace clears the note.
+ * Returns false if session missing.
+ */
+export function setSessionNote(sessionId: string, note: string | undefined | null): boolean {
+  const session = loadSession(sessionId);
+  if (!session) return false;
+  const normalized = normalizeSessionNote(note);
+  if (normalized) session.note = normalized;
+  else delete session.note;
+  saveSession(session);
+  return true;
+}
+
+export function getSessionNoteMaxChars(): number {
+  return SESSION_NOTE_MAX_CHARS;
 }
 
 /** Build read-only overview for session detail overlay (newest tasks first). */
@@ -186,6 +307,7 @@ export function buildSessionOverview(session: SessionFile): SessionOverview {
     task_count: session.tasks.length,
     in_flight_preview: hasInFlight ? inFlight : '(no in-flight task)',
     has_in_flight: hasInFlight,
+    note: session.note?.trim() || undefined,
     tasks,
   };
 }
@@ -228,6 +350,7 @@ export function listSessions(userId?: string): SessionMeta[] {
 
       const updated_at = session.updated_at ?? stat.mtimeMs;
 
+      const note = session.note?.trim() || undefined;
       sessions.push({
         session_id: session.session_id,
         user_id: session.user_id,
@@ -237,6 +360,9 @@ export function listSessions(userId?: string): SessionMeta[] {
         path,
         last_user_preview: lastUserMessagePreview(session),
         last_task_intent: lastTaskIntentPreview(session),
+        last_task_summary: lastTaskSummaryPreview(session),
+        last_files_touched: lastTaskFilesPreview(session),
+        note,
         has_in_flight: session.current_messages.length > 0,
       });
     } catch {

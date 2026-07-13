@@ -60,8 +60,8 @@ export interface SlashHelpEntry {
 const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
   {
     command: '/sessions',
-    hintZh: '选择并恢复已保存会话',
-    hintEn: 'Pick and resume a saved session',
+    hintZh: '会话列表（右侧摘要 · n 备注 · i 详情）',
+    hintEn: 'Session list (summary · n note · i detail)',
   },
   {
     command: '/resume [id|last]',
