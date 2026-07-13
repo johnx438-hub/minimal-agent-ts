@@ -269,7 +269,7 @@ plan: 4 tools — parallel 2, serial 2
 
 | 命令 | 行为 | 对应今日 CLI |
 |------|------|--------------|
-| `/sessions` | 列表：左 `时间·备注\|短id`，右 `最后 task 摘要·files·Nt`；`n` 写备注，`i` 详情 | `listSessions()` + `SessionFile.note` |
+| `/sessions` | 列表：左 `时间·备注\|短id`，右 `最后 task 摘要·files·Nt`；`n` 备注，`d` 删除（确认），`i` 详情 | `listSessions` / `deleteSession`（actions+spawn+jobs） |
 | `/resume <id>` | 加载 session；**idle 时**下一道 task 续接 | `--resume <id>` |
 | `/new` | 新建 session（不自动清屏，Timeline 标分界） | 新 `createSession()` |
 | `/quit` | 退出 TUI；若 session 有变更则 `saveSession`；`process.exit(0)` | 无 |

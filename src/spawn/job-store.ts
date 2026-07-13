@@ -171,6 +171,16 @@ export function readJobIndex(limit?: number): JobIndexEntry[] {
   }
 }
 
+/** Replace index.jsonl contents (used by session delete compaction). */
+export function writeJobIndex(entries: JobIndexEntry[]): void {
+  ensureJobsRoot();
+  const body =
+    entries.length > 0
+      ? `${entries.map((e) => JSON.stringify(e)).join('\n')}\n`
+      : '';
+  writeFileSync(jobsIndexPath(), body, 'utf8');
+}
+
 export function writeJobResult(result: SpawnJobResultFile): void {
   ensureJobDir(result.job_id);
   writeFileSync(jobResultPath(result.job_id), `${JSON.stringify(result, null, 2)}\n`, 'utf8');

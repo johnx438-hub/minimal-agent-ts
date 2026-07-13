@@ -34,6 +34,13 @@ import {
   normalizeSessionNote,
 } from './session.js';
 import {
+  collectSessionArtifacts,
+  deleteSession as deleteSessionDisk,
+  type DeleteSessionResult,
+  type SessionArtifacts,
+} from './session-delete.js';
+import { getJobRegistry } from './spawn/job-registry.js';
+import {
   buildWorkflowCheckpoint,
   formatWorkflowCheckpoint,
   workflowConfirmEndEvent,
@@ -795,6 +802,42 @@ export class AgentRuntime {
       this.sessionDirty = false;
     }
     return true;
+  }
+
+  /** Inventory disk artifacts for a session (actions, spawn, jobs, …). */
+  collectSessionArtifacts(sessionId: string): SessionArtifacts {
+    return collectSessionArtifacts(sessionId);
+  }
+
+  /**
+   * Delete a main session and its bound cold storage / spawn trees / jobs.
+   * Refuses when this session is the active run target.
+   * If the deleted id is the current idle session, starts a fresh empty session.
+   */
+  deleteSession(sessionId: string): DeleteSessionResult {
+    const id = sessionId.trim();
+    if (this.isRunning() && this.session?.session_id === id) {
+      return {
+        ok: false,
+        reason: 'session is running; /stop first',
+        artifacts: collectSessionArtifacts(id),
+      };
+    }
+
+    const wasCurrent = this.session?.session_id === id;
+    if (wasCurrent) {
+      this.saveIfDirty(true);
+      setActiveActionSessionId(undefined);
+    }
+
+    const result = deleteSessionDisk(id, {
+      cancelJob: (jobId) => getJobRegistry().cancel(jobId),
+    });
+
+    if (result.ok && wasCurrent) {
+      this.newSession();
+    }
+    return result;
   }
 
   resumeSession(id: string): boolean {

@@ -203,7 +203,7 @@ export async function handlePiSlash(
   }
 
   if (result.message === '__sessions__') {
-    const browse = await showSessionsBrowser(tui, runtime, { say });
+    const browse = await showSessionsBrowser(tui, runtime, { say, printStatus });
     if (browse.kind === 'resume') {
       if (!runtime.resumeSession(browse.sessionId)) {
         say(`Session not found: ${browse.sessionId}`);
@@ -216,6 +216,9 @@ export async function handlePiSlash(
         );
         printStatus();
       }
+    } else if (browse.kind === 'deleted') {
+      fatigueTracker.reset();
+      printStatus();
     }
     resumeEditor();
     return;
