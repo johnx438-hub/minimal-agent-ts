@@ -96,6 +96,17 @@ function toolGuidanceLine(name: string, description: string): string | null {
   }
 }
 
+/** Effective model id for prompts (session override / profile already mirrored on config). */
+export function resolveActiveModelLabel(config: AgentConfig): string {
+  const model = (config.llm?.model ?? config.model)?.trim();
+  if (!model) return 'unknown';
+  const profile =
+    config.llm?.displayName?.trim() ||
+    config.llm?.profileName?.trim() ||
+    '';
+  return profile ? `${model} (${profile})` : model;
+}
+
 /** Default system prompt; tool names and hints come from the live tool registry. */
 export function buildSystemPrompt(config: AgentConfig): string {
   const recallKb = Math.round((config.recallAutoFullMaxChars ?? 24_000) / 1000);
@@ -110,8 +121,11 @@ export function buildSystemPrompt(config: AgentConfig): string {
       ? formatToolList(defs)
       : 'read_file, write_file, edit_file, grep_search, list_files, diff_file, recall_query, invoke_skill';
 
+  const modelLabel = resolveActiveModelLabel(config);
+
   const lines: string[] = [
     'You are a minimal coding assistant in a learning demo.',
+    `Active model: ${modelLabel}.`,
     '',
     `You have builtin tools (${toolList}) plus any MCP tools exposed as mcp_<server>_<tool>.`,
   ];
