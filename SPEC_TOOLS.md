@@ -376,11 +376,12 @@ office_write({ path: string, payload: object, mode?: 'replace_sheet' | 'append_r
 | 文档 | `web_search` + `web_fetch` | API/库文档 | 免 key 搜索脆 |
 | 委派 | `spawn_*` / `code_review` | 并行 worker / 三审 | 子 Agent **禁止**再 spawn（`load-preset` 硬过滤） |
 
-**`dev-worker` 工具白名单**（与 agent.json 同步）：
+**全量编码工具白名单**（`dev-worker` / `skeleton-reader` / `code-review-*`，与 agent.json 同步）：
 
 ```text
-read_file write_file edit_file grep_search list_files diff_file
-recall_query invoke_skill run_shell web_fetch web_search
+read_file write_file edit_file apply_patch grep_search list_files diff_file
+recall_query invoke_skill run_shell test_run git_status git_diff git_log
+lsp_query web_fetch web_search
 ```
 
 **明确不给子 Agent**：`spawn_agent` · `spawn_background` · `code_review`。
