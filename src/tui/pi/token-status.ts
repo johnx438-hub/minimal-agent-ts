@@ -1,5 +1,5 @@
 /**
- * Status-bar token metrics: session total billed + last main-agent context size.
+ * Status-bar token metrics: session billed (main vs spawn) + last main-agent context.
  * Driven by llm_done.usage (API-reported), not local estimates.
  */
 
@@ -50,14 +50,20 @@ export function formatCompactTokens(n: number): string {
 
 /**
  * Accumulates session token usage for the TUI footer.
- * - total (Σ): sum of billed tokens from every llm_done (main + spawn)
- * - ctx: last prompt_tokens from main-agent turns only (spawn_start/end gated)
+ * - Σm / Σs: billed tokens for main agent vs spawn children (spawn_start/end gated)
+ * - ctx: last prompt_tokens from main-agent turns only
  */
 export class TokenStatusTracker {
-  totalBilled = 0;
+  mainBilled = 0;
+  spawnBilled = 0;
   lastContext: number | undefined;
   private activeSpawns = 0;
   private sessionKey = '';
+
+  /** Main + spawn billed total. */
+  get totalBilled(): number {
+    return this.mainBilled + this.spawnBilled;
+  }
 
   /** Reset counters when the active session id changes. */
   bindSession(sessionKey: string): void {
@@ -68,7 +74,8 @@ export class TokenStatusTracker {
   }
 
   reset(): void {
-    this.totalBilled = 0;
+    this.mainBilled = 0;
+    this.spawnBilled = 0;
     this.lastContext = undefined;
     this.activeSpawns = 0;
   }
@@ -85,7 +92,11 @@ export class TokenStatusTracker {
     const parsed = readUsageTokens(usage);
     let changed = false;
     if (parsed.billed !== undefined && parsed.billed > 0) {
-      this.totalBilled += parsed.billed;
+      if (this.activeSpawns > 0) {
+        this.spawnBilled += parsed.billed;
+      } else {
+        this.mainBilled += parsed.billed;
+      }
       changed = true;
     }
     // Only main-agent prompt size is "agent context" occupancy.
@@ -99,14 +110,19 @@ export class TokenStatusTracker {
   }
 
   /**
-   * Status fragment, e.g. `Σ:12.3k · ctx:8.1k/1.0M`.
-   * Empty when no usage has been observed yet.
+   * Status fragment, e.g. `Σm:12.3k · Σs:1k · ctx:8.1k/1.0M`.
+   * Σs omitted when zero. Empty when no usage has been observed yet.
    */
   formatStatus(contextLimit?: number): string {
     if (this.totalBilled <= 0 && this.lastContext === undefined) return '';
     const parts: string[] = [];
-    if (this.totalBilled > 0) {
-      parts.push(`Σ:${formatCompactTokens(this.totalBilled)}`);
+    if (this.mainBilled > 0 || this.spawnBilled > 0) {
+      if (this.mainBilled > 0 || this.spawnBilled === 0) {
+        parts.push(`Σm:${formatCompactTokens(this.mainBilled)}`);
+      }
+      if (this.spawnBilled > 0) {
+        parts.push(`Σs:${formatCompactTokens(this.spawnBilled)}`);
+      }
     }
     if (this.lastContext !== undefined) {
       let ctx = `ctx:${formatCompactTokens(this.lastContext)}`;
