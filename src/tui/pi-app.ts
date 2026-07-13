@@ -10,8 +10,10 @@ import {
 } from '@earendil-works/pi-tui';
 
 import { isActionIoMetricsEnabled } from '../action-io-metrics.js';
+import { getMaxContextTokens } from '../context/budget.js';
 import type { AgentRuntime } from '../runner.js';
 import { CompressionFatigueTracker } from '../compression-fatigue.js';
+import { TokenStatusTracker } from './pi/token-status.js';
 import {
   applyVerboseEnv,
   defaultPrefs,
@@ -156,6 +158,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
   let lastRunAborted = false;
   let lastTurn = 0;
   let lastTurnIoTag = '';
+  const tokenStatus = new TokenStatusTracker();
 
   const resumeEditor = (): void => {
     // Keep Enter enabled — onSubmit blocks non-slash input while running.
@@ -165,16 +168,20 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
   };
 
   const printStatus = (): void => {
+    tokenStatus.bindSession(runtime.sessionLabel());
     const wf = uiState.armedWorkflow ? ` · wf:${uiState.armedWorkflow}` : '';
     const runningJobs = runtime.countRunningBackgroundJobs();
     const jobsTag = runningJobs > 0 ? ` · jobs:${runningJobs}` : '';
     const ioTag = isActionIoMetricsEnabled() && lastTurnIoTag ? ` · ${lastTurnIoTag}` : '';
     const turnTag = lastTurn > 0 ? ` · turn:${lastTurn}` : '';
+    const ctxLimit = getMaxContextTokens(runtime.config.model);
+    const tokTag = tokenStatus.formatStatus(ctxLimit);
+    const tokPart = tokTag ? ` · ${tokTag}` : '';
     const line =
       `${runtime.sessionLabel()} · ${runtime.formatSessionLlmShortLine()}` +
       ` · shell:${runtime.config.allowShell ? 'on' : 'off'}` +
       ` · web:${runtime.config.allowWeb ? 'on' : 'off'}` +
-      `${jobsTag}${ioTag}${turnTag}${wf}`;
+      `${jobsTag}${ioTag}${turnTag}${tokPart}${wf}`;
     statusBar.setText(line);
     tui.requestRender();
   };
@@ -290,6 +297,17 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
       lastTurnIoTag = '';
       lastTurn = 0;
       printStatus();
+    }
+    if (event.type === 'spawn_start') {
+      tokenStatus.onSpawnStart();
+    }
+    if (event.type === 'spawn_end') {
+      tokenStatus.onSpawnEnd();
+    }
+    if (event.type === 'llm_done') {
+      if (tokenStatus.onLlmDone(event.usage)) {
+        printStatus();
+      }
     }
     if (event.type === 'turn_io' && isActionIoMetricsEnabled()) {
       lastTurnIoTag = `io:T${event.turn} ${event.actions_saved}/${event.action_save_ms}ms q=${event.queue_depth}`;
