@@ -17,7 +17,7 @@ function writeAgentMd(
 }
 
 describe('load spawn preset', () => {
-  it('strips spawn_agent and spawn_background from agent.json tools', () => {
+  it('strips spawn_agent, spawn_background, and code_review from agent.json tools', () => {
     const cwd = mkdtempSync(join(tmpdir(), 'load-spawn-preset-'));
     writeAgentMd(cwd, 'worker.md', '---\ndescription: Worker\n---\nYou work.');
 
@@ -29,6 +29,7 @@ describe('load spawn preset', () => {
         'read_file',
         'spawn_agent',
         'spawn_background',
+        'code_review',
         'grep_search',
       ],
     });
@@ -54,5 +55,42 @@ describe('load spawn preset', () => {
     });
 
     assert.deepEqual(preset.tools, ['read_file', 'web_fetch']);
+  });
+
+  it('loads repo dev-worker with full coding tools and stress-friendly turns', () => {
+    const cwd = process.cwd();
+    const preset = resolveSpawnPreset(
+      cwd,
+      {
+        name: 'dev-worker',
+        description: 'Full-tools coding worker',
+        prompt_file: 'agents/dev-worker.md',
+        tools: [
+          'read_file',
+          'write_file',
+          'edit_file',
+          'grep_search',
+          'list_files',
+          'diff_file',
+          'recall_query',
+          'invoke_skill',
+          'run_shell',
+          'web_fetch',
+          'web_search',
+          'spawn_agent',
+          'code_review',
+        ],
+        max_turns: 50,
+      },
+      { max_turns_default: 15, max_turns_cap: 80, max_parallel: 3 },
+    );
+
+    assert.equal(preset.name, 'dev-worker');
+    assert.equal(preset.maxTurns, 50);
+    assert.ok(preset.tools.includes('run_shell'));
+    assert.ok(preset.tools.includes('edit_file'));
+    assert.ok(!preset.tools.includes('spawn_agent'));
+    assert.ok(!preset.tools.includes('code_review'));
+    assert.match(preset.systemPrompt, /dev-worker/i);
   });
 });

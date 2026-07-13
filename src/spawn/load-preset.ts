@@ -16,7 +16,12 @@ function clampMaxTurns(
   const raw = value ?? fallback;
   return Math.min(Math.max(1, Math.floor(raw)), Math.max(1, Math.floor(cap)));
 }
-const FORBIDDEN_CHILD_TOOLS = new Set(['spawn_agent', 'spawn_background']);
+/** Never expose recursive delegation tools to child agents. */
+const FORBIDDEN_CHILD_TOOLS = new Set([
+  'spawn_agent',
+  'spawn_background',
+  'code_review',
+]);
 
 function parseFrontmatter(raw: string): {
   meta: Record<string, string>;

@@ -348,7 +348,84 @@ office_write({ path: string, payload: object, mode?: 'replace_sheet' | 'append_r
 
 ---
 
-## 7. 横切 concern
+## 7. Coding 友好工具（规划）
+
+> 面向 **主 Agent + `dev-worker` 子 Agent** 的编码体验；与 §3–6 正交。  
+> **已落地 preset**：`agents/dev-worker.md` + `agent.json` `spawn_presets.dev-worker`（全量文件/shell/web 工具，禁 spawn 递归）。
+
+### 7.1 现状工具矩阵（编码任务）
+
+| 能力 | 工具 | 编码场景 | 缺口 |
+|------|------|----------|------|
+| 导航 | `list_files` / `grep_search` / `read_file` | 定位符号与读文件 | 无 AST / 定义跳转 |
+| 修改 | `edit_file`（hash 锚点）/ `write_file` | 精准补丁 / 新文件 | 无 multi-file atomic apply |
+| 对照 | `diff_file` | 与冷存或期望文本 diff | 无 `git diff` 专用封装（可用 shell） |
+| 验证 | `run_shell` | typecheck / test / lint | 无结构化 test 报告解析 |
+| 记忆 | `recall_query` | 捞历史 tool 结果 | — |
+| 技能 | `invoke_skill` | 加载 SKILL.md 流程 | — |
+| 文档 | `web_search` + `web_fetch` | API/库文档 | 免 key 搜索脆 |
+| 委派 | `spawn_*` / `code_review` | 并行 worker / 三审 | 子 Agent **禁止**再 spawn（`load-preset` 硬过滤） |
+
+**`dev-worker` 工具白名单**（与 agent.json 同步）：
+
+```text
+read_file write_file edit_file grep_search list_files diff_file
+recall_query invoke_skill run_shell web_fetch web_search
+```
+
+**明确不给子 Agent**：`spawn_agent` · `spawn_background` · `code_review`。
+
+### 7.2 推荐补强顺序（coding 向）
+
+```text
+C0  dev-worker preset + max_turns_cap 提高          ✅ 2026-07-13
+  ↓
+C1  git_status / git_diff 轻量封装（或 skill）       可选：减少 shell 胡写
+  ↓
+C2  lsp_query（§4）definition / references / hover  高价值，依赖本机 LSP
+  ↓
+C3  apply_patch 多文件 unified diff（单 tool）       降低 edit 轮次
+  ↓
+C4  test_run 结构化（解析 junit/tap 摘要）           压测/CI 友好
+  ↓
+C5  spawn_shell_policy（命令前缀白名单）             安全压测再开
+```
+
+| 项 | 形态 | 优先级 | 备注 |
+|----|------|:------:|------|
+| **C1 git_*** | builtin 或 `skills/git-helper` | P2 | 薄封装 `git status/diff/log`；权限仍走 shell gate |
+| **C2 lsp_query** | builtin 子进程 | P1（有 TS 大仓时） | 见 §4；与 dev-worker 叠加收益最大 |
+| **C3 apply_patch** | builtin | P2 | 输入 unified diff；原子写 + hash 校验 |
+| **C4 test_run** | builtin 或 shell+parser | P3 | 输出 pass/fail 计数进 context，全文 spill |
+| **C5 shell_policy** | spawn 配置 | P2（压测） | `docs/ROADMAP` §5.3 |
+
+### 7.3 并行编码用法（压测 / 日常）
+
+```bash
+# 父级开 shell；建议 sandbox cwd
+npm start -- --allow-shell --cwd /path/to/sandbox \
+  "spawn_background 3 个 dev-worker：A 实现 util/a.ts+测；B util/b.ts+测；C 导出 index"
+
+# TUI
+/spawns   # 应能看到 dev-worker
+# 父级 /shell on 后委派；子 Agent 继承 allowShell + JIT
+```
+
+**约束回顾**：
+
+- `spawn_policy.max_turns_cap` 默认 **80**（dev-worker `max_turns: 50`）
+- `max_parallel: 3` — 注意 API 限流；可绑便宜 `api_profile`
+- 安全：sandbox cwd + 父级显式 shell；**不做**无 gate 的子 shell
+
+### 7.4 非目标（coding 工具）
+
+- 内嵌完整 IDE / language server 协议全集  
+- 自动 commit / push（保持人审）  
+- 子 Agent 嵌套 spawn 农场  
+
+---
+
+## 8. 横切 concern
 
 | 项 | 约定 |
 |----|------|
@@ -360,13 +437,14 @@ office_write({ path: string, payload: object, mode?: 'replace_sheet' | 'append_r
 
 ---
 
-## 8. 版本
+## 9. 版本
 
 | 日期 | 说明 |
 |------|------|
 | 2026-07-06 | v0.1 初稿：web_search、lsp_query、convert_document、office_* 范围与验收 |
 | 2026-07-12 | v0.2：`web_search` 分期（v1 ddgr / v1.5 cache+budget / v2 searxng）、降级链、agent.json 草案 |
+| 2026-07-13 | v0.3：§7 Coding 友好工具；`dev-worker` preset；C1–C5 路线 |
 
 ---
 
-*维护：与 [ROADMAP.md](./ROADMAP.md) 轨 F（个性化）解耦；能力项就绪后按 §2 顺序单独 PR。*
+*维护：与 [ROADMAP.md](./ROADMAP.md) 轨 F（个性化）解耦；能力项就绪后按 §2 / §7 顺序单独 PR。*
