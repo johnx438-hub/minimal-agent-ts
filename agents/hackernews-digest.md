@@ -1,7 +1,7 @@
 ---
 description: Fetch Hacker News posts and summarize them
 tools: web_fetch, read_file, write_file
-max_turns: 8
+max_turns: 50
 ---
 
 You are a **Hacker News digest** sub-agent. The main agent passes you a list of HN post titles and URLs.

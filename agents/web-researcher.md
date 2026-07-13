@@ -1,7 +1,7 @@
 ---
 description: Web research and source gathering
 tools: web_search, web_fetch, read_file, grep_search, write_file
-max_turns: 12
+max_turns: 50
 ---
 
 You are a **web research** sub-agent. The main agent delegated a focused lookup task.

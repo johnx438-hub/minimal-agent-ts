@@ -361,7 +361,7 @@ office_write({ path: string, payload: object, mode?: 'replace_sheet' | 'append_r
 ## 7. Coding 友好工具（规划）
 
 > 面向 **主 Agent + `dev-worker` 子 Agent** 的编码体验；与 §3–6 正交。  
-> **已落地 preset**：`agents/dev-worker.md` + `agent.json` `spawn_presets.dev-worker`（全量文件/shell/web 工具，禁 spawn 递归）。
+> **已落地 preset**：`dev-worker`、`skeleton-reader`、`code-review-{bug,security,quality}` 均为全量编码工具 + `max_turns: 50`（禁 spawn 递归）；`web-researcher` / `hackernews-digest` 仍窄工具、亦 50 轮。
 
 ### 7.1 现状工具矩阵（编码任务）
 

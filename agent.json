@@ -132,40 +132,175 @@
       "name": "web-researcher",
       "description": "Delegate web lookup and source summaries",
       "prompt_file": "agents/web-researcher.md",
-      "tools": ["web_fetch", "read_file", "grep_search", "write_file"]
+      "tools": ["web_fetch", "read_file", "grep_search", "write_file"],
+      "max_turns": 50
     },
     {
       "name": "skeleton-reader",
-      "description": "Read-only repo skeleton and entry-point map",
+      "description": "Repo skeleton and entry-point map (full coding tools; prefer read-only)",
       "prompt_file": "agents/skeleton-reader.md",
-      "tools": ["read_file", "grep_search", "list_files", "diff_file"]
+      "tools": [
+        "read_file",
+        "write_file",
+        "edit_file",
+        "apply_patch",
+        "grep_search",
+        "list_files",
+        "diff_file",
+        "recall_query",
+        "invoke_skill",
+        "run_shell",
+        "test_run",
+        "git_status",
+        "git_diff",
+        "git_log",
+        "lsp_query",
+        "web_fetch",
+        "web_search"
+      ],
+      "max_turns": 50,
+      "shell": {
+        "mode": "allowlist",
+        "allowed_prefixes": [
+          "npm test",
+          "npm run",
+          "npm ",
+          "npx ",
+          "node ",
+          "git ",
+          "tsc",
+          "tsx "
+        ],
+        "timeout_ms_default": 60000,
+        "timeout_ms_cap": 300000
+      }
     },
     {
       "name": "hackernews-digest",
       "description": "Fetch HN post URLs and return a short digest",
       "prompt_file": "agents/hackernews-digest.md",
-      "tools": ["web_fetch", "read_file", "write_file"]
+      "tools": ["web_fetch", "read_file", "write_file"],
+      "max_turns": 50
     },
     {
       "name": "code-review-bug",
       "description": "Fast diff-first bug pass — logic/async/error-handling in changed hunks",
       "prompt_file": "agents/code-review-bug.md",
-      "tools": ["read_file", "grep_search", "write_file"],
-      "max_turns": 20
+      "tools": [
+        "read_file",
+        "write_file",
+        "edit_file",
+        "apply_patch",
+        "grep_search",
+        "list_files",
+        "diff_file",
+        "recall_query",
+        "invoke_skill",
+        "run_shell",
+        "test_run",
+        "git_status",
+        "git_diff",
+        "git_log",
+        "lsp_query",
+        "web_fetch",
+        "web_search"
+      ],
+      "max_turns": 50,
+      "shell": {
+        "mode": "allowlist",
+        "allowed_prefixes": [
+          "npm test",
+          "npm run",
+          "npm ",
+          "npx ",
+          "node ",
+          "git ",
+          "tsc",
+          "tsx "
+        ],
+        "timeout_ms_default": 60000,
+        "timeout_ms_cap": 300000
+      }
     },
     {
       "name": "code-review-security",
       "description": "Review code for security vulnerabilities, secrets, injection risks",
       "prompt_file": "agents/code-review-security.md",
-      "tools": ["read_file", "grep_search", "write_file"],
-      "max_turns": 20
+      "tools": [
+        "read_file",
+        "write_file",
+        "edit_file",
+        "apply_patch",
+        "grep_search",
+        "list_files",
+        "diff_file",
+        "recall_query",
+        "invoke_skill",
+        "run_shell",
+        "test_run",
+        "git_status",
+        "git_diff",
+        "git_log",
+        "lsp_query",
+        "web_fetch",
+        "web_search"
+      ],
+      "max_turns": 50,
+      "shell": {
+        "mode": "allowlist",
+        "allowed_prefixes": [
+          "npm test",
+          "npm run",
+          "npm ",
+          "npx ",
+          "node ",
+          "git ",
+          "tsc",
+          "tsx "
+        ],
+        "timeout_ms_default": 60000,
+        "timeout_ms_cap": 300000
+      }
     },
     {
       "name": "code-review-quality",
       "description": "Review code for readability, consistency, and best practices",
       "prompt_file": "agents/code-review-quality.md",
-      "tools": ["read_file", "grep_search", "write_file"],
-      "max_turns": 20
+      "tools": [
+        "read_file",
+        "write_file",
+        "edit_file",
+        "apply_patch",
+        "grep_search",
+        "list_files",
+        "diff_file",
+        "recall_query",
+        "invoke_skill",
+        "run_shell",
+        "test_run",
+        "git_status",
+        "git_diff",
+        "git_log",
+        "lsp_query",
+        "web_fetch",
+        "web_search"
+      ],
+      "max_turns": 50,
+      "shell": {
+        "mode": "allowlist",
+        "allowed_prefixes": [
+          "npm test",
+          "npm run",
+          "npm ",
+          "npx ",
+          "node ",
+          "git ",
+          "tsc",
+          "tsx "
+        ],
+        "timeout_ms_default": 60000,
+        "timeout_ms_cap": 300000
+      }
     }
   ],
   "skills_dirs": ["./skills"],

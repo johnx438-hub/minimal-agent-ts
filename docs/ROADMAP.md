@@ -223,10 +223,10 @@ flowchart TD
 
 | 项 | 现状 | 规划 |
 |----|------|------|
-| 子 Agent `max_turns` | `max_turns_default` 15，`max_turns_cap` **80**；`dev-worker` **50** | ✅ stress 向 cap 已抬；再高按需调 |
-| 子 Agent shell | preset 含 `run_shell` 时继承父级 `allowShell` + JIT gate | ✅；见 §5.3 |
+| 子 Agent `max_turns` | 各 preset **50**（`max_turns_cap` **80**） | ✅ 统一 50 |
+| 子 Agent shell | preset 含 `run_shell` 时继承父级 `allowShell` + JIT gate + C5 policy | ✅；见 §5.3 |
 | 并行度 | `max_parallel` 默认 **3** | 压测可多 profile 分散限流 |
-| 工具集 | **`dev-worker`** 已进主仓（全文件+shell+web，禁嵌套 spawn） | 编码工具补强见 [SPEC_TOOLS.md](../SPEC_TOOLS.md) §7 |
+| 工具集 | **`dev-worker` / `skeleton-reader` / `code-review-*`** 全量编码工具；web/HN 仍窄 | 见 [SPEC_TOOLS.md](../SPEC_TOOLS.md) §7 |
 | 观测 | `ACTION_IO_METRICS=1`、`--json-events` | 加 **per-job** `turn_io` 汇总；TUI `/jobs` 展示 |
 
 **压测脚本草案**（文档级，实现随 M-Prod-1 / harness PR）：
