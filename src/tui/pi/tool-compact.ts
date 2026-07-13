@@ -92,6 +92,10 @@ export function formatToolBreadcrumb(name: string, argsJson: string, output: str
       const dry = args.dry_run === true ? ' (dry_run)' : '';
       return `← apply_patch${dry}`;
     }
+    case 'test_run': {
+      const cmd = clipText(String(args.command ?? 'npm test'), 48);
+      return `← test_run: ${cmd}`;
+    }
     case 'git_status':
       return '← git status';
     case 'git_diff': {

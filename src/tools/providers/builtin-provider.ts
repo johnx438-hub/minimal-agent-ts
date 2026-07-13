@@ -9,6 +9,7 @@ import { RECALL_DEFINITIONS, runRecallTool } from '../recall.js';
 import { GIT_DEFINITIONS, runGitTool } from '../git.js';
 import { LSP_DEFINITIONS, runLspTool } from '../lsp.js';
 import { SHELL_DEFINITIONS, runShellTool } from '../shell.js';
+import { TEST_RUN_DEFINITIONS, runTestRunTool } from '../test-run.js';
 import { WEB_FETCH_DEFINITIONS, runWebFetchTool } from '../web-fetch.js';
 import { isRoleToolAllowlisted } from './tool-allowlist.js';
 import type { ToolProvider, ToolProviderContext, ToolResolveContext } from './types.js';
@@ -36,6 +37,7 @@ const BUILTIN_TOOLS: Record<string, BuiltinToolEntry> = {
   diff_file: { defs: EXPLORE_DEFINITIONS, handler: runExploreTool },
   recall_query: { defs: RECALL_DEFINITIONS, handler: runRecallTool },
   run_shell: { defs: SHELL_DEFINITIONS, handler: runShellTool, requiresShell: true },
+  test_run: { defs: TEST_RUN_DEFINITIONS, handler: runTestRunTool, requiresShell: true },
   git_status: { defs: GIT_DEFINITIONS, handler: runGitTool, requiresShell: true },
   git_diff: { defs: GIT_DEFINITIONS, handler: runGitTool, requiresShell: true },
   git_log: { defs: GIT_DEFINITIONS, handler: runGitTool, requiresShell: true },

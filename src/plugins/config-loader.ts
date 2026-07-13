@@ -15,6 +15,7 @@ const DEFAULT_BUILTIN_TOOLS = [
   'recall_query',
   'invoke_skill',
   'run_shell',
+  'test_run',
   'git_status',
   'git_diff',
   'git_log',

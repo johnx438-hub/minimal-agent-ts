@@ -8,6 +8,7 @@ export const POINTER_RULES: Record<
 > = {
   read_file: { minChars: 600, alwaysIfLines: 40 },
   run_shell: { minChars: 800, alwaysIfLines: 30 },
+  test_run: { minChars: 1200, alwaysIfLines: 50 },
   git_status: { minChars: 800, alwaysIfLines: 40 },
   git_diff: { minChars: 800, alwaysIfLines: 40 },
   git_log: { minChars: 600, alwaysIfLines: 30 },
