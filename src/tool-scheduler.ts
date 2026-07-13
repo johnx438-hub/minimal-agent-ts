@@ -18,8 +18,8 @@ function isParallelSafeMcp(name: string): boolean {
   return name.startsWith('mcp_');
 }
 
-const WRITE_TOOLS = new Set(['write_file', 'edit_file']);
-const SERIAL_ONLY = new Set(['write_file', 'edit_file', 'run_shell']);
+const WRITE_TOOLS = new Set(['write_file', 'edit_file', 'apply_patch']);
+const SERIAL_ONLY = new Set(['write_file', 'edit_file', 'apply_patch', 'run_shell']);
 
 export interface ToolCallPlan {
   parallel: ToolCall[];

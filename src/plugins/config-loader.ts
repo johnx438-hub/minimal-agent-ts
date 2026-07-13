@@ -8,6 +8,7 @@ const DEFAULT_BUILTIN_TOOLS = [
   'read_file',
   'write_file',
   'edit_file',
+  'apply_patch',
   'grep_search',
   'list_files',
   'diff_file',

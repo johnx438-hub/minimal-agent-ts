@@ -88,6 +88,10 @@ export function formatToolBreadcrumb(name: string, argsJson: string, output: str
       const skill = clipText(String(args.name ?? 'list'));
       return `← skill: ${skill}`;
     }
+    case 'apply_patch': {
+      const dry = args.dry_run === true ? ' (dry_run)' : '';
+      return `← apply_patch${dry}`;
+    }
     case 'git_status':
       return '← git status';
     case 'git_diff': {

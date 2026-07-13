@@ -14,6 +14,7 @@ export const POINTER_RULES: Record<
   lsp_query: { minChars: 900, alwaysIfLines: 40 },
   write_file: { minChars: Number.POSITIVE_INFINITY },
   edit_file: { minChars: Number.POSITIVE_INFINITY },
+  apply_patch: { minChars: Number.POSITIVE_INFINITY },
   grep_search: { minChars: 500, alwaysIfLines: 20 },
   list_files: { minChars: 500, alwaysIfLines: 30 },
   diff_file: { minChars: 600, alwaysIfLines: 30 },

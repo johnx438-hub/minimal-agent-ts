@@ -69,6 +69,7 @@ describe('load spawn preset', () => {
           'read_file',
           'write_file',
           'edit_file',
+          'apply_patch',
           'grep_search',
           'list_files',
           'diff_file',
@@ -94,6 +95,7 @@ describe('load spawn preset', () => {
     assert.ok(preset.tools.includes('run_shell'));
     assert.ok(preset.tools.includes('git_status'));
     assert.ok(preset.tools.includes('lsp_query'));
+    assert.ok(preset.tools.includes('apply_patch'));
     assert.ok(preset.tools.includes('edit_file'));
     assert.ok(!preset.tools.includes('spawn_agent'));
     assert.ok(!preset.tools.includes('code_review'));

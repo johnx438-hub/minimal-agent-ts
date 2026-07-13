@@ -41,9 +41,10 @@ describe('shouldPointerize', () => {
     assert.equal(shouldPointerize('edit_file', `ok: edited ${huge}`), false);
   });
 
-  it('never pointerizes write_file or edit_file', () => {
+  it('never pointerizes write_file, edit_file, or apply_patch', () => {
     assert.equal(shouldPointerize('write_file', chars(5000)), false);
     assert.equal(shouldPointerize('edit_file', lines(100)), false);
+    assert.equal(shouldPointerize('apply_patch', chars(5000)), false);
   });
 
   it('uses 400-char default for unknown tools', () => {
@@ -52,7 +53,14 @@ describe('shouldPointerize', () => {
   });
 
   for (const [tool, rule] of Object.entries(POINTER_RULES)) {
-    if (tool === 'write_file' || tool === 'edit_file') continue;
+    if (
+      tool === 'write_file' ||
+      tool === 'edit_file' ||
+      tool === 'apply_patch' ||
+      !Number.isFinite(rule.minChars)
+    ) {
+      continue;
+    }
 
     it(`applies ${tool} minChars threshold`, () => {
       assert.equal(shouldPointerize(tool, chars(rule.minChars - 1)), false);

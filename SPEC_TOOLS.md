@@ -394,7 +394,7 @@ C1  git_status / git_diff / git_log                  ✅ 2026-07-13
   ↓
 C2  lsp_query（TS/JS LanguageService）               ✅ 2026-07-13
   ↓
-C3  apply_patch 多文件 unified diff（单 tool）       降低 edit 轮次
+C3  apply_patch 多文件 unified diff                  ✅ 2026-07-13
   ↓
 C4  test_run 结构化（解析 junit/tap 摘要）           压测/CI 友好
   ↓
@@ -405,7 +405,14 @@ C5  spawn_shell_policy（命令前缀白名单）             安全压测再开
 |----|------|:------:|------|
 | **C1 git_*** | builtin `git_status` / `git_diff` / `git_log` | ✅ | `src/tools/git.ts`；argv spawn；shell gate |
 | **C2 lsp_query** | builtin + TS API | ✅ | `src/tools/lsp.ts`；无 shell；见 §4 |
-| **C3 apply_patch** | builtin | P2 | 输入 unified diff；原子写 + hash 校验 |
+| **C3 apply_patch** | builtin | ✅ | `src/tools/apply-patch.ts`；unified multi-file；dry_run |
+
+#### C3 实现要点（已落地）
+
+- 输入：`patch` 或 `patch_b64`（unified diff，可多文件）
+- 解析 `---/+++` + `@@` hunks；新建文件 `--- /dev/null`
+- 先全部 plan，再写盘；`dry_run: true` 只校验
+- 路径 `resolveWritablePath`；与 write/edit 一样 serial
 | **C4 test_run** | builtin 或 shell+parser | P3 | 输出 pass/fail 计数进 context，全文 spill |
 | **C5 shell_policy** | spawn 配置 | P2（压测） | `docs/ROADMAP` §5.3 |
 
@@ -464,6 +471,7 @@ npm start -- --allow-shell --cwd /path/to/sandbox \
 | 2026-07-13 | v0.3：§7 Coding 友好工具；`dev-worker` preset；C1–C5 路线 |
 | 2026-07-13 | v0.3.1：C1 `git_status` / `git_diff` / `git_log` 落地 |
 | 2026-07-13 | v0.3.2：C2 `lsp_query`（TS LanguageService）落地 |
+| 2026-07-13 | v0.3.3：C3 `apply_patch` 多文件 unified diff |
 
 ---
 

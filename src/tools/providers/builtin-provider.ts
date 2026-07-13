@@ -1,5 +1,6 @@
 import { isCapabilityEnabled } from '../../permission-gate.js';
 import type { AgentConfig, ToolDefinition } from '../../types.js';
+import { APPLY_PATCH_DEFINITIONS, runApplyPatchTool } from '../apply-patch.js';
 import { CODE_REVIEW_DEFINITIONS, runCodeReviewTool } from '../code-review.js';
 import { EDIT_FILE_DEFINITIONS, runEditFileTool } from '../edit-file.js';
 import { EXPLORE_DEFINITIONS, runExploreTool } from '../explore.js';
@@ -29,6 +30,7 @@ const BUILTIN_TOOLS: Record<string, BuiltinToolEntry> = {
   read_file: { defs: READ_WRITE_DEFINITIONS, handler: runReadWriteTool },
   write_file: { defs: READ_WRITE_DEFINITIONS, handler: runReadWriteTool },
   edit_file: { defs: EDIT_FILE_DEFINITIONS, handler: runEditFileTool },
+  apply_patch: { defs: APPLY_PATCH_DEFINITIONS, handler: runApplyPatchTool },
   grep_search: { defs: EXPLORE_DEFINITIONS, handler: runExploreTool },
   list_files: { defs: EXPLORE_DEFINITIONS, handler: runExploreTool },
   diff_file: { defs: EXPLORE_DEFINITIONS, handler: runExploreTool },
