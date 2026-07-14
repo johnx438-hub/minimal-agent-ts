@@ -1,6 +1,6 @@
 # minimal-agent-ts 统一路线图
 
-> **版本**: 2026-07-14  
+> **版本**: 2026-07-14（§6 Inbound/Schedule 契约）  
 > **定位**: TypeScript **Agent harness**（由上下文事件结构实验演进）；产品迭代、底座接缝、压测与扩展的**规划源**。  
 > **原则**: 可交付小步；对外叙事与 [README.md](../README.md) 对齐，不依赖对比其他 Agent 产品。  
 > **验证**: 本文件方向 + `npm test` / `npm run typecheck`。
@@ -48,7 +48,8 @@
 | **P0 产品** | 产品 | ~~TUI `/jobs`、job-query~~ ✅；~~`web_search` v1+v1.5~~ ✅ |
 | **P1 产品** | 产品 | ~~`/spawns` 实装、TUI `turn_io`~~ ✅；pi overlay 统一（按需） |
 | **P1 压测** | B | 高压场景 harness（§5）；填压测表 |
-| **P1 底座** | 底座 | ToolProvider 拆分、context pipeline、**MessageBridge hook**（§6） |
+| **P1 底座** | 底座 | ToolProvider 拆分、context pipeline、**MessageBridge 出站**（§6 H1–H5；类型已有） |
+| **P2 底座** | 底座 | **InboundAdapter + Dispatch + Schedule**（§6.5–6.8；cron ≠ bridge） |
 | **P2** | G5 | Anthropic 显式缓存 `anthropic_breakpoints` |
 | **P2** | A/E | workflow if/else（M6）、TUI jobs 状态条抛光 |
 | **P3** | C | Rust 内核（profiling 证明需要后再议） |
@@ -259,67 +260,223 @@ ACTION_IO_METRICS=1 npm start -- --json-events --allow-shell --cwd /path/to/sand
 
 ---
 
-## 6. Hooks 与 MessageBridge（IM 预留）
+## 6. Hooks、MessageBridge、Inbound 与 Schedule
 
-> 暂不实现飞书 / Discord / Telegram；只定**类型与转发接缝**，避免日后穿透 `agent.ts`。
+> **出站**：`MessageBridge` + `MessageSink`（类型与部分接线已在 `src/hooks/`）。  
+> **入站**：`InboundAdapter` + **Dispatch**（飞书回消息、定时 fire、CLI 手动触发）— **与 bridge 正交**。  
+> **定时**：是 **producer**，不是 sink，也**不**嵌进 `createMessageBridge`。  
+> 暂不实现飞书 SDK / 真 daemon；本文定契约，避免日后穿透 `agent.ts` 或把 cron 写进 sink。
 
 ### 6.1 设计目标
 
-- 外部通道（未来）只实现 `MessageSink`，不碰 ReAct 语义
-- 与现有 `RuntimeEvent` / `--json-events` **并存**：events 偏结构化遥测；bridge 偏**会话消息流**
+- 外部通道出站只实现 `MessageSink`，不碰 ReAct / pointerize / compression 语义
+- 入站（IM / cron / CLI）只实现 **producer → Dispatch**，不直接 `import agent` 内环
+- 与 `RuntimeEvent` / `--json-events` **并存**：events 偏结构化遥测；bridge 偏**人类可读会话流**
+- 定时默认走 **后台 job**（与主会话分离）；可选投递 **近期活跃 session**（可玩性 / 续聊）
 
-### 6.2 消息类型（草案）
+### 6.2 出站：消息类型与 Bridge（现状）
+
+实现见 `src/hooks/message-bridge.ts`（字段以代码为准；下列为契约摘要）：
 
 ```typescript
-/** 会话内一条可转发消息（user / assistant / tool 摘要） */
+type SessionMessageSource = 'main' | 'spawn' | 'job';
+
 interface SessionMessage {
   session_id: string;
   turn: number;
   role: 'user' | 'assistant' | 'tool' | 'system_notice';
-  /** 增量或全文；由 emit 方标明 */
   delta?: string;
   content?: string;
   tool_name?: string;
   call_id?: string;
-  /** 便于 IM 侧 threading */
   task_id?: string;
   timestamp: number;
+  /** IM threading：主会话 / 子 spawn / 后台 job */
+  source?: SessionMessageSource;
+  source_id?: string; // preset 名或 job_id
 }
 
 interface MessageBridge {
-  /** 注册 sink；可多路（日志 + 未来 IM） */
-  addSink(sink: MessageSink): void;
+  addSink(sink: MessageSink): () => void;
   emit(msg: SessionMessage): void;
-}
-
-interface MessageSink {
-  readonly name: string;
-  /** 返回 false 表示该 sink 禁用，不阻塞主循环 */
-  onMessage(msg: SessionMessage): void | Promise<void>;
+  sinkCount(): number;
 }
 ```
 
-### 6.3 接线点（实现顺序）
+### 6.3 出站接线点（H1–H5）
 
 | 阶段 | 位置 | 转发内容 |
 |------|------|----------|
 | H1 | `runner.ts` `submitTask` | 用户 task 全文 |
-| H2 | `agent.ts` `runAgent` | `token` 累积为 assistant delta；`final` 定稿 |
-| H3 | `agent.ts` tool 完成 | tool 结果摘要（pointerize 后或 preview） |
-| H4 | `spawn/job-runner.ts` | 子 job 经 `jobOnStep` 转为 `SessionMessage`（`session_id` = spawn session） |
-| H5 | `AgentRuntime` 构造 | 可选 `messageBridge?: MessageBridge`；默认 no-op |
+| H2 | `agent.ts` `runAgent` | `token` → assistant delta；`final` 定稿 |
+| H3 | `agent.ts` tool 完成 | tool 结果摘要（preview / pointerize 后） |
+| H4 | `spawn/job-runner.ts` | job 经 `jobOnStep` → `SessionMessage`（`source: 'job'`） |
+| H5 | `AgentRuntime` 构造 | 可选 `messageBridge`；默认 no-op |
 
-**与 `--json-events` 关系**:
+**与 `--json-events`**：`AgentStepEvent` 机器可读；`SessionMessage` 给人 / IM。TUI 未来可订 bridge，与 pi 解耦。
 
-- `AgentStepEvent` 保留（机器可读、完整字段）
-- `SessionMessage` 面向**人类可读流**（IM 气泡、移动端）
-- TUI presenter 未来可订阅 bridge，与 pi 组件解耦
+**定时 / 飞书跑完后的推送**：一律 `emit`，用 `source` / `source_id` 区分主会话线程 vs job 子线程——**不**为 cron 另开推送通道。
 
-### 6.4 明确不做（本阶段）
+### 6.4 拓扑：三条入站，一种出站
 
-- OAuth、Bot token、飞书/Discord SDK
-- 双向 IM（用户从飞书回消息）— 需另开 `InboundAdapter` spec
+```text
+  Producers                         Dispatch                         Run
+  ─────────                         ────────                         ───
+  FeishuInbound  ──┐
+  CronRuntime    ──┼──► InboundRouter / ScheduleFire ──┬── target=job ──► spawn_background / job-store
+  CLI fire/tick  ──┘         (统一投递契约)            └── target=session ► 注入活跃 Session 队列
+                                                              │
+                                                              ▼
+                                                    MessageBridge.emit ──► FeishuSink / LogSink
+```
+
+| 角色 | 职责 | 非职责 |
+|------|------|--------|
+| **MessageBridge** | Agent/job **运行中与结束后** fan-out | 不算 cron、不消费入站、不 start job |
+| **InboundAdapter** | 通道协议 → 规范化 `InboundEvent` | 不写 ReAct |
+| **Dispatch / ScheduleFire** | 解析 `target` → job API 或 session 入队 | 不解析 cron 表达式 |
+| **CronRuntime**（如 croner） | 时区、next、到点回调、overrun | 不持久化 job、不推 IM |
+| **job-store / session** | 执行与状态 | 不感知「是否来自闹钟」 |
+
+### 6.5 InboundAdapter（飞书类网关）
+
+> 与 §6.3 出站分 PR；**先契约、后 SDK**。
+
+```typescript
+/** 规范化后的入站事件（IM / 测试注入 / 未来 webhook） */
+interface InboundEvent {
+  channel: string;          // 'feishu' | 'cli' | …
+  external_thread_id?: string;
+  text: string;
+  /** 绑定到 harness session；由 adapter 或路由表解析 */
+  session_id?: string;
+  user_id?: string;
+  raw?: unknown;
+}
+
+interface InboundAdapter {
+  readonly name: string;
+  start(dispatch: (ev: InboundEvent) => void | Promise<void>): Promise<void>;
+  stop(): Promise<void>;
+}
+```
+
+- 飞书「用户发消息」→ `InboundEvent` → Dispatch → **通常** `target: session`（该 chat 绑定的 session）
+- 鉴权、加密、重试在 adapter 内；失败不抛进 ReAct
+- 与 bridge **禁止**互相 import 实现细节；仅共享 `SessionMessage` / `InboundEvent` 类型包
+
+### 6.6 Schedule：并列 producer，不是 bridge 插件
+
+**原则**：定时任务 = **何时**（croner 等）+ **对谁跑**（Dispatch target）+ **怎么跑**（复用 job / session 入队）。  
+**不依赖系统 crontab**；需常驻 Node（daemon 或与飞书长连接**同进程**）。进程保活可用 PM2/systemd（保进程 ≠ cron）。
+
+#### 6.6.1 定义（草案）
+
+```jsonc
+// 例：.schedules/index.json 或 agent.json → schedules[]（实现时再定路径）
+{
+  "id": "morning-brief",
+  "cron": "0 9 * * 1-5",
+  "timezone": "Asia/Shanghai",
+  "enabled": true,
+  "overlap": "skip",           // skip | queue | allow
+  "catch_up": false,           // 启动时默认不算漏跑
+  "target": {
+    "kind": "job",             // 默认：与主会话分离
+    "preset": "dev-worker",
+    "task": "汇总昨日变更，写 report"
+  }
+}
+```
+
+可选 **session 目标**（可玩性 / 续聊）：
+
+```jsonc
+{
+  "id": "nudge-active",
+  "cron": "0 18 * * 1-5",
+  "timezone": "Asia/Shanghai",
+  "enabled": true,
+  "overlap": "skip",
+  "target": {
+    "kind": "session",
+    "session": "active",         // "active" | "last" | 显式 session_id
+    "active_within_hours": 48,
+    "fallback": "job",           // job | skip | notify_only
+    "message": "收工前扫一眼未提交改动，给三条建议",
+    // fallback=job 时可选
+    "preset": "dev-worker"
+  }
+}
+```
+
+#### 6.6.2 `target` 语义
+
+| `kind` | 行为 | 优点 | 缺点 / 注意 |
+|--------|------|------|-------------|
+| **`job`**（默认） | `ScheduleFire` → 现有 `spawn_background` / job-store | 隔离、权限可收紧、`/jobs` 可观测 | 无主会话上下文 |
+| **`session`** | 向解析出的 session **入队**一条 user 消息并跑 turn | 续聊、同一工作焦点 | 会话 busy 要排队；过期会话勿硬塞 |
+| **`notify_only`**（多用于 fallback） | 只 `emit` / IM 通知，**不**调 LLM | 便宜、安全 | 无自动干活 |
+
+**`session: "active"` 解析（应确定性、可单测）**：
+
+1. 取最近 `updated_at` 的 session，且在 `active_within_hours` 内  
+2. 若该 session 正在 running → 按 `overlap`：`queue` 或 `skip`  
+3. 若无活跃 → `fallback`：`job` | `skip` | `notify_only`
+
+**权限默认（无人值守）**：`kind: job` 建议更严（preset 白名单；shell/web 默认关或仅 policy 内）；`session` 可继承该会话偏好，但应在文档标明风险。
+
+#### 6.6.3 运行时与库
+
+| 组件 | 建议 | 说明 |
+|------|------|------|
+| 闹钟 | **croner**（首选）或 node-cron | 时区、`nextRuns`、overrun、pause；零依赖优先 croner |
+| 持久化定义 | 磁盘 JSON / 配置 | croner **不**存 schedule 表 |
+| 执行 | **只** `ScheduleFire` → job API 或 session 入队 | 禁止复制一套 ReAct |
+| 观测 | `last_fire_at` / `last_job_id`；可选 `schedules/<id>/history.jsonl` | 列表状态仍以 job meta 为准 |
+| 入口 | `schedule:daemon`（或常驻 gateway 同进程） | **与 TUI 解耦**：关 TUI 不停表 |
+| CLI | `schedule:list` / `schedule:fire --id=…` | 便于手测，不经 cron |
+
+```text
+croner → onTick(scheduleId) → ScheduleFire(def)
+                              ├─ job    → JobRegistry.start(...)
+                              ├─ session → enqueueUserMessage(sessionId, text)
+                              └─ notify → MessageBridge.emit(system_notice)
+```
+
+### 6.7 与飞书网关的叠法（产品叙事）
+
+| 用户动作 / 事件 | 路径 |
+|-----------------|------|
+| 在飞书里说话 | InboundAdapter → Dispatch → session |
+| 闹钟到点（巡检） | CronRuntime → Dispatch → **job** → 结果经 Bridge → 飞书（可 `source_id=job_id` 子线程） |
+| 闹钟到点（续聊 nudge） | Cron → Dispatch → **session** → 同线程气泡 |
+| TUI 本地聊 | 现有 runner；仍可 emit 到 Bridge（若挂了 sink） |
+
+**同一常驻进程**内建议：`InboundAdapter` + `CronRuntime` + `MessageBridge` sinks，共享 cwd / `.jobs` / sessions。
+
+### 6.8 实现分期（建议 PR 序）
+
+| 阶段 | 交付 | 依赖 |
+|------|------|------|
+| **S0** | 本文契约；类型草案可落 `src/hooks/types` 或 SPEC 片段 | — |
+| **S1** | `ScheduleDefinition` + Store + `ScheduleFire` → **仅 job** + CLI fire | 现有 job-store |
+| **S2** | `CronRuntime`（croner）+ `schedule:daemon` | S1 |
+| **S3** | session target + active 解析 + fallback | session 入队接缝 |
+| **S4** | InboundAdapter 骨架 + 假 adapter 测 Dispatch | S1 同 Dispatch |
+| **S5** | 真飞书 sink/inbound（OAuth 等） | S3–S4、出站 H1–H5 够用 |
+
+出站 H1–H5 与 S1–S2 **可并行**；**禁止**在 S1 把 cron 注册进 `MessageSink.onMessage`。
+
+### 6.9 明确不做（本阶段 / 非目标）
+
+- 系统 crontab 作为唯一调度源（仅可作可选 one-liner 调 `schedule:fire`）
+- 在 `MessageBridge` / `MessageSink` 内实现定时或 start job
+- BullMQ / Redis 队列（单机 harness 过重；多机后再议）
+- 默认定时 catch-up 漏跑（需显式 `catch_up: true`）
+- OAuth、Bot token、飞书/Discord 官方 SDK（S5）
 - 为 bridge 改 pointerize / compression 规则
+- 定时默认继承主会话 **宽松** shell（job 路径应收紧）
 
 ---
 
@@ -334,7 +491,9 @@ interface MessageSink {
           ‖
 [压测]  5.2 stress preset + dev-worker 文档 → 填压测表
           ‖
-[底座]  L1 Provider ✅ → L2 context pipeline（L2-0 ✅）→ L3 MessageBridge H1–H5
+[底座]  L1 Provider ✅ → L2 context pipeline ✅ → L3 MessageBridge 出站 H1–H5
+          ‖
+[底座]  §6.8 S1 ScheduleFire(job) → S2 daemon(croner) → S3 session target → S4 Inbound → S5 飞书
           ‖
 [可选]  G5 Anthropic cache / M6 workflow if-else / L4 npm exports
 ```
@@ -345,6 +504,7 @@ interface MessageSink {
 
 | 日期 | 说明 |
 |------|------|
+| 2026-07-14 | §6 扩展：InboundAdapter + Dispatch + Schedule（cron 并列 producer；job/session 双 target；croner；与飞书叠法）；§2.2 P2 底座行 |
 | 2026-07-12 | L2-6 统一 compression step 事件；`runTurnEndCompression`；删 `applyTurnEndCompression` |
 | 2026-07-12 | L2-5 `estimate.ts` + `heavy-compression.ts`；`context-policy` 纯 re-export wrapper |
 | 2026-07-12 | L2-4 `context/pointer-compact.ts` 迁入；`context-policy` re-export |
