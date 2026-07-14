@@ -2,6 +2,8 @@ import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { readFile, writeFile } from 'node:fs/promises';
 
+import { tryParseJobReportPath } from '../spawn/job-paths.js';
+import { clampJobReportContent, patchJobMeta } from '../spawn/job-store.js';
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import { formatFileMeta } from './file-hash.js';
 import { resolveReadablePath, resolveWritablePath, sliceLines } from './path-utils.js';
@@ -108,9 +110,28 @@ export async function runReadWriteTool(
       }
 
       await mkdir(dirname(file), { recursive: true });
-      await writeFile(file, content, 'utf8');
-      const byteSize = Buffer.byteLength(content, 'utf8');
-      return formatWriteToolResult(path, byteSize, previous, content);
+
+      // Job report.md soft cap (64 MiB) — same path agents use for code_review / spawn reports.
+      let toWrite = content;
+      let reportNote = '';
+      const jobId = tryParseJobReportPath(config.cwd, file);
+      if (jobId) {
+        const clamped = clampJobReportContent(content);
+        toWrite = clamped.content;
+        patchJobMeta(jobId, {
+          report_truncated: clamped.truncated,
+          report_bytes: clamped.written_bytes,
+        });
+        if (clamped.truncated) {
+          reportNote =
+            ` [report_truncated original=${clamped.original_bytes} written=${clamped.written_bytes}]`;
+        }
+      }
+
+      await writeFile(file, toWrite, 'utf8');
+      const byteSize = Buffer.byteLength(toWrite, 'utf8');
+      const result = formatWriteToolResult(path, byteSize, previous, toWrite);
+      return reportNote ? `${result}${reportNote}` : result;
     }
 
     default:

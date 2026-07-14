@@ -114,6 +114,7 @@
 | 路径 | 建议 |
 |------|------|
 | `.sessions/` · `workspace/jobs/` | 本地状态，gitignore |
+| `workspace/jobs/<id>/report.md` | 写入软顶 **64 MiB**（`MAX_JOB_REPORT_BYTES`）；超限截断并 `meta.report_truncated` |
 | `skills/cli-web-search/target/` | 不发布 |
 | `reports/` · `web-articles/` · 根目录杂 md | 文档/笔记，可 npmignore |
 | `node_modules/` | 由安装方生成 |

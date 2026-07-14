@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 
 import { getWorkspaceRoot } from '../workspace.js';
 
@@ -29,6 +29,18 @@ export function jobResultPath(jobId: string): string {
 
 export function jobReportPath(jobId: string): string {
   return resolve(jobDir(jobId), 'report.md');
+}
+
+/**
+ * If absPath is cwd/workspace/jobs/<job_id>/report.md, return job_id.
+ * Used to apply report size cap on write_file paths.
+ */
+export function tryParseJobReportPath(cwd: string, absPath: string): string | null {
+  const root = resolve(cwd);
+  const full = resolve(absPath);
+  const rel = relative(root, full).replace(/\\/g, '/');
+  const m = rel.match(/^workspace\/jobs\/(job_[A-Za-z0-9_-]+)\/report\.md$/i);
+  return m?.[1] ?? null;
 }
 
 export function jobCancelRequestedPath(jobId: string): string {

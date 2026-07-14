@@ -38,6 +38,10 @@ export interface SpawnJobMeta {
   model?: string;
   llm_base_url?: string;
   cache_mode?: string;
+  /** True when report.md was clamped by MAX_JOB_REPORT_BYTES. */
+  report_truncated?: boolean;
+  /** Bytes actually written to report.md (after clamp). */
+  report_bytes?: number;
 }
 
 export interface SpawnJobResultFile {
@@ -107,7 +111,12 @@ export function readJobMeta(jobId: string): SpawnJobMeta | null {
 
 export function patchJobMeta(
   jobId: string,
-  patch: Partial<Pick<SpawnJobMeta, 'status' | 'updated_at' | 'output_paths'>>,
+  patch: Partial<
+    Pick<
+      SpawnJobMeta,
+      'status' | 'updated_at' | 'output_paths' | 'report_truncated' | 'report_bytes'
+    >
+  >,
 ): SpawnJobMeta | null {
   const current = readJobMeta(jobId);
   if (!current) return null;
@@ -196,9 +205,71 @@ export function readJobResult(jobId: string): SpawnJobResultFile | null {
   }
 }
 
-export function writeJobReport(jobId: string, content: string): void {
+/**
+ * Soft cap for job report.md (bytes, UTF-8).
+ * Normal code-review / spawn reports stay far below this; stops runaway disk fill.
+ */
+export const MAX_JOB_REPORT_BYTES = 64 * 1024 * 1024;
+
+export interface JobReportWriteResult {
+  truncated: boolean;
+  original_bytes: number;
+  written_bytes: number;
+}
+
+/** Clamp report body to MAX_JOB_REPORT_BYTES, appending a truncation footer when needed. */
+export function clampJobReportContent(content: string): JobReportWriteResult & {
+  content: string;
+} {
+  const original_bytes = Buffer.byteLength(content, 'utf8');
+  if (original_bytes <= MAX_JOB_REPORT_BYTES) {
+    return {
+      content,
+      truncated: false,
+      original_bytes,
+      written_bytes: original_bytes,
+    };
+  }
+
+  const footer =
+    `\n\n---\n[report_truncated] original_bytes=${original_bytes} ` +
+    `cap=${MAX_JOB_REPORT_BYTES}\n`;
+  const footerBytes = Buffer.byteLength(footer, 'utf8');
+  let bodyBudget = MAX_JOB_REPORT_BYTES - footerBytes;
+  if (bodyBudget < 1024) {
+    bodyBudget = Math.max(0, MAX_JOB_REPORT_BYTES - 128);
+  }
+
+  let body = Buffer.from(content, 'utf8').subarray(0, bodyBudget).toString('utf8');
+  while (body.length > 0 && Buffer.byteLength(body, 'utf8') > bodyBudget) {
+    body = body.slice(0, -1);
+  }
+  const out = `${body}${footer}`;
+  return {
+    content: out,
+    truncated: true,
+    original_bytes,
+    written_bytes: Buffer.byteLength(out, 'utf8'),
+  };
+}
+
+/**
+ * Write report.md under the job dir, clamping to MAX_JOB_REPORT_BYTES.
+ * Records report_truncated / report_bytes on meta when the job exists.
+ */
+export function writeJobReport(jobId: string, content: string): JobReportWriteResult {
   ensureJobDir(jobId);
-  writeFileSync(jobReportPath(jobId), content, 'utf8');
+  const clamped = clampJobReportContent(content);
+  writeFileSync(jobReportPath(jobId), clamped.content, 'utf8');
+  patchJobMeta(jobId, {
+    report_truncated: clamped.truncated,
+    report_bytes: clamped.written_bytes,
+  });
+  return {
+    truncated: clamped.truncated,
+    original_bytes: clamped.original_bytes,
+    written_bytes: clamped.written_bytes,
+  };
 }
 
 export function applyJobLlmSnapshot(
