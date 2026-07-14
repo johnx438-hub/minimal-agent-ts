@@ -70,3 +70,46 @@ npm run tui                   # 推荐：启动交互式TUI
 # 或者直接命令行跑单次任务：
 npm start -- "读一下README，用三句话总结这个项目是做什么的"
 ```
+
+---
+
+## 自定义 API Key 与 Profile
+
+密钥**只写在 `.env`**，不在 `agent.json` 里硬编码。`agent.json` 通过 `api_key_env` 字段声明"从哪个环境变量取密钥"。
+
+### 内置 Profile 约定
+
+| Profile | 环境变量 |
+|---------|----------|
+| `deepseek-main`（默认） | `DEEPSEEK_API_KEY` |
+| `openrouter-test`（fallback） | `OPENROUTER_API_KEY` |
+
+### 三步新增自定义 API
+
+假设你要接入一个 OpenAI 兼容网关 `https://my-gw.example/v1`：
+
+**1. `agent.json` 新增 profile**（可参考 `agent.llm.example.json`）：
+
+```json
+{
+  "api_profiles": {
+    "my-gw": {
+      "base_url": "https://my-gw.example/v1",
+      "api_key_env": "MY_GW_KEY",
+      "default_model": "my-model",
+      "models": ["my-model"]
+    }
+  },
+  "default_api_profile": "my-gw"
+}
+```
+
+**2. `.env` 配置密钥**：
+
+```bash
+MY_GW_KEY=sk-xxxxxxxx
+```
+
+**3. 生效**：重启 TUI 或单次任务，`api_key_env` 指向的变量自动从 `.env` 读取。
+
+> 多个 API 做 fallback 时，利用 `fallback_profiles` 数组和 `FALLBACK=1` 环境变量自动切换。参考模板文件 `agent.llm.2key.example.json`。
