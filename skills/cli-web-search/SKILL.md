@@ -1,6 +1,7 @@
 ---
 name: cli-web-search
-description: 基于EXA MCP的搜索引擎
+description: 跨平台 CLI 搜索引擎（Google/Bing/Brave/DuckDuckGo 等 7 种后端）+ MCP 支持
+homepage: https://github.com/scottgl9/cli-web-search
 ---
 
 # cli-web-search
