@@ -691,53 +691,40 @@ immutable 区（session 级冻结）:
     },
   }
   ```
-- [ ] 默认 `head_tail`：≤2000 字符全文；否则前 800 + `…[more via offset]…` + 后 200
-- [ ] `isStale` 时返回 `stale: true` + 片段 + hint 建议 `read_file`
+- [x] 默认 `head_tail` / 自动 full 阈值；offset/limit 分页
+- [x] `isStale` → `stale: true` + hint `read_file`
+- [x] `query` 关键词在 session/task 候选中打分匹配（非向量）
 
-#### Step 5: Zvec 向量索引
+#### Step 5: 向量索引（草案，未合入）
 
-- [ ] `src/action-index.ts`（或复用 MemFileCli 模式）
-  - Collection `agent_memory`，384 维 cosine + FTS `content` 字段
-  - 索引文本：`tool + args + result[:4000] + files_touched`
-  - 标量过滤：`session_id`, `task_id`, `tool_name`, `turn_number`, `pointerized`
-- [ ] task 完成 / 压缩事件时异步 upsert（不阻塞主 loop）
+- [ ] ~~`src/action-index.ts` + Zvec~~ → **当前不做**；跨 session 用 MemFileCli
+- 若重做：单独立项，不阻塞 pipeline
 
-#### Step 6: System Prompt 调整（静态为主）
+#### Step 6: System Prompt（静态为主）
 
-- [ ] `SYSTEM_PROMPT` 追加 **固定** recall 说明（immutable）：
-  ```
-  Large tool outputs appear as [action:…] cards. Use recall_query(action_id=...) for details.
-  If recall marks stale, use read_file for the latest file content.
-  ```
-- [ ] **废弃**每轮动态 `buildSystemPrompt()`；压缩级别提示改由 `appendCompressionNotice()` 一次写入
+- [x] system 固定 recall 说明；压缩走 `appendCompressionNotice` + replay
+- [x] 动态段走 `agent-prompt` / workspace Agent.md 等（见代码），非每轮改写指针策略
 
 ---
 
-### 2.4 数据流（Phase 2 完整路径）
+### 2.4 数据流（Phase 2 + pipeline）
 
 ```
 用户提问 → TaskTracker.onUserMessage
     ↓
 ReAct loop (每 turn):
-    LLM → tool_calls → executeTool(raw)
+    LLM → tool_calls → scheduleToolCalls → executeTool(raw)
         ├─ ActionStore.saveAction (冷，全文)
         └─ messages.push (热，inline 或截断)
     ↓
-turn 结束 → context-policy:
-    ├─ materializeAtTurnEnd (大结果 → pointer, frozen)
-    └─ shouldPrune? → applyPrune (compacted_at)
+turn 结束 → runTurnEndPipeline:
+    ① pointerize  ② prune  ③ pointer-compact  ④ heavy compression?
     ↓
-预算检查 shouldCompress?
-    ├─ 否 → assembleApiMessages → 下一轮 LLM
-    └─ 是 → 压缩事件:
-            ├─ 老 task → TaskSummary (frozen)
-            ├─ compacted_at 标记
-            ├─ appendCompressionNotice
-            └─ replayLastUserTask
+assembleApiMessages → 下一轮 LLM
     ↓
-模型调用 recall_query → recall.ts → head_tail / keyword → tool result 回注
+模型调用 recall_query → head_tail / keyword → tool result 回注
     ↓
-task 结束 → TaskSummary 写入 session.tasks (Phase 1)
+task 结束 → TaskSummary 写入 session.tasks
 ```
 
 ---
