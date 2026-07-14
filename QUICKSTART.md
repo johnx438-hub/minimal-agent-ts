@@ -31,11 +31,24 @@ DEEPSEEK_API_KEY=sk-你的key
 | **贴 API key** | **`.env`** | `DEEPSEEK_API_KEY=...`（默认必填） |
 | 可选备用 key | **`.env`** | `OPENROUTER_API_KEY=...` |
 | 换默认厂商/模型列表 | `agent.json` | `default_api_profile`、`api_profiles.*.models` |
-| 看「key 读哪个环境变量」 | `agent.json` | `api_profiles.*.api_key_env`（只是**名字**） |
+| 看「key 读哪个环境变量」 | `agent.json` | `api_profiles.*.api_key_env`（只是**名字**，可改） |
 
-**规则**：密钥只进 `.env`（已 gitignore）；`agent.json` 只写 `api_key_env: "DEEPSEEK_API_KEY"` 这种引用。
+**规则**：密钥只进 `.env`（已 gitignore）；`agent.json` 只写 `api_key_env: "变量名"`。
 
-多厂商模板见 `agent.llm.example.json`；两 key 模板见 `agent.llm.2key.example.json`（合并进 agent.json 时同样**不要**把 sk- 写进 JSON）。
+**变量名不是写死在代码里的**：named profile 用 `process.env[api_key_env]`。例如自建网关：
+
+```json
+"my-gateway": {
+  "base_url": "https://your-gateway.example/v1",
+  "api_key_env": "MY_GATEWAY_KEY",
+  "default_model": "my-model-1",
+  "models": ["my-model-1"]
+}
+```
+
+`.env`：`MY_GATEWAY_KEY=sk-xxxx`，并把 `default_api_profile` 设为 `my-gateway`。接口需 OpenAI 兼容 chat/completions。
+
+多厂商模板：`agent.llm.example.json`；双 key：`agent.llm.2key.example.json`（合并时同样**不要**把 sk- 写进 JSON）。
 
 **拉代码后若 `package.json` 变了**，再执行一次 `npm install`。
 

@@ -1,5 +1,5 @@
 {
-  "_comment": "LLM snippet only. Merge default_api_profile + api_profiles into agent.json if needed. SECRETS: create .env from .env.example and set DEEPSEEK_API_KEY / OPENROUTER_API_KEY there — never put real keys in any JSON.",
+  "_comment": "LLM snippet: merge default_api_profile + api_profiles into agent.json. SECRETS only in .env. api_key_env is a configurable env VAR NAME (not hardcoded) — pair it with the same name in .env. Custom API: new profile { base_url, api_key_env, default_model, models } + KEY= in .env. Never put sk- in JSON.",
   "default_api_profile": "deepseek-main",
   "api_profiles": {
     "deepseek-main": {

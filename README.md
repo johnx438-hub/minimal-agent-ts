@@ -88,6 +88,30 @@ npm start -- "读 README，用三句话说明这个项目做什么"
 
 ---
 
+## 配置 LLM / API Key
+
+| 想改什么 | 改哪里 |
+|----------|--------|
+| key 的**值** | **`.env`**：`XXX=sk-...` |
+| key 的**变量名** | `agent.json` → `api_profiles.*.api_key_env: "XXX"`（任意名字） |
+| 默认用哪个厂商 | `default_api_profile` |
+| 模型列表 / 默认模型 | `api_profiles.*.models` / `default_model` |
+| base URL | `api_profiles.*.base_url` |
+| 失败换备用 | `fallback_profiles: ["其它 profile 名"]` |
+
+**有名 profile 不硬编码环境变量名**：代码读的是 `process.env[api_key_env]`。当前仓库默认写成 `DEEPSEEK_API_KEY` / `OPENROUTER_API_KEY`，只是约定，可改。
+
+**自定义常用 API**（需 OpenAI 兼容 `chat/completions`）：
+
+1. 在 `agent.json` 增加 profile，例如 `my-gateway`：`base_url`、`api_key_env`（如 `MY_GATEWAY_KEY`）、`default_model`、`models`，并设 `default_api_profile`。  
+2. 在 `.env` 写：`MY_GATEWAY_KEY=sk-xxxx`。  
+3. `npm run tui`，或会话内 `/profile my-gateway` · `/model …`。
+
+模板：`agent.llm.2key.example.json`、`agent.llm.example.json`。  
+仅当没有可用 named profile 时，才会退回虚拟 `__env__`（`OPENAI_API_KEY` / `OPENROUTER_API_KEY` + `OPENAI_BASE_URL` + `MODEL`）。
+
+---
+
 ## 内置工具（摘要）
 
 | 类别 | 工具 |

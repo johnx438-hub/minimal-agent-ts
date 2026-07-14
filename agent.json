@@ -1,12 +1,12 @@
 {
-  "_llm_comment": "KEYS: put secrets in .env only (see .env.example). This file points at env var NAMES via api_key_env — never paste sk- here. Default profile deepseek-main → DEEPSEEK_API_KEY. Fallback openrouter-test → OPENROUTER_API_KEY. Templates: agent.llm.2key.example.json / agent.llm.example.json",
+  "_llm_comment": "LLM: secrets ONLY in .env (see .env.example). This file uses api_key_env as the ENV VAR NAME (not the key). Names are NOT hardcoded — change api_key_env and add the same name in .env. Default deepseek-main → DEEPSEEK_API_KEY; fallback openrouter-test → OPENROUTER_API_KEY. Custom OpenAI-compatible API: add a profile { base_url, api_key_env, default_model, models }, set default_api_profile, put KEY=... in .env. Templates: agent.llm.2key.example.json | agent.llm.example.json. Virtual __env__ (OPENAI_API_KEY/BASE_URL/MODEL) only if no named profiles.",
   "default_api_profile": "deepseek-main",
   "api_profiles": {
     "deepseek-main": {
       "display_name": "DeepSeek V4（官方）",
       "base_url": "https://api.deepseek.com",
       "api_key_env": "DEEPSEEK_API_KEY",
-      "_key_hint": "Set DEEPSEEK_API_KEY=... in .env (not in this file)",
+      "_key_hint": "Any name works: set api_key_env then put that name in .env. Now: DEEPSEEK_API_KEY=... in .env",
       "default_model": "deepseek-v4-flash",
       "models": ["deepseek-v4-flash", "deepseek-v4-pro"],
       "fallback_profiles": ["openrouter-test"],
@@ -30,7 +30,7 @@
       "display_name": "OpenRouter（备用）",
       "base_url": "https://openrouter.ai/api/v1",
       "api_key_env": "OPENROUTER_API_KEY",
-      "_key_hint": "Optional fallback — set OPENROUTER_API_KEY=... in .env",
+      "_key_hint": "Optional fallback — OPENROUTER_API_KEY=... in .env (name matches api_key_env)",
       "default_model": "deepseek/deepseek-v4-flash",
       "models": [
         "deepseek/deepseek-v4-flash",
