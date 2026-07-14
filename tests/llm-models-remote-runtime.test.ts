@@ -39,6 +39,14 @@ describe('AgentRuntime.listSessionModelChoicesAsync (G2-d)', () => {
     clearRemoteModelsCacheForTests();
   });
 
+  /** Isolate from host shell (e.g. REMOTE_MODELS=0 in .env / profile). */
+  function prepareRemoteModelsTestEnv(): void {
+    process.env.OPENROUTER_API_KEY = 'or-key';
+    delete process.env.OPENAI_API_KEY;
+    // Must allow remote merge path; host may set REMOTE_MODELS=0.
+    delete process.env.REMOTE_MODELS;
+  }
+
   it('matches static list when remote fetch fails', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'ma-remote-models-fail-'));
     writeFileSync(
@@ -56,8 +64,7 @@ describe('AgentRuntime.listSessionModelChoicesAsync (G2-d)', () => {
       }),
     );
 
-    process.env.OPENROUTER_API_KEY = 'or-key';
-    delete process.env.OPENAI_API_KEY;
+    prepareRemoteModelsTestEnv();
 
     globalThis.fetch = (async () => new Response('down', { status: 503 })) as typeof fetch;
 
@@ -92,8 +99,7 @@ describe('AgentRuntime.listSessionModelChoicesAsync (G2-d)', () => {
       }),
     );
 
-    process.env.OPENROUTER_API_KEY = 'or-key';
-    delete process.env.OPENAI_API_KEY;
+    prepareRemoteModelsTestEnv();
 
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input);
