@@ -5,8 +5,12 @@
 
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { resolve } from 'node:path';
+
+import {
+  discoverCloakScript,
+  resolveCloakPython,
+  resolveDdgrCommand,
+} from './tools/cloak-resolve.js';
 
 export type DepTier = 'required' | 'recommended' | 'optional' | 'dev_only';
 
@@ -75,34 +79,42 @@ function probeGit(): HostDepStatus {
   };
 }
 
-function probeDdgr(ddgrPath = 'ddgr'): HostDepStatus {
-  const p = probePathCommand(ddgrPath, ['--version']);
-  // ddgr may not support --version; try -h
-  const fallback = p.ok ? p : probePathCommand(ddgrPath, ['-h']);
+function probeDdgr(ddgrPath?: string): HostDepStatus {
+  const resolved = resolveDdgrCommand(ddgrPath);
+  if (!resolved.available) {
+    return {
+      id: 'ddgr',
+      tier: 'optional',
+      label: 'ddgr (DuckDuckGo CLI)',
+      usedBy: ['web_search'],
+      available: false,
+      detail: 'not on PATH (set web_search.ddgr_path or DDGR_PATH on Windows)',
+    };
+  }
+  const p = probePathCommand(resolved.command, ['--version']);
+  const fallback = p.ok ? p : probePathCommand(resolved.command, ['-h']);
   return {
     id: 'ddgr',
     tier: 'optional',
     label: 'ddgr (DuckDuckGo CLI)',
     usedBy: ['web_search'],
-    available: fallback.ok,
-    detail: fallback.detail,
+    available: true,
+    detail: `${resolved.command}${fallback.detail ? ` · ${fallback.detail}` : ''}`,
   };
 }
 
 function probePython(): HostDepStatus {
-  const candidates = ['python3', 'python'];
-  for (const cmd of candidates) {
-    const p = probePathCommand(cmd, ['--version']);
-    if (p.ok) {
-      return {
-        id: 'python',
-        tier: 'optional',
-        label: 'Python 3',
-        usedBy: ['web_fetch cloak L2 (optional)'],
-        available: true,
-        detail: `${cmd}: ${p.detail}`,
-      };
-    }
+  const resolved = resolveCloakPython();
+  const p = probePathCommand(resolved, ['--version']);
+  if (p.ok || existsSync(resolved)) {
+    return {
+      id: 'python',
+      tier: 'optional',
+      label: 'Python 3',
+      usedBy: ['web_fetch cloak L2 (optional)'],
+      available: true,
+      detail: `${resolved}${p.detail ? `: ${p.detail}` : ''}`,
+    };
   }
   return {
     id: 'python',
@@ -110,7 +122,7 @@ function probePython(): HostDepStatus {
     label: 'Python 3',
     usedBy: ['web_fetch cloak L2 (optional)'],
     available: false,
-    detail: 'not found (cloak_fetch disabled by default)',
+    detail: 'not found (cloak_fetch disabled by default; Win: install Python + PATH)',
   };
 }
 
@@ -170,26 +182,17 @@ function probeShell(): HostDepStatus {
   };
 }
 
-function probeCloakHints(): HostDepStatus {
-  const envScript = process.env.CLOAK_FETCH_SCRIPT?.trim();
-  const candidates = [
-    envScript,
-    resolve(homedir(), '.claude/skills/cloak-fetch/cloak_fetch.sh'),
-    resolve(homedir(), 'github/cloakFetch/skills/cloak-fetch/cloak_fetch.sh'),
-    resolve(process.cwd(), 'skills/cloak-fetch/cloak_fetch.py'),
-  ].filter(Boolean) as string[];
-
-  for (const path of candidates) {
-    if (existsSync(path)) {
-      return {
-        id: 'cloak_fetch',
-        tier: 'optional',
-        label: 'cloak_fetch script',
-        usedBy: ['web_fetch L2 anti-bot fallback'],
-        available: true,
-        detail: path,
-      };
-    }
+function probeCloakHints(cwd = process.cwd()): HostDepStatus {
+  const found = discoverCloakScript({ cwd });
+  if (found) {
+    return {
+      id: 'cloak_fetch',
+      tier: 'optional',
+      label: 'cloak_fetch script',
+      usedBy: ['web_fetch L2 anti-bot fallback'],
+      available: true,
+      detail: found,
+    };
   }
   return {
     id: 'cloak_fetch',
@@ -197,7 +200,8 @@ function probeCloakHints(): HostDepStatus {
     label: 'cloak_fetch script',
     usedBy: ['web_fetch L2 anti-bot fallback'],
     available: false,
-    detail: 'not installed (default: cloak_fetch_enabled=false)',
+    detail:
+      'not found (set cloak_fetch_script / CLOAK_FETCH_SCRIPT; prefer .py on Windows)',
   };
 }
 
@@ -217,6 +221,7 @@ export const BUNDLED_NPM_DEPS: Array<{ id: string; usedBy: string[] }> = [
 export interface ProbeHostDepsOptions {
   /** From agent.json web_search.ddgr_path */
   ddgrPath?: string;
+  cwd?: string;
 }
 
 /** Probe host binaries / runtimes (not npm tree). */
@@ -232,9 +237,9 @@ export function probeHostDeps(opts?: ProbeHostDepsOptions): HostDepStatus[] {
     },
     probeShell(),
     probeGit(),
-    probeDdgr(opts?.ddgrPath ?? 'ddgr'),
+    probeDdgr(opts?.ddgrPath),
     probePython(),
-    probeCloakHints(),
+    probeCloakHints(opts?.cwd ?? process.cwd()),
   ];
 }
 

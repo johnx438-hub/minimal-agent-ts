@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { isCapabilityEnabled } from '../permission-gate.js';
 import type { WebSearchPolicy } from '../plugins/types.js';
 import type { AgentConfig, ToolDefinition } from '../types.js';
+import { resolveDdgrCommand } from './cloak-resolve.js';
 import { formatCacheHits, searchSpillCache } from './web-search-cache.js';
 
 const DEFAULT_MAX_RESULTS = 5;
@@ -71,10 +72,11 @@ export function resolveWebSearchPolicy(
     maxCap,
     Math.max(1, policy?.max_results_default ?? DEFAULT_MAX_RESULTS),
   );
+  const ddgrResolved = resolveDdgrCommand(policy?.ddgr_path);
   return {
     allowed: policy?.allowed !== false,
     backend: 'ddgr',
-    ddgrPath: policy?.ddgr_path?.trim() || 'ddgr',
+    ddgrPath: ddgrResolved.command,
     maxResultsDefault: maxDefault,
     maxResultsCap: maxCap,
     cacheEnabled: policy?.cache?.enabled !== false,
@@ -158,7 +160,10 @@ function runDdgrSubprocess(
   timeoutMs: number,
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolvePromise) => {
-    const child = spawn(ddgrPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(ddgrPath, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
     let stdout = '';
     let stderr = '';
     const timer = setTimeout(() => {
@@ -202,8 +207,9 @@ async function runDdgrSearch(
 
   if (code === 127 || /ENOENT/i.test(stderr)) {
     return (
-      'error: ddgr not found — install ddgr (e.g. `sudo apt install ddgr` or `brew install ddgr`) ' +
-      'or set web_search.ddgr_path in agent.json'
+      'error: ddgr not found on PATH — install ddgr ' +
+      '(Linux: apt/brew; Windows: pip install ddgr and ensure Scripts is on PATH; Git Bash: same PATH as Node). ' +
+      'Or set web_search.ddgr_path / env DDGR_PATH to the full path of ddgr/ddgr.exe.'
     );
   }
 

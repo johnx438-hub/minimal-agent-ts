@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 
 import { Readability } from '@mozilla/readability';
@@ -10,6 +9,7 @@ import TurndownService from 'turndown';
 import { isCapabilityEnabled } from '../permission-gate.js';
 import type { AgentConfig, ToolDefinition } from '../types.js';
 import type { WebFetchPolicy } from '../plugins/types.js';
+import { discoverCloakScript, resolveCloakPython } from './cloak-resolve.js';
 import {
   formatSpillResult,
   markdownByteSize,
@@ -389,41 +389,22 @@ async function fetchHttp(
   return { status: res.status, body, contentType };
 }
 
-function discoverCloakScript(configured?: string): string | undefined {
-  const candidates = [
-    configured,
-    process.env.CLOAK_FETCH_SCRIPT,
-    resolve(homedir(), '.claude/skills/cloak-fetch/cloak_fetch.sh'),
-    resolve(homedir(), 'github/cloakFetch/skills/cloak-fetch/cloak_fetch.sh'),
-    resolve(homedir(), '.claude/hooks/cloak_fetch.py'),
-  ].filter((c): c is string => Boolean(c?.trim()));
-
-  for (const path of candidates) {
-    const resolved = path.startsWith('~/') ? resolve(homedir(), path.slice(2)) : path;
-    if (existsSync(resolved)) return resolved;
-  }
-  return undefined;
-}
-
-function cloakPython(configured?: string): string {
-  if (configured?.trim()) return configured.trim();
-  if (process.env.CLOAKBROWSER_PYTHON?.trim()) return process.env.CLOAKBROWSER_PYTHON.trim();
-  const venv = resolve(homedir(), 'github/CloakBrowser/.venv/bin/python');
-  if (existsSync(venv)) return venv;
-  return 'python3';
-}
-
 async function runCloakFetch(
   url: string,
   policy: ReturnType<typeof resolvedPolicy>,
   abortSignal?: AbortSignal,
+  cwd?: string,
 ): Promise<string> {
-  const script = discoverCloakScript(policy.cloak_fetch_script);
+  const script = discoverCloakScript({
+    configured: policy.cloak_fetch_script,
+    cwd,
+  });
   if (!script) {
     return [
       'error: page appears blocked (403/anti-bot) and cloak_fetch is not configured.',
       'Install https://github.com/Agents365-ai/cloakFetch and set web_fetch_policy.cloak_fetch_script',
       'or CLOAK_FETCH_SCRIPT, then set cloak_fetch_enabled: true in agent.json.',
+      'On Windows prefer cloak_fetch.py + python on PATH (Git Bash OK); avoid relying on ~/github/... Unix auto-paths.',
     ].join(' ');
   }
 
@@ -433,16 +414,28 @@ async function runCloakFetch(
   const maxBytes = policy.max_response_bytes;
 
   return new Promise((resolvePromise) => {
-    const cmd = isPython ? cloakPython(policy.cloak_browser_python) : script;
+    const cmd = isPython
+      ? resolveCloakPython(policy.cloak_browser_python, cwd)
+      : script;
     const args = isPython ? [script, url] : [url];
     const env = { ...process.env };
     if (policy.cloak_browser_python) {
       env.CLOAKBROWSER_PYTHON = policy.cloak_browser_python;
     }
 
-    const child = spawn(cmd, args, {
+    // .sh scripts need a shell on Windows; prefer bash if present (Git Bash).
+    const useBash =
+      !isPython &&
+      process.platform === 'win32' &&
+      (script.endsWith('.sh') || script.endsWith('.bash'));
+    const spawnCmd = useBash ? 'bash' : cmd;
+    const spawnArgs = useBash ? [script, url] : args;
+
+    const child = spawn(spawnCmd, spawnArgs, {
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+      shell: false,
     });
 
     let stdout = '';
@@ -555,7 +548,7 @@ export async function runWebFetchTool(
       ].join(' ');
     }
 
-    const cloakOut = await runCloakFetch(url, policy, config.abortSignal);
+    const cloakOut = await runCloakFetch(url, policy, config.abortSignal, config.cwd);
     if (cloakOut.startsWith('error:')) return cloakOut;
 
     const titleMatch = cloakOut.match(/^#\s+(.+)/m);
@@ -572,7 +565,7 @@ export async function runWebFetchTool(
     // Network-level failure (timeout, connection error, etc.) — try L2 cloakFetch
     if (policy.cloak_fetch_enabled) {
       try {
-        const cloakOut = await runCloakFetch(url, policy, config.abortSignal);
+        const cloakOut = await runCloakFetch(url, policy, config.abortSignal, config.cwd);
         if (!cloakOut.startsWith('error:')) {
           const titleMatch = cloakOut.match(/^#\s+(.+)/m);
           const title = titleMatch?.[1]?.trim() ?? url;

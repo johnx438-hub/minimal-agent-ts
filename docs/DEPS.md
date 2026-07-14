@@ -71,11 +71,23 @@
 | **node** | required | 全部 | 无法运行 | nodejs.org / nvm ≥22 |
 | **shell** | recommended | `run_shell` · `test_run` | 工具错误或需 `--allow-shell` 仍可能找不到 shell | bash / cmd；`MINIMAL_SHELL` |
 | **git** | recommended | `git_*` · `code_review` | `error: git not found` | `apt/brew/choco install git` |
-| **ddgr** | optional | `web_search` | 明确 error + 安装提示 | `apt/brew install ddgr` |
-| **python3** | optional | cloak L2 only | 默认不启用 cloak | 系统 Python |
-| **cloak_fetch 脚本** | optional | `web_fetch` 反爬 L2 | 默认 `cloak_fetch_enabled: false` | Agents365 cloakFetch |
+| **ddgr** | optional | `web_search` | 明确 error + 安装提示 | PATH 或 `web_search.ddgr_path` / `DDGR_PATH` |
+| **python** | optional | cloak L2 only | 默认不启用 cloak | Win: `python`；Unix: `python3` |
+| **cloak_fetch 脚本** | optional | `web_fetch` 反爬 L2 | 默认 `cloak_fetch_enabled: false` | 见下 §3.1 |
 
 探测命令：`npm start -- --list-tools` 或 TUI `/tools`（含 host 摘要）。
+
+### 3.1 Windows / Git Bash 注意（ddgr · cloak）
+
+| 项 | 行为 |
+|----|------|
+| **ddgr** | **无**绝对路径硬编码，只查 PATH + 配置。Win 额外试 `ddgr.exe` / `.cmd` / `.bat`。Git Bash 跑 Node 时 PATH 须含 pip `Scripts`（或写死 `ddgr_path`）。 |
+| **cloak 自动发现** | 优先：`cloak_fetch_script` 配置 → `CLOAK_FETCH_SCRIPT` → **项目内** `skills/cloak-fetch/cloak_fetch.py` → `~/.claude/...` → 若干 `~/github|Documents/GitHub|source/repos/...` 提示路径。**不再**只认 Unix `~/github/.../bin/python`。 |
+| **cloak Python** | 配置 / `CLOAKBROWSER_PYTHON` → Unix venv `bin/python` **与** Win venv `Scripts/python.exe` → PATH 上 `python`/`python3`/`py`。 |
+| **.sh 脚本** | Win 上会尝试 `bash script url`（Git Bash）；**推荐 Win 用 `.py`**（`agent.json` 默认已是 repo 内 py）。 |
+| **WSL vs 原生 Win** | 两套文件系统与 PATH 不同；在 Git Bash（MinGW）下 `homedir()` 是 Windows 用户目录，不是 `/home/...`。 |
+
+实现：`src/tools/cloak-resolve.ts`（web-fetch / web-search / deps-probe 共用）。
 
 ---
 
