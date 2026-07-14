@@ -191,8 +191,8 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
   {
     command: '/tools',
     aliases: ['/tool'],
-    hintZh: '列出可用工具',
-    hintEn: 'List available tools',
+    hintZh: '列出可用工具 + 宿主依赖探针',
+    hintEn: 'List tools + host dependency probe',
   },
   {
     command: '/mcp list',

@@ -302,6 +302,15 @@ async function main(): Promise<void> {
     if (!runtime.config.allowWeb) {
       console.log('Note: web_fetch hidden until --allow-web or ALLOW_WEB=1');
     }
+    const { buildDepProbeReport, formatDepProbeReport } = await import('./deps-probe.js');
+    console.log('');
+    console.log(
+      formatDepProbeReport(
+        buildDepProbeReport({
+          ddgrPath: runtime.pluginConfig.web_search?.ddgr_path,
+        }),
+      ),
+    );
     await runtime.shutdown();
     return;
   }

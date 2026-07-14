@@ -3,7 +3,7 @@
 TypeScript **ReAct Agent 学习底座**：手写主循环 + 上下文冷热分离 + 子 Agent / workflow / TUI，不依赖 pi / rig / scream / zerostack 内核。
 
 **仓库**: https://github.com/johnx438-hub/minimal-agent-ts  
-**上手**: [QUICKSTART.md](./QUICKSTART.md) · **规划**: [docs/ROADMAP.md](./docs/ROADMAP.md)
+**上手**: [QUICKSTART.md](./QUICKSTART.md) · **规划**: [docs/ROADMAP.md](./docs/ROADMAP.md) · **依赖**: [docs/DEPS.md](./docs/DEPS.md)
 
 > DeepSeek 前缀缓存实验在 sibling 项目 `minimal-agent-ts-ds-cache`；本仓默认 OpenCode 式上下文（pointerize / prune / resume 预算裁剪）。
 
@@ -61,11 +61,14 @@ npm run spawn:list
 
 | 类别 | 工具 |
 |------|------|
-| 文件 | `read_file` · `write_file` · `edit_file` · `grep_search` · `list_files` · `diff_file` |
+| 文件 | `read_file` · `write_file` · `edit_file` · `apply_patch` · `grep_search` · `list_files` · `diff_file` |
 | 上下文 | `recall_query` |
-| 执行 / 网 | `run_shell`（`--allow-shell`）· `web_fetch` / `web_search`（`--allow-web`） |
+| Office | `office_read` · `office_write`（docx/pptx/xlsx，纯 Node） |
+| 执行 / 网 | `run_shell`（`--allow-shell`）· `web_fetch` / `web_search`（`--allow-web`，搜索需 ddgr） |
 | 委派 | `spawn_agent` · `spawn_background` · `code_review` |
 | 插件 | `invoke_skill` · `mcp_<server>_<tool>` |
+
+依赖分层（必装 Node / 推荐 git·shell / 可选 ddgr·cloak）见 [docs/DEPS.md](./docs/DEPS.md)；`/tools` 或 `--list-tools` 会跑宿主探针。
 
 开关：`agent.json` → `builtin_tools`。后台 job 落盘 `workspace/jobs/<id>/`（本地不进 git）。
 

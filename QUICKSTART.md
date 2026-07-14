@@ -4,8 +4,10 @@
 
 ## 环境要求
 
-- **Node.js ≥ 22**
-- OpenAI 兼容 API Key（默认 Gemini）
+- **Node.js ≥ 22**（唯一硬性依赖）
+- OpenAI 兼容 API Key（见 `agent.json` / `.env`）
+- **可选**：`git`（git_* / code_review）、`ddgr`（web_search）、shell（run_shell）
+- 完整地图：[docs/DEPS.md](./docs/DEPS.md)
 
 ## 1. 安装
 

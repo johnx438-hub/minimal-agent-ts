@@ -465,6 +465,16 @@ export async function handlePiSlash(
 
   if (result.message === '__tools__') {
     for (const t of runtime.listToolNames()) say(`  • ${t}`, true);
+    say('', true);
+    const { buildDepProbeReport, formatDepProbeReport } = await import(
+      '../deps-probe.js'
+    );
+    const report = buildDepProbeReport({
+      ddgrPath: runtime.pluginConfig.web_search?.ddgr_path,
+    });
+    for (const line of formatDepProbeReport(report).split('\n')) {
+      say(line, true);
+    }
     resumeEditor();
     return;
   }
