@@ -8,6 +8,7 @@ import { READ_WRITE_DEFINITIONS, runReadWriteTool } from '../read-write.js';
 import { RECALL_DEFINITIONS, runRecallTool } from '../recall.js';
 import { GIT_DEFINITIONS, runGitTool } from '../git.js';
 import { LSP_DEFINITIONS, runLspTool } from '../lsp.js';
+import { OFFICE_DEFINITIONS, runOfficeTool } from '../office.js';
 import { SHELL_DEFINITIONS, runShellTool } from '../shell.js';
 import { TEST_RUN_DEFINITIONS, runTestRunTool } from '../test-run.js';
 import { WEB_FETCH_DEFINITIONS, runWebFetchTool } from '../web-fetch.js';
@@ -42,6 +43,8 @@ const BUILTIN_TOOLS: Record<string, BuiltinToolEntry> = {
   git_diff: { defs: GIT_DEFINITIONS, handler: runGitTool, requiresShell: true },
   git_log: { defs: GIT_DEFINITIONS, handler: runGitTool, requiresShell: true },
   lsp_query: { defs: LSP_DEFINITIONS, handler: runLspTool },
+  office_read: { defs: OFFICE_DEFINITIONS, handler: runOfficeTool },
+  office_write: { defs: OFFICE_DEFINITIONS, handler: runOfficeTool },
   web_fetch: { defs: WEB_FETCH_DEFINITIONS, handler: runWebFetchTool, requiresWeb: true },
   code_review: { defs: CODE_REVIEW_DEFINITIONS, handler: runCodeReviewTool },
 };

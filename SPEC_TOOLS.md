@@ -34,7 +34,7 @@ runAgent 主循环（不变）
 1. `web_search`（零 TS 重依赖，子进程 CLI）
 2. `convert_document`（与 `web_fetch` spill 同模式）
 3. `lsp_query`（子进程 JSON-RPC，生命周期需单测）
-4. `office_read` / `office_write`（依赖选定 CLI，权限最重）
+4. `office_read` / `office_write`（✅ Node 纯依赖；docx/pptx 重点，xlsx 轻改）
 
 ---
 
@@ -317,44 +317,70 @@ convert_document({
 
 ---
 
-## 6. `office_read` / `office_write` — Office CLI 封装
+## 6. `office_read` / `office_write` — Node Office 三件套 ✅
 
-### 目标
-
-参考开源 **office_cli** 类实践：用专用 CLI 做结构化读写，避免 LLM 直接改 xlsx/xml。
+> **已落地**（2026-07-14）：纯 Node，无 shell / 无外部 CLI。  
+> **重点**：docx · pptx 读写；xlsx **读 + 轻改**（append_rows / set_cells / replace_sheet）。
 
 ### 模式
 
 ```
-Agent → office_read / office_write (builtin tool)
-           → 子进程 office_cli（或同类）JSON stdin/stdout
-           → 摘要进 context；完整结构落 .cache/office/ 或用户指定路径
+Agent → office_read / office_write (builtin)
+           → mammoth | docx | exceljs | pptxgenjs | jszip
+           → 摘要进 context；大结果 spill → .cache/office/
 ```
 
-### 工具形状（草案）
+### 工具形状
 
 ```typescript
-office_read({ path: string, format?: 'json' | 'csv' | 'markdown_summary' })
-office_write({ path: string, payload: object, mode?: 'replace_sheet' | 'append_rows' })
+office_read({
+  path: string,
+  format?: 'markdown' | 'json',
+  max_chars?: number,
+  sheet?: string,      // xlsx
+  max_rows?: number,   // xlsx sample
+})
+
+office_write({
+  path: string,        // extension selects kind
+  // docx
+  paragraphs?: string[],
+  text?: string,
+  // pptx
+  title?: string,
+  slides?: Array<{ title?: string, bullets?: string[], body?: string }>,
+  // xlsx light
+  sheet?: string,
+  headers?: string[],
+  append_rows?: unknown[][],
+  set_cells?: Array<{ cell: string, value: unknown }>,
+  replace_sheet?: boolean,
+})
 ```
 
 ### 实现要点
 
-- **先选型**：调研 1 个 MIT/Apache CLI（命名以实际 repo 为准），不急于内置多实现
-- 权限：**`allowShell`** 或独立 `allowOffice` capability（实现前在 `permission-gate` 定一种）
-- 写操作：JIT 确认（对齐 `write_file` / destructive shell）
-- 输出：表格用 markdown 摘要；宽表 pointerize + 冷存
+| 格式 | 读 | 写 |
+|------|----|----|
+| **docx** | mammoth raw text | `docx` Packer 段落 |
+| **pptx** | jszip 抽 `a:t` 大纲 | pptxgenjs 标题+要点 |
+| **xlsx** | exceljs 表名+采样行 | exceljs append/set/replace（轻） |
+
+- 路径：`resolveReadablePath` / `resolveWritablePath`（**不需** shell）
+- 大输出：`.cache/office/` spill + 短预览
+- 注册：`BuiltinToolProvider` + `agent.json` + `dev-worker`
 
 ### 明确不做（v1）
 
-- 内置纯 TS xlsx 解析（体积与边界情况多）
-- WYSIWYG 或宏执行
+- WYSIWYG / 样式完美还原 / 宏 / 加密文档
+- xlsx 复杂公式引擎或整表重排 API
 
 ### 验收
 
-- [ ] xlsx fixture 读出 sheet 名 + 采样行
-- [ ] 写后文件可被外部 Excel 打开
-- [ ] 拒绝未授权路径
+- [x] docx 写→读中文段落
+- [x] pptx 写→读 slide 大纲
+- [x] xlsx 读写 + set_cells / append
+- [x] 错误扩展名 / 缺 path
 
 ---
 

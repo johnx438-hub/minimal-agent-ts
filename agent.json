@@ -63,6 +63,8 @@
     "git_diff",
     "git_log",
     "lsp_query",
+    "office_read",
+    "office_write",
     "web_fetch",
     "web_search",
     "spawn_agent",
@@ -108,6 +110,8 @@
         "git_diff",
         "git_log",
         "lsp_query",
+        "office_read",
+        "office_write",
         "web_fetch",
         "web_search"
       ],

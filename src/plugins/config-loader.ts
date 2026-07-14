@@ -20,6 +20,8 @@ const DEFAULT_BUILTIN_TOOLS = [
   'git_diff',
   'git_log',
   'lsp_query',
+  'office_read',
+  'office_write',
 ];
 
 function expandHome(path: string): string {
