@@ -1,12 +1,10 @@
 # minimal-agent-ts 后续路线图
 
-> **统一规划（产品 + 底座 + 压测 + Hooks）**: **[docs/ROADMAP.md](./docs/ROADMAP.md)** ← 单一事实来源（2026-07-12）  
-> **定位**: 本文件保留轨 A–G **缩写表**与历史压测记录；细节、里程碑、文档索引见 `docs/ROADMAP.md`。  
-> **前提**: Phase 1–2、4–6 已实现；ZVEC 已删；MCP 支持 stdio / streamable-http / sse。  
-> **当前重点**: **产品轨** M-Prod-1（TUI `/jobs`）→ M-Prod-2（`web_search`）；压测改走 **高压 harness**（见 `docs/ROADMAP.md` §5）。  
-> **能力拓展**: [SPEC_TOOLS.md](./SPEC_TOOLS.md) | **LLM 路由**: [SPEC_LLM_ROUTER.md](./SPEC_LLM_ROUTER.md)（轨 G，G2–G4 ✅）
+> **统一规划**: **[docs/ROADMAP.md](./docs/ROADMAP.md)**（产品 / 底座 / 压测 / 扩展）  
+> **对外定位**: [README.md](./README.md) — TS harness，由上下文事件结构实验演进  
+> **本文件**: 轨 A–G **缩写表**与历史记录；细节以 `docs/ROADMAP.md` 为准  
 
-**推荐顺序（2026-07-12）**: **产品（jobs → web_search）** 与 **底座接缝（L0–L3）** 交错小步；压测待 stress preset 就绪后填表；轨 C 仍 **profiling 触发**。
+**近期方向（2026-07）**: 文档与打包分享收口；Office / i18n / banner 已落地；压测与 G5 按需。
 
 ---
 

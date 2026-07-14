@@ -1,43 +1,42 @@
 # minimal-agent-ts 统一路线图
 
-> **版本**: 2026-07-12  
-> **定位**: 产品迭代、底座模块化、压测策略、扩展接缝的**单一事实来源**。  
-> **原则**: 产品 PR 可交付；底座改造**按接缝小步**、不阻塞主线。  
-> **验证**: 以本文件 + `npm test`（当前 **372** 用例）为准。
+> **版本**: 2026-07-14  
+> **定位**: TypeScript **Agent harness**（由上下文事件结构实验演进）；产品迭代、底座接缝、压测与扩展的**规划源**。  
+> **原则**: 可交付小步；对外叙事与 [README.md](../README.md) 对齐，不依赖对比其他 Agent 产品。  
+> **验证**: 本文件方向 + `npm test` / `npm run typecheck`。
 
 ---
 
-## 1. 文档索引（分散 SPEC 归档）
+## 1. 文档索引
 
-| 文档 | 职责 | 与本路线图关系 |
-|------|------|----------------|
-| [ROADMAP.md](../ROADMAP.md) | 根目录简表 + 变更日志 | 指向本文；保留轨 A–G 缩写 |
-| [README.md](../README.md) | 代码导读、环境变量 | 能力 Phase 表；链接本文 |
-| [QUICKSTART.md](../QUICKSTART.md) | 5 分钟上手 | 命令示例；MCP transport |
-| [SPEC_CONTEXT_MANAGEMENT.md](../SPEC_CONTEXT_MANAGEMENT.md) | 上下文冷热分离、pointerize、recall | Phase 1–2 设计权威 |
-| [SPEC_LLM_ROUTER.md](../SPEC_LLM_ROUTER.md) | 轨 G：api_profiles、fallback、reasoning | G2–G4 ✅；G5 待做 |
-| [SPEC_TOOLS.md](../SPEC_TOOLS.md) | web_search / LSP / 文档转换 / Office | 产品轨 Wave 2+ |
-| [SPEC_TUI.md](../SPEC_TUI.md) | TUI v0.1 规范 | pi 嫁接细节见轨 A |
-| [docs/BRANCH_PLAN_TUI_EXPERIENCE.md](./BRANCH_PLAN_TUI_EXPERIENCE.md) | 嫁接前权限/handoff 记录稿 | **M1–M5 已落地**；M6–M7 见 §3 |
-| [docs/BRANCH_PLAN_HOSPITAL_DEVICE_ASSISTANT.md](./BRANCH_PLAN_HOSPITAL_DEVICE_ASSISTANT.md) | 医院设备 fork 草案 | 独立分支；JIT 权限可复用 |
-| [agent.mcp.example.json](../agent.mcp.example.json) | MCP 配置示例 | stdio / streamable-http / sse |
+| 文档 | 职责 |
+|------|------|
+| [README.md](../README.md) | **对外入口**：定位、特性、上手 |
+| [QUICKSTART.md](../QUICKSTART.md) | 安装与常用命令 |
+| [DEPS.md](./DEPS.md) | 宿主 / npm 依赖分层 |
+| [ROADMAP.md](../ROADMAP.md) | 根目录轨 A–G 缩写与历史记录 |
+| [SPEC_CONTEXT_MANAGEMENT.md](../SPEC_CONTEXT_MANAGEMENT.md) | 上下文 / 指针化设计 |
+| [SPEC_LLM_ROUTER.md](../SPEC_LLM_ROUTER.md) | api_profiles、fallback、reasoning |
+| [SPEC_TOOLS.md](../SPEC_TOOLS.md) | 工具（含 Office ✅） |
+| [SPEC_TUI.md](../SPEC_TUI.md) | TUI 规范 |
+| [agent.mcp.example.json](../agent.mcp.example.json) | MCP 配置示例 |
 
-**维护约定**: 新里程碑写入本文 §2–§6；子 SPEC 只写**接口/验收细节**；根 `ROADMAP.md` 只追加版本行，避免双份规划漂移。
+**维护约定**: 新里程碑写入本文；子 SPEC 写接口/验收；根 `ROADMAP.md` 只追加版本行。
 
 ---
 
-## 2. 当前状态快照（2026-07-12）
+## 2. 当前状态快照（2026-07-14）
 
 ### 2.1 已完成（核心底座）
 
 | 能力 | 说明 |
 |------|------|
-| Phase 1–2 | session、TaskSummary、冷存、pointerize、prune、recall |
-| Phase 4–6 | 并行 tool、流式、MCP/Skills、workflow |
-| 轨 D/E | `spawn_agent`、`spawn_background`、`code_review` 后台 job |
-| 轨 A（基础） | pi-tui、`--json-events` |
-| 轨 F | `Agent.md`、`/memory`（`.agent/memory/`）、ZVEC **已硬删** |
-| 轨 G（主体） | `api_profiles`、fallback、reasoning、TUI `/profile` `/model` `/reasoning` |
+| 上下文 | session、TaskSummary、冷存、pointerize、prune、recall |
+| 主循环 | 并行 tool、流式、loop guard、MCP/Skills、workflow |
+| Spawn | `spawn_agent`、`spawn_background`、`code_review`、shell_policy |
+| TUI | 终端 UI、会话备注/删除、`/lang`、MINIMAL banner、底栏 token/cache |
+| 工具 | git_*、lsp、office_read/write、test_run、web_search/fetch |
+| LLM | `api_profiles`、fallback、reasoning、隐式 cache 遥测 |
 | MCP | stdio + **streamable-http** + legacy **sse**（`mcp-transport.ts`） |
 | 权限 | `PermissionGate` JIT、`/approve`、`workflow` checkpoint |
 | 交接 | `/brief`（原 `/handoff` 别名已移除） |

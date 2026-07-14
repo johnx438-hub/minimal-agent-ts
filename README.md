@@ -1,59 +1,85 @@
 # minimal-agent-ts
 
-TypeScript **ReAct Agent 学习底座**：手写主循环 + 上下文冷热分离 + 子 Agent / workflow / TUI，不依赖 pi / rig / scream / zerostack 内核。
+TypeScript 生态下的 **Agent harness**：从**上下文事件结构**实验演进而来——先解决长会话里「发生了什么、还能不能找回来、窗会不会爆」，再叠上工具、子 Agent、TUI 与可观测性。
+
+手写 **ReAct** 主循环（Reason → Act → Observe），热路径瘦身、冷路径保全，不绑特定商业 Agent 产品或闭源运行时。
 
 **仓库**: https://github.com/johnx438-hub/minimal-agent-ts  
-**上手**: [QUICKSTART.md](./QUICKSTART.md) · **规划**: [docs/ROADMAP.md](./docs/ROADMAP.md) · **依赖**: [docs/DEPS.md](./docs/DEPS.md)
 
-> DeepSeek 前缀缓存实验在 sibling 项目 `minimal-agent-ts-ds-cache`；本仓默认 OpenCode 式上下文（pointerize / prune / resume 预算裁剪）。
-
----
-
-## 现状（2026-07）
-
-| 区域 | 状态 |
-|------|:----:|
-| Phase 1–2、4–6（session / 指针化 / 并行 tool / MCP·Skills / workflow） | ✅ |
-| Spawn 同步 + 后台 job / `code_review` | ✅ |
-| TUI（pi-tui）：`/jobs`、`/spawns`、`/profile`·`/model`·`/reasoning`、`/brief` | ✅ |
-| LLM 路由（api_profiles、fallback、reasoning） | ✅ 主体；G5 待做 |
-| `web_search`（ddgr + cache） | ✅ |
-| 底座 L1 ToolProvider · L2 context pipeline | ✅ |
-| 压测 harness · MessageBridge (L3) | 待做 |
-
-验证：`npm test`（440+）· `npm run typecheck`
-
----
-
-## 能做什么
-
-| 能力 | 要点 |
+| 文档 | 用途 |
 |------|------|
-| ReAct 循环 | 流式 LLM、并行 tool、loop guard |
-| 上下文 | 冷存 + `[action:…]` 指针卡片、`recall_query`、prune / heavy、resume 层摘要 + 历史预算裁剪 |
-| 子 Agent | `spawn_agent` / `spawn_background` / `code_review` |
-| 编排 | JSON workflow（Planner → Worker → Reviewer） |
-| 扩展 | MCP（stdio / streamable-http / sse）、Skills、`Agent.md`、`/memory` |
-| 界面 | `npm run tui` 或 headless `npm start` · `--json-events` |
+| [QUICKSTART.md](./QUICKSTART.md) | 安装与常用命令 |
+| [docs/DEPS.md](./docs/DEPS.md) | 必装 / 可选依赖 |
+| [docs/ROADMAP.md](./docs/ROADMAP.md) | 规划与方向 |
+| [SPEC_CONTEXT_MANAGEMENT.md](./SPEC_CONTEXT_MANAGEMENT.md) | 上下文与指针化设计 |
+| [SPEC_TOOLS.md](./SPEC_TOOLS.md) · [SPEC_TUI.md](./SPEC_TUI.md) · [SPEC_LLM_ROUTER.md](./SPEC_LLM_ROUTER.md) | 工具 / TUI / 多模型路由 |
+
+验证：`npm test` · `npm run typecheck`（约 600 tests）
+
+---
+
+## 从哪来
+
+早期问题不是「再包一层 chat UI」，而是：
+
+1. 多轮 tool 之后 **context 膨胀**，长任务不可持续  
+2. 结果一旦截断，**事件顺序与细节丢失**  
+3. 希望在 **Node / TypeScript 栈内** 可测、可演进、可分享  
+
+本仓库的主干答案是：
+
+- **冷热分离**：大 tool 结果进 `.sessions/actions/`，对话里留 `[action:…]` 指针卡  
+- **按需召回**：`recall_query` 再捞全文  
+- **轮末管线**：pointerize → prune → pointer-compact →（阈值到了再）heavy 摘要  
+- 在此之上再接工具、spawn、workflow、TUI  
+
+因此它更像 **harness + 上下文运行时**，而不是「又一个完整 IDE 替代品」。
+
+---
+
+## 特性（现状）
+
+| 区域 | 内容 |
+|------|------|
+| **主循环** | 流式 LLM、并行 tool、loop guard、会话 resume |
+| **上下文** | 指针卡、冷存写队列、task summary、预算与 prune |
+| **可观测** | 底栏 `Σm` / `Σs` / `ctx` / 前缀 `c:hit%`；可选 `--json-events` |
+| **工具** | 文件编辑 · apply_patch · git_* · lsp_query · office_read/write · shell/test · web · skills/MCP |
+| **委派** | `spawn_agent` / `spawn_background` / `code_review`；job 落盘 `workspace/jobs/` |
+| **编排** | JSON workflow（如 Planner → Worker → Reviewer） |
+| **TUI** | 终端 UI：会话列表（备注/删除）、`/lang` 中英、`MINIMAL` banner、权限确认 |
+| **LLM** | `agent.json` 多 profile、fallback、reasoning_map；DeepSeek 等隐式缓存可观测 |
+
+长会话实践中：事件结构可恢复；前缀缓存在稳态任务上可到很高 hit（取决于厂商与是否频繁改写 history）。
 
 ---
 
 ## 快速开始
 
 ```bash
+git clone https://github.com/johnx438-hub/minimal-agent-ts.git
+cd minimal-agent-ts
 npm install
-cp .env.example .env   # OPENAI_API_KEY 等
 
-npm start -- "列出当前目录，读 README，一句话总结"
-npm run tui
+# 配置 API（示例）
+cp .env.example .env          # 或按 agent.json 的 api_profiles 填环境变量
+# 编辑 agent.json / .env 中的 key 与默认 profile
 
-npm start -- --allow-shell "运行 npm run typecheck 并汇报"
-npm start -- --allow-web "web_search 查 …，必要时 web_fetch 深读"
-npm start -- --resume <session_id> "继续"
-npm run spawn:list
+npm run tui                   # 交互 TUI（推荐）
+# 或
+npm start -- "读 README，用三句话说明这个项目做什么"
 ```
 
-更多命令与权限说明见 [QUICKSTART.md](./QUICKSTART.md)。Key / 模型 / `MAX_CONTEXT_TOKENS` 等见 `.env.example`。
+| 场景 | 命令 |
+|------|------|
+| 允许 shell | `npm run tui` 内 `/shell on`，或 `npm start -- --allow-shell "…"` |
+| 允许联网 | `/web on`，或 `--allow-web`（搜索另需 `ddgr`） |
+| 续接会话 | `--resume <session_id>` 或 TUI `/sessions` |
+| 工具与宿主依赖 | TUI `/tools` · `npm start -- --list-tools` |
+| 界面语言 | TUI `/lang zh` · `/lang en` |
+
+会话与冷存默认在项目下 `.sessions/`（本地、不进 git）。  
+**唯一硬性依赖**：Node.js ≥ 22。git / ddgr / shell 为可选，见 [docs/DEPS.md](./docs/DEPS.md)。
 
 ---
 
@@ -63,14 +89,13 @@ npm run spawn:list
 |------|------|
 | 文件 | `read_file` · `write_file` · `edit_file` · `apply_patch` · `grep_search` · `list_files` · `diff_file` |
 | 上下文 | `recall_query` |
-| Office | `office_read` · `office_write`（docx/pptx/xlsx，纯 Node） |
-| 执行 / 网 | `run_shell`（`--allow-shell`）· `web_fetch` / `web_search`（`--allow-web`，搜索需 ddgr） |
+| Office | `office_read` · `office_write`（docx / pptx 重点；xlsx 读+轻改，纯 Node） |
+| 代码 | `git_status` · `git_diff` · `git_log` · `lsp_query` · `test_run` |
+| 执行 / 网 | `run_shell` · `web_fetch` · `web_search` |
 | 委派 | `spawn_agent` · `spawn_background` · `code_review` |
 | 插件 | `invoke_skill` · `mcp_<server>_<tool>` |
 
-依赖分层（必装 Node / 推荐 git·shell / 可选 ddgr·cloak）见 [docs/DEPS.md](./docs/DEPS.md)；`/tools` 或 `--list-tools` 会跑宿主探针。
-
-开关：`agent.json` → `builtin_tools`。后台 job 落盘 `workspace/jobs/<id>/`（本地不进 git）。
+开关：`agent.json` → `builtin_tools`；子 Agent 预设见 `agents/`。
 
 ---
 
@@ -80,41 +105,35 @@ npm run spawn:list
 src/
   agent.ts              # ReAct 主循环
   runner.ts             # 会话 / task / workflow 入口
-  context/              # L2 pipeline：budget · prune · assemble · heavy · …
+  context/              # 预算、prune、assemble、heavy compression
   pointerize.ts         # 指针卡片
-  action-store.ts       # 冷存 + 异步写队列
-  tools/providers/      # L1：builtin / cli / spawn / skills / mcp
-  spawn/                # 预设加载、job 注册与取消
-  workflow/             # 多角色执行器
-  tui/                  # pi-tui
-agents/  workflows/  roles/  skills/   # 预设与配置
+  action-store.ts       # 冷存 + 写队列
+  tools/                # 内置工具与 providers
+  spawn/                # 预设、并行、后台 job
+  workflow/             # 多角色 workflow
+  tui/                  # 终端 UI
+agents/  workflows/  roles/  skills/
 ```
 
-**一圈 turn**：`assembleApiMessages` → LLM → tool-scheduler → 冷存 → turn 末 `pointerize → prune → pointer-compact → heavy`。
+**单 turn 热路径**（简化）：
 
-建议阅读顺序：`agent.ts` → `context/pipeline.ts` → `pointerize.ts` → `tools/providers/` → `spawn/` → `workflow/runner.ts`。
+```text
+assembleApiMessages → LLM → tool-scheduler → 冷存
+    → turn 末：pointerize → prune → pointer-compact → (heavy)
+```
+
+建议阅读：`agent.ts` → `context/pipeline.ts` → `pointerize.ts` → `tools/providers/` → `spawn/`。
 
 ---
 
-## 文档
+## 非目标（首发分享）
 
-| 文档 | 用途 |
-|------|------|
-| [QUICKSTART.md](./QUICKSTART.md) | 5 分钟上手 |
-| [docs/ROADMAP.md](./docs/ROADMAP.md) | **单一规划源**（产品 / 底座 / 压测） |
-| [ROADMAP.md](./ROADMAP.md) | 轨 A–G 缩写与变更日志 |
-| [SPEC_CONTEXT_MANAGEMENT.md](./SPEC_CONTEXT_MANAGEMENT.md) | 上下文设计 |
-| [SPEC_LLM_ROUTER.md](./SPEC_LLM_ROUTER.md) | 多 profile / fallback |
-| [SPEC_TOOLS.md](./SPEC_TOOLS.md) | 工具拓展（web_search 等） |
-| [SPEC_TUI.md](./SPEC_TUI.md) | TUI 规范 |
+- 替代完整 IDE / 云托管 Agent 产品  
+- 默认捆绑浏览器反爬或本机 Office 安装  
+- 为极致前缀缓存去冻结全量 transcript（缓存是稳态 history 的副产品，见可观测 `c:%`）
 
 ---
 
 ## 下一步
 
-见 [docs/ROADMAP.md](./docs/ROADMAP.md)：
-
-- [ ] 压测 harness（stress preset + 并行 dev-worker）
-- [ ] L3 MessageBridge hooks（IM 预留）
-- [ ] G5 Anthropic 显式缓存（按需）
-- [ ] workflow if/else、SPEC_TOOLS 后续能力（按需）
+面向分享与打包的收口（bin / `npm pack` / 版本号）仍在进行；规划见 [docs/ROADMAP.md](./docs/ROADMAP.md)。

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": false,
   "type": "module",
-  "description": "Minimal ReAct agent loop in TypeScript for learning",
+  "description": "TypeScript agent harness evolved from context/event-structure experiments (ReAct, pointerize, spawn, TUI)",
   "scripts": {
     "start": "tsx src/main.ts",
     "tui": "tsx src/tui/main.ts",
