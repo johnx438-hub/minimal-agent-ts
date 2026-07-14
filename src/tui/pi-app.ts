@@ -32,6 +32,7 @@ import {
 } from './slash.js';
 import { handlePiSlash, type PiSlashUiState } from './slash-handlers.js';
 import type { TuiAppOptions } from './types.js';
+import { buildBannerMetaLines, renderLogoLines } from './pi/banner.js';
 import { PiChatLog } from './pi/chat-log.js';
 import { PiEventPresenter } from './pi/event-presenter.js';
 import { isOverlayOpen } from './pi/overlay-stack.js';
@@ -101,29 +102,22 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
   const terminal = new ProcessTerminal();
   const tui = new TUI(terminal);
 
-  const bannerLines = [
-    'minimal-agent-ts TUI  (pi presenter)',
-    `model:   ${runtime.config.model}`,
-    `cwd:     ${runtime.config.cwd}`,
-    `session: ${runtime.sessionLabel()}`,
-    `shell:   ${uiState.shellOn ? 'on' : 'off'}   web: ${uiState.webOn ? 'on' : 'off'}`,
-    'Enter send · Esc stop (confirm) · /help · /stop',
-  ];
-  if (!runtime.hasActiveSession()) {
-    bannerLines.push('(no session yet — /resume, /new, or first task)');
-    bannerLines.push('CLI: npm run tui -- --resume <session_id>');
-  }
-  if (runtime.hasPendingHandoff()) {
-    bannerLines.push('(brief queued — will inject on next task)');
-  }
-  if (uiState.prefs.alwaysShell || uiState.prefs.alwaysWeb) {
-    const always: string[] = [];
-    if (uiState.prefs.alwaysShell) always.push('shell');
-    if (uiState.prefs.alwaysWeb) always.push('web');
-    bannerLines.push(`⚠ always-approve: ${always.join(', ')}`);
-  }
-
-  tui.addChild(new Text(bannerLines.join('\n'), 1, 1, piSemantic.metaLine));
+  const termWidth = process.stdout.columns ?? 80;
+  const logoLines = renderLogoLines(termWidth);
+  const metaLines = buildBannerMetaLines({
+    model: runtime.config.model,
+    cwd: runtime.config.cwd,
+    sessionLabel: runtime.sessionLabel(),
+    shellOn: uiState.shellOn,
+    webOn: uiState.webOn,
+    hasActiveSession: runtime.hasActiveSession(),
+    hasPendingHandoff: runtime.hasPendingHandoff(),
+    alwaysShell: uiState.prefs.alwaysShell,
+    alwaysWeb: uiState.prefs.alwaysWeb,
+    locale: prefsLocale(uiState.prefs),
+  });
+  tui.addChild(new Text(logoLines.join('\n'), 1, 0, piSemantic.accent));
+  tui.addChild(new Text(metaLines.join('\n'), 1, 1, piSemantic.metaLine));
 
   const editor = new Editor(tui, piEditorTheme);
   editor.setAutocompleteProvider(
