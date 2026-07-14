@@ -15,7 +15,7 @@
 | [QUICKSTART.md](../QUICKSTART.md) | 安装与常用命令 |
 | [DEPS.md](./DEPS.md) | 宿主 / npm 依赖分层 |
 | [ROADMAP.md](../ROADMAP.md) | 根目录轨 A–G 缩写与历史记录 |
-| [SPEC_CONTEXT_MANAGEMENT.md](../SPEC_CONTEXT_MANAGEMENT.md) | 上下文 / 指针化设计 |
+| [SPEC_CONTEXT_MANAGEMENT.md](../SPEC_CONTEXT_MANAGEMENT.md) | 上下文 / 指针化（**v2.0** 对齐 L2 pipeline；非 Zvec） |
 | [SPEC_LLM_ROUTER.md](../SPEC_LLM_ROUTER.md) | api_profiles、fallback、reasoning |
 | [SPEC_TOOLS.md](../SPEC_TOOLS.md) | 工具（含 Office ✅） |
 | [SPEC_TUI.md](../SPEC_TUI.md) | TUI 规范 |
