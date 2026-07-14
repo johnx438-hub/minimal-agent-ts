@@ -10,6 +10,8 @@ import {
   detectOfficeKind,
   loadDocxSidecar,
   normalizeTableMatrix,
+  OFFICE_DEFINITIONS,
+  officeDefinitionsJsonSize,
   parseMarkdownInline,
   runOfficeTool,
 } from '../src/tools/office.js';
@@ -48,6 +50,23 @@ describe('office tools', () => {
     assert.equal(detectOfficeKind('b.PPTX'), 'pptx');
     assert.equal(detectOfficeKind('c.xlsx'), 'xlsx');
     assert.equal(detectOfficeKind('d.pdf'), null);
+  });
+
+  it('exposes light tool schemas (not full recipe tree)', () => {
+    const size = officeDefinitionsJsonSize();
+    // Pre-split was ~7.5k; light target stays well under 3k.
+    assert.ok(size < 3000, `schema too large: ${size} chars`);
+    const write = OFFICE_DEFINITIONS.find((d) => d.function.name === 'office_write');
+    assert.ok(write);
+    const props = Object.keys(
+      (write!.function.parameters as { properties?: Record<string, unknown> }).properties ?? {},
+    );
+    assert.ok(props.includes('path'));
+    assert.ok(props.includes('paragraphs'));
+    assert.ok(props.includes('slides'));
+    // Nested chart/master field trees must not appear as top-level required schema bulk
+    assert.ok(!props.includes('chart_type'));
+    assert.ok(!JSON.stringify(write!.function.parameters).includes('LAYOUT_16x10'));
   });
 
   it('writes and reads docx', async () => {

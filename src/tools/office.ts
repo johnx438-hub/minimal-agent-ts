@@ -99,40 +99,32 @@ const DEFAULT_IMG_HEIGHT_PX = 300;
 
 export type OfficeKind = 'docx' | 'xlsx' | 'pptx';
 
+/**
+ * Light tool schemas exposed to the model every turn.
+ * Handler still accepts full rich args (blocks detail, masters, charts, page, …);
+ * recipes live in skill `office-layout` via invoke_skill.
+ */
 export const OFFICE_DEFINITIONS: ToolDefinition[] = [
   {
     type: 'function',
     function: {
       name: 'office_read',
       description:
-        'Read an Office file under the project cwd (docx / pptx / xlsx) into a text summary. ' +
-        'docx: structured markdown when possible; pptx: per-slide outline; xlsx: sheet sample. ' +
-        'Large output may spill under .cache/office/. For write recipes/templates: invoke_skill("office-layout"). ' +
-        'Pure Node — no shell.',
+        'Read Office file under cwd (docx/pptx/xlsx) → text summary. ' +
+        'Optional: format markdown|json, max_chars, sheet/max_rows (xlsx). ' +
+        'Write recipes: invoke_skill("office-layout"). Pure Node.',
       parameters: {
         type: 'object',
         properties: {
-          path: {
-            type: 'string',
-            description: 'Path relative to cwd (or absolute under allowed roots).',
-          },
+          path: { type: 'string', description: 'Path under cwd.' },
           format: {
             type: 'string',
-            description: 'markdown (default) or json summary.',
             enum: ['markdown', 'json'],
+            description: 'Default markdown.',
           },
-          max_chars: {
-            type: 'number',
-            description: `Inline cap (default ${DEFAULT_MAX_CHARS}).`,
-          },
-          sheet: {
-            type: 'string',
-            description: 'xlsx only: sheet name (default first sheet).',
-          },
-          max_rows: {
-            type: 'number',
-            description: `xlsx only: max data rows to sample (default ${DEFAULT_XLSX_MAX_ROWS}).`,
-          },
+          max_chars: { type: 'number', description: `Inline cap (default ${DEFAULT_MAX_CHARS}).` },
+          sheet: { type: 'string', description: 'xlsx sheet name.' },
+          max_rows: { type: 'number', description: `xlsx row sample (default ${DEFAULT_XLSX_MAX_ROWS}).` },
         },
         required: ['path'],
       },
@@ -143,252 +135,68 @@ export const OFFICE_DEFINITIONS: ToolDefinition[] = [
     function: {
       name: 'office_write',
       description:
-        'Create/overwrite or append Office files under cwd (generate-oriented). ' +
-        'Light: docx paragraphs/text; pptx title+slides[{title,bullets,body}]; xlsx append_rows/set_cells. ' +
-        'Rich layout (blocks, markdown inline, tables, append_blocks, images, pptx masters/charts/objects): ' +
-        'invoke_skill("office-layout") first for recipes/templates, then call this tool. ' +
-        'docx append_blocks needs prior structured write (path.docx.office.json sidecar). Pure Node — no shell.',
+        'Write Office under cwd (generate). Light: paragraphs/text; slides[{title,bullets,body}]; ' +
+        'xlsx append_rows/set_cells. Rich (blocks, markdown, tables, append_blocks, images, ' +
+        'pptx masters/charts/objects, page/header/footer): invoke_skill("office-layout") then pass ' +
+        'those fields here — handler accepts full recipe keys even if not listed below. Pure Node.',
       parameters: {
         type: 'object',
+        additionalProperties: true,
         properties: {
           path: {
             type: 'string',
-            description: 'Output path relative to cwd (extension selects format).',
+            description: 'Output path; extension selects docx|pptx|xlsx.',
           },
-          // ── docx simple (backward compatible) ───────────────────────────
+          // docx light
           paragraphs: {
             type: 'array',
             items: { type: 'string' },
-            description: 'docx: list of plain paragraph strings (if blocks omitted). Markdown inline ok.',
+            description: 'docx plain paragraphs (markdown inline ok).',
           },
           text: {
             type: 'string',
-            description:
-              'docx: whole body; split on blank lines into paragraphs if paragraphs/blocks omitted. Markdown inline ok.',
+            description: 'docx body; blank lines → paragraphs if paragraphs/blocks omitted.',
           },
-          // ── docx layout ─────────────────────────────────────────────────
           blocks: {
             type: 'array',
+            items: { type: 'object' },
             description:
-              'docx preferred: full body replace. Types: heading | paragraph | bullet | number | table | image | pagebreak. ' +
-              'Writes sidecar <path>.office.json for later append_blocks.',
-            items: {
-              type: 'object',
-              properties: {
-                type: {
-                  type: 'string',
-                  enum: [
-                    'heading',
-                    'paragraph',
-                    'bullet',
-                    'number',
-                    'table',
-                    'image',
-                    'pagebreak',
-                  ],
-                },
-                text: {
-                  type: 'string',
-                  description: 'Supports **bold** *italic* ~~strike~~ `code` unless markdown:false or runs[] set.',
-                },
-                markdown: {
-                  type: 'boolean',
-                  description: 'Parse markdown-like inline in text/items (default true).',
-                },
-                level: {
-                  type: 'number',
-                  description: 'heading 1–6, or list indent level 0–4',
-                },
-                align: {
-                  type: 'string',
-                  enum: ['left', 'center', 'right', 'justify', 'both'],
-                },
-                runs: {
-                  type: 'array',
-                  description: 'paragraph: explicit spans {text, bold, italic, underline, color, size_pt, font} (skips markdown parse)',
-                  items: { type: 'object' },
-                },
-                items: {
-                  type: 'array',
-                  items: { type: 'string' },
-                  description: 'bullet/number list items (markdown inline ok)',
-                },
-                headers: {
-                  type: 'array',
-                  items: { type: 'string' },
-                  description: 'table header row (strings; markdown ok)',
-                },
-                rows: {
-                  type: 'array',
-                  description:
-                    'table rows. Shorthand string[] = one paragraph per row (single column), or "A | B" for columns. ' +
-                    'Or string[][] cells. Cell string with \\n = multi-paragraph cell.',
-                },
-                path: {
-                  type: 'string',
-                  description: 'image: path under cwd (.png/.jpg/.gif/.bmp)',
-                },
-                width_in: { type: 'number', description: 'image width inches (alt: width_px)' },
-                height_in: { type: 'number', description: 'image height inches (alt: height_px)' },
-                width_px: { type: 'number' },
-                height_px: { type: 'number' },
-                alt: { type: 'string', description: 'image alt text' },
-                spacing_after_pt: { type: 'number' },
-                spacing_before_pt: { type: 'number' },
-              },
-            },
+              'docx structured body (objects). Shapes in skill office-layout: heading/paragraph/bullet/number/table/image/pagebreak.',
           },
           append_blocks: {
             type: 'array',
-            description:
-              'docx: append these blocks to an existing draft. Requires sidecar from a prior blocks/paragraphs write ' +
-              '(path.docx.office.json). Merges then regenerates the whole .docx. Same block shapes as blocks[].',
             items: { type: 'object' },
-          },
-          doc_title: {
-            type: 'string',
-            description: 'docx: core document title property.',
-          },
-          header: {
-            type: 'string',
-            description: 'docx: header text (default section).',
-          },
-          footer: {
             description:
-              'docx: footer — string text, or true for "n / total" page numbers, or { text?, page_numbers?: bool }.',
+              'docx append to draft; needs path.docx.office.json from prior structured write.',
           },
-          page: {
-            type: 'object',
-            description: 'docx page setup.',
-            properties: {
-              orientation: { type: 'string', enum: ['portrait', 'landscape'] },
-              margins_in: {
-                type: 'object',
-                description: 'Margins in inches (default ~1").',
-                properties: {
-                  top: { type: 'number' },
-                  right: { type: 'number' },
-                  bottom: { type: 'number' },
-                  left: { type: 'number' },
-                },
-              },
-            },
-          },
-          // ── pptx ────────────────────────────────────────────────────────
-          title: {
-            type: 'string',
-            description: 'pptx: presentation title metadata / fallback first slide.',
-          },
-          layout: {
-            type: 'string',
-            description:
-              'pptx presentation size: LAYOUT_16x9 (default) | LAYOUT_4x3 | LAYOUT_16x10 | LAYOUT_WIDE.',
-            enum: ['LAYOUT_16x9', 'LAYOUT_4x3', 'LAYOUT_16x10', 'LAYOUT_WIDE'],
-          },
-          masters: {
-            type: 'array',
-            description:
-              'pptx custom slide masters via defineSlideMaster. Each: { name, background?, slide_number?, objects? }. ' +
-              'Master objects: kind text|rect|line|image (chrome). Reference with slides[].master.',
-            items: {
-              type: 'object',
-              properties: {
-                name: { type: 'string', description: 'Unique master title (required).' },
-                background: { type: 'string', description: 'Hex background.' },
-                slide_number: {
-                  type: 'object',
-                  description: 'Optional slide number { x, y, color?, fontSize? }',
-                },
-                objects: {
-                  type: 'array',
-                  description: 'Chrome objects: text | rect | line | image',
-                  items: { type: 'object' },
-                },
-              },
-            },
-          },
+          // pptx light
+          title: { type: 'string', description: 'pptx title / fallback slide.' },
           slides: {
             type: 'array',
+            items: { type: 'object' },
             description:
-              'pptx slides. Simple: title + bullets/body. Rich: layout + master + objects + background + notes.',
-            items: {
-              type: 'object',
-              properties: {
-                title: { type: 'string' },
-                subtitle: { type: 'string' },
-                bullets: { type: 'array', items: { type: 'string' } },
-                body: { type: 'string' },
-                notes: { type: 'string', description: 'Speaker notes.' },
-                master: {
-                  type: 'string',
-                  description: 'Name of a masters[] entry (defineSlideMaster title).',
-                },
-                background: {
-                  type: 'string',
-                  description: 'Hex fill e.g. "1E3A5F" or "#1E3A5F" (overrides master bg if set).',
-                },
-                layout: {
-                  type: 'string',
-                  enum: [
-                    'title',
-                    'title_bullets',
-                    'title_body',
-                    'section',
-                    'two_column',
-                    'blank',
-                  ],
-                  description:
-                    'Preset composition. Default: title_bullets if bullets, title_body if body, else title.',
-                },
-                left: {
-                  type: 'object',
-                  description: 'two_column: left pane { title?, bullets?, body? }',
-                },
-                right: {
-                  type: 'object',
-                  description: 'two_column: right pane { title?, bullets?, body? }',
-                },
-                objects: {
-                  type: 'array',
-                  description:
-                    'Freeform objects. kind: text|shape|table|image|chart. ' +
-                    'chart: chart_type bar|line|pie|doughnut|area|radar|scatter|bar3d, ' +
-                    'series:[{name,labels,values}] or labels+values, title?, show_legend?, colors?.',
-                  items: { type: 'object' },
-                },
-              },
-            },
+              'pptx slides as objects. Light: title, bullets[], body. Rich: layout, master, objects, notes — see skill.',
           },
-          // ── xlsx ────────────────────────────────────────────────────────
-          sheet: {
-            type: 'string',
-            description: 'xlsx: target sheet name (default Sheet1).',
-          },
-          append_rows: {
-            type: 'array',
-            description: 'xlsx: rows to append (each row is array of cell values).',
-            items: { type: 'array', items: {} },
-          },
-          set_cells: {
-            type: 'array',
-            description: 'xlsx: set individual cells, e.g. [{ cell: "A1", value: "hi" }].',
-            items: {
-              type: 'object',
-              properties: {
-                cell: { type: 'string' },
-                value: {},
-              },
-            },
-          },
-          replace_sheet: {
-            type: 'boolean',
-            description:
-              'xlsx: if true with append_rows, clear sheet first then write rows (default false = append).',
-          },
+          // xlsx light
+          sheet: { type: 'string', description: 'xlsx sheet (default Sheet1).' },
           headers: {
             type: 'array',
             items: { type: 'string' },
-            description: 'xlsx: optional header row when creating/replacing a sheet.',
+            description: 'xlsx header row when creating/replacing.',
+          },
+          append_rows: {
+            type: 'array',
+            items: { type: 'array' },
+            description: 'xlsx rows to append.',
+          },
+          set_cells: {
+            type: 'array',
+            items: { type: 'object' },
+            description: 'xlsx [{ cell, value }, …].',
+          },
+          replace_sheet: {
+            type: 'boolean',
+            description: 'xlsx clear sheet before append when true.',
           },
         },
         required: ['path'],
@@ -396,6 +204,11 @@ export const OFFICE_DEFINITIONS: ToolDefinition[] = [
     },
   },
 ];
+
+/** Serialized size of tool defs exposed to the model (tests / diagnostics). */
+export function officeDefinitionsJsonSize(defs: ToolDefinition[] = OFFICE_DEFINITIONS): number {
+  return JSON.stringify(defs).length;
+}
 
 function clampInt(value: unknown, fallback: number, min: number, max: number): number {
   const n = value === undefined ? fallback : Number(value);

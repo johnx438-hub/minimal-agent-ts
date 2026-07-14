@@ -28,9 +28,13 @@ or `pptx chart + master`) when you need:
 
 | Layer | Where | Cost |
 |-------|--------|------|
-| Tools | `office_read` / `office_write` always available (if in `builtin_tools`) | Schema every turn |
+| Tools | `office_read` / `office_write` **light schema** every turn | ~small; lists path/paragraphs/blocks/slides/xlsx only |
+| Handler | Still accepts **full** recipe keys (masters, charts, page, …) | Even if not in tool parameters tree |
 | This skill | Full recipes + templates | Only when invoked |
 | Sidecar | `<path>.docx.office.json` after structured write | Enables append |
+
+**Do not invent a second tool** for “advanced office”. Load this skill, then call
+`office_write` with the rich fields shown below.
 
 Generate-oriented: **create/overwrite** (and docx **append via sidecar**), not
 surgical edit of arbitrary third-party OOXML.

@@ -322,8 +322,9 @@ convert_document({
 > **已落地**（2026-07-14）：纯 Node，无 shell / 无外部 CLI。  
 > **重点**：docx · pptx **结构化排版生成**；xlsx **读 + 轻改**（append_rows / set_cells / replace_sheet）。  
 > **写语义**：生成/覆盖（`docx` + `pptxgenjs` 擅长新建），不是对任意已有 OOXML 做外科手术式补丁。  
-> **契约分层**：工具 schema 保持「轻入口」；完整排版配方与模板见 skill **`office-layout`**
-> （`skills/office-layout/SKILL.md`，`invoke_skill("office-layout")`）。日后加模板只改 skill，不膨胀 tools[]。
+> **契约分层**：`OFFICE_DEFINITIONS` 为 **light schema**（path / paragraphs / text / blocks 对象数组 /
+> slides 对象数组 / xlsx 轻字段 + `additionalProperties`）；完整排版键（masters、chart、page…）**handler 仍接受**。  
+> 配方与模板见 skill **`office-layout`**（`invoke_skill("office-layout")`）。加模板只改 skill，不胀 tools[]。
 
 ### 模式
 
@@ -428,7 +429,8 @@ office_write({
 - [x] docx：`text` markdown 内联（`**`/`*`/`~~`/`` ` ``）；`markdown:false` 可关
 - [x] docx table：`rows: string[]` 简写 + `"A | B"` 分列；单元格 `\n` 多段
 - [x] docx `append_blocks` + sidecar `<path>.office.json`（先草稿再追加）
-- [x] skill **`office-layout`**：富排版配方 + weekly/meeting/deck 模板入口（schema 保持轻）
+- [x] skill **`office-layout`**：富排版配方 + weekly/meeting/deck 模板入口
+- [x] **light `OFFICE_DEFINITIONS`**（tools[] ~2.5k 字 / ~0.6k tok，较满配 schema 约 −65%；handler 仍收全量字段）
 - [x] pptx 写→读 slide 大纲
 - [x] pptx layouts + objects（text/shape/table/image/chart）+ notes + masters
 - [x] xlsx 读写 + set_cells / append
