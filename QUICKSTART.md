@@ -12,17 +12,32 @@
 
 Windows 上常见用 **Git Bash** 跑本项目；`ddgr` / Python 须出现在 **Node 进程的 PATH** 里，或写死 `web_search.ddgr_path`。细节：[docs/DEPS.md](./docs/DEPS.md) §3.1。
 
-## 1. 安装
+## 1. 安装与填 Key
 
 ```bash
 cd minimal-agent-ts
 npm install
 cp .env.example .env
-# 按 agent.json 的 api_profiles 填写 key（如 DEEPSEEK_API_KEY）
-# 或复制 agent.llm.2key.example.json 作参考后改 agent.json
 ```
 
-**拉代码后若新增了依赖**（例如 Office 包），务必再执行一次 `npm install`。
+打开 **`.env`**（不是 `agent.json`），至少填一行：
+
+```bash
+DEEPSEEK_API_KEY=sk-你的key
+```
+
+| 你要做的 | 文件 | 填什么 |
+|----------|------|--------|
+| **贴 API key** | **`.env`** | `DEEPSEEK_API_KEY=...`（默认必填） |
+| 可选备用 key | **`.env`** | `OPENROUTER_API_KEY=...` |
+| 换默认厂商/模型列表 | `agent.json` | `default_api_profile`、`api_profiles.*.models` |
+| 看「key 读哪个环境变量」 | `agent.json` | `api_profiles.*.api_key_env`（只是**名字**） |
+
+**规则**：密钥只进 `.env`（已 gitignore）；`agent.json` 只写 `api_key_env: "DEEPSEEK_API_KEY"` 这种引用。
+
+多厂商模板见 `agent.llm.example.json`；两 key 模板见 `agent.llm.2key.example.json`（合并进 agent.json 时同样**不要**把 sk- 写进 JSON）。
+
+**拉代码后若 `package.json` 变了**，再执行一次 `npm install`。
 
 ## 2. 第一次运行
 
@@ -81,8 +96,8 @@ npm start -- --workflow workflows/review-loop.json "你的任务描述"
 
 | 文件 | 作用 |
 |------|------|
-| `agent.json` | 模型 profile、builtin_tools、spawn 预设、web/office 策略 |
-| `.env` | API key 等密钥（勿提交） |
+| **`.env`** | **唯一放 API key 的地方**（从 `.env.example` 复制） |
+| `agent.json` | 模型 profile 名、`api_key_env` 变量名、工具、spawn、web 策略 |
 | `.tui-prefs.json` | shell/web 默认、locale、verbose 等 |
 | `agents/*.md` | 子 Agent 系统提示与工具白名单 |
 

@@ -1,5 +1,5 @@
 {
-  "_comment": "2-key template (DeepSeek official + OpenRouter). Copy api_profiles + default_api_profile into agent.json. Set DEEPSEEK_API_KEY and OPENROUTER_API_KEY in .env — never put sk- keys here.",
+  "_comment": "LLM snippet only. Merge default_api_profile + api_profiles into agent.json if needed. SECRETS: create .env from .env.example and set DEEPSEEK_API_KEY / OPENROUTER_API_KEY there — never put real keys in any JSON.",
   "default_api_profile": "deepseek-main",
   "api_profiles": {
     "deepseek-main": {

@@ -61,9 +61,14 @@ git clone https://github.com/johnx438-hub/minimal-agent-ts.git
 cd minimal-agent-ts
 npm install
 
-# 配置 API（示例）
-cp .env.example .env          # 或按 agent.json 的 api_profiles 填环境变量
-# 编辑 agent.json / .env 中的 key 与默认 profile
+# ── 密钥只写在 .env（不要写进 agent.json）────────────────
+cp .env.example .env
+# 编辑 .env，至少填写：
+#   DEEPSEEK_API_KEY=sk-...     ← 默认 profile deepseek-main 用这个
+# 可选：
+#   OPENROUTER_API_KEY=...      ← fallback profile 用这个
+#
+# agent.json 里是 api_key_env: "DEEPSEEK_API_KEY"（变量名），不是 key 本身。
 
 npm run tui                   # 交互 TUI（推荐）
 # 或
