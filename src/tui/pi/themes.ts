@@ -84,6 +84,8 @@ export const piSemantic = {
   statusOk: (text: string) => chalk.green(text),
   statusErr: (text: string) => chalk.red(text),
   accent: (text: string) => chalk.cyan(text),
+  /** Banner block logo — bold + cyan for “heavy” MINIMAL. */
+  logo: (text: string) => chalk.bold.cyan(text),
   statusBar: (text: string) => chalk.dim(text),
   hint: (text: string) => chalk.dim(text),
 } as const satisfies Record<string, TextStyler>;

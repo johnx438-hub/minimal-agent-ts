@@ -1,23 +1,80 @@
 /**
  * Startup banner logo + meta lines for TUI.
- * Full block when terminal is wide; one-line mark when narrow.
+ * Full: large block-letter MINIMAL; narrow: compact one-liner.
  */
 
-export const LOGO_FULL_MIN_WIDTH = 52;
+/** Min columns for the 5-row block logo (incl. leading indent). */
+export const LOGO_FULL_MIN_WIDTH = 62;
 
-/** Multi-line logo (ASCII, no color). */
+/**
+ * 5-row heavy glyphs (█ / space). Each letter is 5 wide + 1 gap when joined.
+ * Designed for word MINIMAL only (subset of A–Z used).
+ */
+const GLYPH_H = 5;
+const GLYPHS: Record<string, readonly string[]> = {
+  M: [
+    '██   ██',
+    '███ ███',
+    '██ █ ██',
+    '██   ██',
+    '██   ██',
+  ],
+  I: [
+    '██',
+    '██',
+    '██',
+    '██',
+    '██',
+  ],
+  N: [
+    '██   ██',
+    '███  ██',
+    '██ █ ██',
+    '██  ███',
+    '██   ██',
+  ],
+  A: [
+    ' ████ ',
+    '██  ██',
+    '██████',
+    '██  ██',
+    '██  ██',
+  ],
+  L: [
+    '██    ',
+    '██    ',
+    '██    ',
+    '██    ',
+    '██████',
+  ],
+};
+
+const WORD = 'MINIMAL';
+
+/** Join glyphs for WORD into 5 full-width lines (no indent). */
+export function renderBlockWord(word: string = WORD): string[] {
+  const upper = word.toUpperCase();
+  const rows: string[] = Array.from({ length: GLYPH_H }, () => '');
+  for (let i = 0; i < upper.length; i++) {
+    const ch = upper[i]!;
+    const glyph = GLYPHS[ch];
+    if (!glyph) continue;
+    const gap = i === 0 ? '' : ' ';
+    for (let r = 0; r < GLYPH_H; r++) {
+      rows[r] = `${rows[r]}${gap}${glyph[r]}`;
+    }
+  }
+  return rows;
+}
+
+/** Multi-line block MINIMAL with left indent. */
 export function logoFullLines(): string[] {
-  return [
-    '  ╭─ m·a ──────────────────────────────────╮',
-    '  │  minimal-agent-ts                       │',
-    '  │  long-context · event cards · TUI       │',
-    '  ╰────────────────────────────────────────╯',
-  ];
+  return renderBlockWord(WORD).map((line) => `  ${line}`);
 }
 
 /** Compact single-line mark for narrow terminals. */
 export function logoCompactLine(): string {
-  return '  m·a  minimal-agent-ts  ·  long-context · event cards';
+  return '  MINIMAL';
 }
 
 /**

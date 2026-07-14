@@ -7,23 +7,30 @@ import {
   logoCompactLine,
   logoFullLines,
   LOGO_FULL_MIN_WIDTH,
+  renderBlockWord,
   renderLogoLines,
 } from '../src/tui/pi/banner.js';
 
 describe('tui banner', () => {
-  it('full logo contains brand marks', () => {
+  it('renders MINIMAL as 5-row block letters', () => {
     const lines = logoFullLines();
-    assert.ok(lines.length >= 3);
+    assert.equal(lines.length, 5);
     const text = lines.join('\n');
-    assert.match(text, /m·a/);
-    assert.match(text, /minimal-agent-ts/);
-    assert.match(text, /long-context/);
+    assert.match(text, /█/);
+    // Each letter row present (block art is contiguous █ runs)
+    for (const line of lines) {
+      assert.ok(line.includes('█'), line);
+    }
+    const raw = renderBlockWord('MINIMAL');
+    assert.equal(raw.length, 5);
+    // Word width roughly 7 letters * ~6 cols
+    assert.ok(raw[0]!.length >= 40);
   });
 
-  it('switches to compact under min width', () => {
+  it('switches to compact MINIMAL under min width', () => {
     assert.deepEqual(renderLogoLines(LOGO_FULL_MIN_WIDTH - 1), [logoCompactLine()]);
+    assert.equal(logoCompactLine().trim(), 'MINIMAL');
     assert.deepEqual(renderLogoLines(LOGO_FULL_MIN_WIDTH), logoFullLines());
-    assert.deepEqual(renderLogoLines(120), logoFullLines());
   });
 
   it('meta lines include model session shell and optional flags', () => {
@@ -60,7 +67,7 @@ describe('tui banner', () => {
       },
       80,
     );
-    assert.match(text, /m·a/);
+    assert.match(text, /█/);
     assert.match(text, /no session yet/);
   });
 });

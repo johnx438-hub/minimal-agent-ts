@@ -116,7 +116,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     alwaysWeb: uiState.prefs.alwaysWeb,
     locale: prefsLocale(uiState.prefs),
   });
-  tui.addChild(new Text(logoLines.join('\n'), 1, 0, piSemantic.accent));
+  tui.addChild(new Text(logoLines.join('\n'), 1, 0, piSemantic.logo));
   tui.addChild(new Text(metaLines.join('\n'), 1, 1, piSemantic.metaLine));
 
   const editor = new Editor(tui, piEditorTheme);
