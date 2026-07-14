@@ -12,6 +12,7 @@ import {
 } from '../../session.js';
 import { formatSessionDeleteSummary } from '../../session-delete.js';
 import type { SessionMeta } from '../../types.js';
+import { ui, type TuiLocale } from '../i18n.js';
 import { buildSelectItems, showPickerOverlay } from './picker.js';
 import { showInputOverlay } from './input-overlay.js';
 import { showSelectOverlay } from './select-overlay.js';
@@ -41,6 +42,7 @@ async function confirmDeleteSession(
   tui: TUI,
   runtime: AgentRuntime,
   sessionId: string,
+  locale: TuiLocale,
 ): Promise<boolean> {
   const art = runtime.collectSessionArtifacts(sessionId);
   const item = await showSelectOverlay(
@@ -49,13 +51,13 @@ async function confirmDeleteSession(
     [
       {
         value: 'delete',
-        label: 'Delete permanently',
-        description: 'Session + actions + spawn + jobs',
+        label: String(ui(locale, 'sessionsDeleteTitle')),
+        description: String(ui(locale, 'sessionsDeleteDesc')),
       },
       {
         value: 'cancel',
-        label: 'Cancel',
-        description: 'Keep session (Esc)',
+        label: String(ui(locale, 'sessionsCancelTitle')),
+        description: String(ui(locale, 'sessionsCancelDesc')),
       },
     ],
   );
@@ -71,9 +73,11 @@ export async function showSessionsBrowser(
   opts?: {
     say?: (msg: string, dim?: boolean) => void;
     printStatus?: () => void;
+    locale?: TuiLocale;
   },
 ): Promise<SessionBrowseResult> {
   const say = opts?.say;
+  const locale: TuiLocale = opts?.locale ?? 'zh';
   let lastDeleted: string | undefined;
 
   for (;;) {
@@ -88,8 +92,8 @@ export async function showSessionsBrowser(
     const currentId = runtime.sessionLabel();
     const items = buildSessionItems(sessions, currentId);
     const title = [
-      'Sessions — Enter resume · i detail · n note · d delete · Esc cancel',
-      'Left: time · note|id   Right: last task summary · files · Nt',
+      String(ui(locale, 'sessionsTitle')),
+      String(ui(locale, 'sessionsSubtitle')),
     ].join('\n');
 
     const picked = await showPickerOverlay(tui, {
@@ -105,6 +109,7 @@ export async function showSessionsBrowser(
         const fullSession = runtime.resolveHistorySession(item.value);
         const action = await showSessionDetailOverlay(tui, overview, fullSession, {
           saveNote: (id, n) => runtime.setSessionNote(id, n),
+          locale,
         });
         if (action === 'resume') finish(item);
         if (action === 'note_saved') {
@@ -123,8 +128,8 @@ export async function showSessionsBrowser(
           const next = await showInputOverlay(
             tui,
             [
-              `Note for ${item.value}`,
-              `Enter save · Esc cancel · empty clears · max ${max} chars`,
+              String(ui(locale, 'noteTitle')(item.value)),
+              String(ui(locale, 'noteHint')(max)),
             ].join('\n'),
             { initial: meta?.note ?? '' },
           );
@@ -143,7 +148,7 @@ export async function showSessionsBrowser(
             say?.('Cannot delete: session is running — /stop first');
             return true;
           }
-          const ok = await confirmDeleteSession(tui, runtime, item.value);
+          const ok = await confirmDeleteSession(tui, runtime, item.value, locale);
           if (!ok) return true;
 
           const result = runtime.deleteSession(item.value);

@@ -2,6 +2,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 
+import { normalizeLocale, type TuiLocale } from './i18n.js';
+
+export type { TuiLocale };
+
 export interface TuiPrefs {
   allowShell: boolean;
   allowWeb: boolean;
@@ -17,6 +21,8 @@ export interface TuiPrefs {
   verbose_run_header?: boolean;
   /** Full shell bodies without height cap (default false). */
   verbose_tools?: boolean;
+  /** UI language for slash help + main overlays (default zh). */
+  locale?: TuiLocale;
 }
 
 const DEFAULT_PREFS: TuiPrefs = {
@@ -28,6 +34,7 @@ const DEFAULT_PREFS: TuiPrefs = {
   verbose_io: false,
   verbose_run_header: false,
   verbose_tools: false,
+  locale: 'zh',
 };
 
 function localPrefsPath(root: string): string {
@@ -93,6 +100,7 @@ export function loadPrefs(cwd: string): TuiPrefs | null {
       verbose_io: parseBool(raw.verbose_io, false),
       verbose_run_header: parseBool(raw.verbose_run_header, false),
       verbose_tools: parseBool(raw.verbose_tools, false),
+      locale: normalizeLocale(raw.locale ?? DEFAULT_PREFS.locale),
     };
   } catch {
     return null;
@@ -118,7 +126,12 @@ export function normalizePrefs(prefs: TuiPrefs): TuiPrefs {
   const out = { ...prefs };
   if (out.alwaysShell) out.allowShell = true;
   if (out.alwaysWeb) out.allowWeb = true;
+  out.locale = normalizeLocale(out.locale ?? DEFAULT_PREFS.locale);
   return out;
+}
+
+export function prefsLocale(prefs: TuiPrefs): TuiLocale {
+  return normalizeLocale(prefs.locale ?? DEFAULT_PREFS.locale);
 }
 
 /**

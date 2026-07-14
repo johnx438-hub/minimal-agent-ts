@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  formatSlashHelpLines,
   parseSlashLine,
   SLASH_HELP_LINES,
   slashAutocompleteItems,
@@ -17,6 +18,22 @@ describe('slash registry', () => {
     const mcp = SLASH_HELP_LINES.find((l) => l.includes('/mcp list'));
     assert.ok(mcp);
     assert.match(mcp!, /MCP/);
+  });
+
+  it('formats locale-specific help lines', () => {
+    const zh = formatSlashHelpLines('zh').find((l) => l.includes('/resume'));
+    const en = formatSlashHelpLines('en').find((l) => l.includes('/resume'));
+    assert.match(zh!, /最近活跃/);
+    assert.doesNotMatch(zh!, /most recently active/);
+    assert.match(en!, /most recently active/);
+    assert.doesNotMatch(en!, /最近活跃/);
+  });
+
+  it('parses /lang', () => {
+    assert.equal(parseSlashLine('/lang')?.message, '__lang__');
+    assert.equal(parseSlashLine('/lang zh')?.message, '__lang__:zh');
+    assert.equal(parseSlashLine('/locale en')?.message, '__lang__:en');
+    assert.equal(parseSlashLine('/lang fr')?.message, '__lang_usage__');
   });
 
   it('resolves aliases to primary commands', () => {
@@ -44,19 +61,25 @@ describe('slash registry', () => {
     assert.deepEqual(parseSlashLine('/spawns')?.spawnsAction, { kind: 'list' });
   });
 
-  it('exposes autocomplete items with bilingual descriptions', () => {
-    const items = slashAutocompleteItems();
-    const sessions = items.find((i) => i.name === 'sessions');
+  it('exposes autocomplete items with locale-specific descriptions', () => {
+    const zh = slashAutocompleteItems('zh');
+    const sessions = zh.find((i) => i.name === 'sessions');
     assert.ok(sessions);
     assert.match(sessions!.description, /会话列表/);
+    assert.doesNotMatch(sessions!.description, /Session list/);
 
-    const skills = items.find((i) => i.name === 'skills');
+    const en = slashAutocompleteItems('en');
+    const sessionsEn = en.find((i) => i.name === 'sessions');
+    assert.ok(sessionsEn);
+    assert.match(sessionsEn!.description, /Session list/);
+
+    const skills = zh.find((i) => i.name === 'skills');
     assert.ok(skills);
-    assert.match(skills!.description, /选择并加载 skill/);
+    assert.match(skills!.description, /skill/i);
 
-    const workflow = items.find((i) => i.name === 'workflow');
+    const workflow = zh.find((i) => i.name === 'workflow');
     assert.ok(workflow);
-    assert.match(workflow!.description, /选择并武装 workflow/);
+    assert.match(workflow!.description, /workflow/i);
 
     const actions = SLASH_HELP_LINES.find((l) => l.includes('/actions'));
     assert.ok(actions);
@@ -66,9 +89,10 @@ describe('slash registry', () => {
     assert.ok(transcript);
     assert.match(transcript!, /对话时间线/);
     assert.match(transcript!, /conversation timeline/);
-    assert.equal(items.some((i) => i.name === 'session'), false);
-    assert.equal(items.some((i) => i.name === 'actions'), true);
-    assert.equal(items.some((i) => i.name === 'transcript'), true);
-    assert.equal(items.some((i) => i.name === 'brief'), true);
+    assert.equal(zh.some((i) => i.name === 'session'), false);
+    assert.equal(zh.some((i) => i.name === 'actions'), true);
+    assert.equal(zh.some((i) => i.name === 'transcript'), true);
+    assert.equal(zh.some((i) => i.name === 'brief'), true);
+    assert.equal(zh.some((i) => i.name === 'lang'), true);
   });
 });

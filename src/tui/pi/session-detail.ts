@@ -6,6 +6,7 @@ import {
   setSessionNote,
 } from '../../session.js';
 import type { SessionFile, SessionOverview } from '../../types.js';
+import { ui, type TuiLocale } from '../i18n.js';
 import { showHistoryBrowser } from './history-overlay.js';
 import { showInputOverlay } from './input-overlay.js';
 import { showPickerOverlay } from './picker.js';
@@ -32,11 +33,13 @@ export async function showSessionDetailOverlay(
   opts?: {
     /** Prefer runtime.setSessionNote so active session memory stays in sync. */
     saveNote?: (sessionId: string, note: string) => boolean;
+    locale?: TuiLocale;
   },
 ): Promise<SessionDetailAction> {
   let note = overview.note?.trim() || undefined;
   let noteSaved = false;
   const saveNote = opts?.saveNote ?? setSessionNote;
+  const locale: TuiLocale = opts?.locale ?? 'zh';
 
   for (;;) {
     const active = new Date(overview.updated_at ?? overview.created_at)
@@ -52,7 +55,7 @@ export async function showSessionDetailOverlay(
       `active=${active}  tasks=${overview.task_count}`,
       noteLine,
       `In-flight: ${clip(inFlight, 56)}`,
-      'Enter resume · h history · n note · Esc back',
+      String(ui(locale, 'sessionDetailKeys')),
     ].join('\n');
 
     const taskItems = overview.tasks.map((t) => {
@@ -88,8 +91,8 @@ export async function showSessionDetailOverlay(
           const next = await showInputOverlay(
             tui,
             [
-              `Note for ${overview.session_id}`,
-              `Enter save · Esc cancel · empty clears · max ${max} chars`,
+              String(ui(locale, 'noteTitle')(overview.session_id)),
+              String(ui(locale, 'noteHint')(max)),
             ].join('\n'),
             { initial: note ?? '' },
           );

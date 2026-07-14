@@ -8,6 +8,7 @@ import { formatWorkflowCheckpoint } from '../../workflow-checkpoint.js';
 
 import type { TUI } from '@earendil-works/pi-tui';
 
+import { ui, type TuiLocale } from '../i18n.js';
 import { showSelectOverlay } from './select-overlay.js';
 
 function permissionOverlayTitle(req: PermissionRequest): string {
@@ -98,21 +99,25 @@ export function createPiFatiguePrompter(
  * Confirm abort of the current agent run (Esc when no other overlay).
  * Esc on this panel cancels (keep running); Enter on Stop aborts.
  */
-export function createPiAbortConfirm(tui: TUI): () => Promise<boolean> {
+export function createPiAbortConfirm(
+  tui: TUI,
+  getLocale?: () => TuiLocale,
+): () => Promise<boolean> {
   return async () => {
+    const locale = getLocale?.() ?? 'zh';
     const item = await showSelectOverlay(
       tui,
-      'Stop current run?\n  Background jobs keep running unless you cancel them separately.',
+      String(ui(locale, 'stopTitle')),
       [
         {
           value: 'stop',
-          label: 'Stop run',
-          description: 'Abort main agent (session is saved)',
+          label: String(ui(locale, 'stopConfirm')),
+          description: String(ui(locale, 'stopConfirmDesc')),
         },
         {
           value: 'keep',
-          label: 'Keep running',
-          description: 'Dismiss and continue (Esc)',
+          label: String(ui(locale, 'stopKeep')),
+          description: String(ui(locale, 'stopKeepDesc')),
         },
       ],
     );
@@ -126,17 +131,31 @@ export async function runPiFirstRunConfirm(
   getWeb: () => boolean,
   toggleShell: () => void,
   toggleWeb: () => void,
+  getLocale?: () => TuiLocale,
 ): Promise<void> {
   for (;;) {
     const shell = getShell();
     const web = getWeb();
+    const locale = getLocale?.() ?? 'zh';
     const item = await showSelectOverlay(
       tui,
-      `First run — confirm tools\n  shell [${shell ? 'on' : 'off'}]  web [${web ? 'on' : 'off'}]`,
+      String(ui(locale, 'firstRunTitle')(shell ? 'on' : 'off', web ? 'on' : 'off')),
       [
-        { value: 'confirm', label: 'Continue', description: 'Save and start' },
-        { value: 'shell', label: 'Toggle shell', description: `Currently ${shell ? 'on' : 'off'}` },
-        { value: 'web', label: 'Toggle web', description: `Currently ${web ? 'on' : 'off'}` },
+        {
+          value: 'confirm',
+          label: String(ui(locale, 'firstRunContinue')),
+          description: String(ui(locale, 'firstRunContinueDesc')),
+        },
+        {
+          value: 'shell',
+          label: String(ui(locale, 'firstRunToggleShell')),
+          description: String(ui(locale, 'currently')(shell)),
+        },
+        {
+          value: 'web',
+          label: String(ui(locale, 'firstRunToggleWeb')),
+          description: String(ui(locale, 'currently')(web)),
+        },
       ],
       { cancelable: false },
     );

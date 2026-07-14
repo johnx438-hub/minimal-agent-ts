@@ -1,5 +1,6 @@
 import type { MemorySlashAction } from '../workspace-memory.js';
 import { parseMemorySlash } from '../workspace-memory.js';
+import type { TuiLocale } from './i18n.js';
 
 export type ApproveKind = 'shell' | 'web';
 
@@ -261,6 +262,12 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
     hintZh: '显示本帮助',
     hintEn: 'Show this help',
   },
+  {
+    command: '/lang [zh|en]',
+    aliases: ['/locale'],
+    hintZh: '切换界面语言（slash 提示与主 overlay）',
+    hintEn: 'Switch UI language (slash hints + main overlays)',
+  },
 ];
 
 function primaryCommandToken(entry: SlashHelpEntry): string {
@@ -280,23 +287,29 @@ function buildCommandAliases(): Record<string, string> {
 
 const COMMAND_ALIASES: Record<string, string> = buildCommandAliases();
 
-function formatBilingualHint(entry: SlashHelpEntry): string {
+function formatHint(entry: SlashHelpEntry, locale: TuiLocale | 'both' = 'both'): string {
+  if (locale === 'zh') return entry.hintZh;
+  if (locale === 'en') return entry.hintEn;
   return `${entry.hintZh} | ${entry.hintEn}`;
 }
 
-function formatSlashHelpLines(entries: SlashHelpEntry[]): string[] {
+export function formatSlashHelpLines(
+  locale: TuiLocale | 'both' = 'both',
+  entries: SlashHelpEntry[] = SLASH_HELP_ENTRIES,
+): string[] {
   const width = Math.max(...entries.map((e) => e.command.length), 16);
-  return entries.map(
-    (e) => `${e.command.padEnd(width)}  ${formatBilingualHint(e)}`,
-  );
+  return entries.map((e) => `${e.command.padEnd(width)}  ${formatHint(e, locale)}`);
 }
 
-export const SLASH_HELP_LINES = formatSlashHelpLines(SLASH_HELP_ENTRIES);
+/** @deprecated Prefer formatSlashHelpLines(locale); kept for tests as bilingual. */
+export const SLASH_HELP_LINES = formatSlashHelpLines('both');
 
-export function slashAutocompleteItems(): Array<{ name: string; description: string }> {
+export function slashAutocompleteItems(
+  locale: TuiLocale | 'both' = 'both',
+): Array<{ name: string; description: string }> {
   return SLASH_HELP_ENTRIES.filter((e) => e.autocomplete !== false).map((e) => ({
     name: e.autocompleteName ?? primaryCommandToken(e).slice(1),
-    description: formatBilingualHint(e),
+    description: formatHint(e, locale),
   }));
 }
 
@@ -388,6 +401,19 @@ export function parseSlashLine(line: string): SlashResult | null {
 
     case '/help':
       return { handled: true, message: '__help__' };
+
+    case '/lang':
+    case '/locale': {
+      const arg = parts[1]?.toLowerCase();
+      if (!arg) return { handled: true, message: '__lang__' };
+      if (arg === 'zh' || arg === 'cn' || arg === 'chinese') {
+        return { handled: true, message: '__lang__:zh' };
+      }
+      if (arg === 'en' || arg === 'english') {
+        return { handled: true, message: '__lang__:en' };
+      }
+      return { handled: true, message: '__lang_usage__' };
+    }
 
     case '/sessions':
       return { handled: true, message: '__sessions__' };

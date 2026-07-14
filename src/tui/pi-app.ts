@@ -14,12 +14,14 @@ import { getMaxContextTokens } from '../context/budget.js';
 import type { AgentRuntime } from '../runner.js';
 import { CompressionFatigueTracker } from '../compression-fatigue.js';
 import { TokenStatusTracker } from './pi/token-status.js';
+import { ui } from './i18n.js';
 import {
   applyVerboseEnv,
   defaultPrefs,
   loadPrefs,
   mergePrefs,
   normalizePrefs,
+  prefsLocale,
   resolvePrefsRoot,
 } from './prefs.js';
 import {
@@ -42,8 +44,6 @@ import {
   runPiFirstRunConfirm,
 } from './pi/prompts.js';
 import { piEditorTheme, piSemantic } from './pi/themes.js';
-
-const SLASH_AUTOCOMPLETE = slashAutocompleteItems();
 
 type AppMode = 'confirm' | 'idle' | 'running' | 'stopping';
 
@@ -126,11 +126,12 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
   tui.addChild(new Text(bannerLines.join('\n'), 1, 1, piSemantic.metaLine));
 
   const editor = new Editor(tui, piEditorTheme);
-  const autocomplete = new CombinedAutocompleteProvider(
-    SLASH_AUTOCOMPLETE,
-    runtime.config.cwd,
+  editor.setAutocompleteProvider(
+    new CombinedAutocompleteProvider(
+      slashAutocompleteItems(prefsLocale(uiState.prefs)),
+      runtime.config.cwd,
+    ),
   );
-  editor.setAutocompleteProvider(autocomplete);
   tui.addChild(editor);
   tui.setFocus(editor);
 
@@ -139,11 +140,20 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
   /** Docked footer: status + hint stay above the editor (TUI-E). */
   const statusBar = new Text('', 1, 0, piSemantic.statusBar);
   const hintLine = new Text(
-    'Enter send · Esc closes panels / confirms stop · / for commands',
+    String(ui(prefsLocale(uiState.prefs), 'hintFooter')),
     1,
     0,
     piSemantic.hint,
   );
+
+  const refreshLocaleChrome = (): void => {
+    const loc = prefsLocale(uiState.prefs);
+    editor.setAutocompleteProvider(
+      new CombinedAutocompleteProvider(slashAutocompleteItems(loc), runtime.config.cwd),
+    );
+    hintLine.setText(String(ui(loc, 'hintFooter')));
+    tui.requestRender();
+  };
   // Insert footers before editor, then register so chat content inserts above them.
   {
     const edIdx = tui.children.indexOf(editor);
@@ -188,7 +198,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
 
   let presenter!: PiEventPresenter;
   let stopConfirmBusy = false;
-  const confirmAbort = createPiAbortConfirm(tui);
+  const confirmAbort = createPiAbortConfirm(tui, () => prefsLocale(uiState.prefs));
 
   /** Immediate abort (after user confirmed, or hard path). */
   const forceStop = (): void => {
@@ -362,6 +372,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     runTask,
     applyAlwaysFromPrefs,
     confirmCwdChange,
+    onLocaleChange: refreshLocaleChrome,
   };
 
   const handleSlash = (result: ReturnType<typeof parseSlashLine>): void => {
@@ -446,6 +457,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
       () => {
         uiState.confirmWeb = !uiState.confirmWeb;
       },
+      () => prefsLocale(uiState.prefs),
     );
     uiState.prefs = mergePrefs(prefsAnchor, {
       allowShell: uiState.confirmShell,

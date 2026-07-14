@@ -18,15 +18,17 @@ import { showSpawnsBrowser } from './pi/spawns-overlay.js';
 import { showLogBrowser } from './pi/log-overlay.js';
 import { buildSelectItems, showPickerOverlay } from './pi/picker.js';
 import { showSessionsBrowser } from './pi/sessions-overlay.js';
+import { ui } from './i18n.js';
 import {
   formatApproveStatus,
   loadPrefs,
   mergePrefs,
+  prefsLocale,
   prefsPath,
   type TuiPrefs,
 } from './prefs.js';
 import type { SlashResult } from './slash.js';
-import { SLASH_HELP_LINES } from './slash.js';
+import { formatSlashHelpLines } from './slash.js';
 
 export interface PiSlashUiState {
   prefs: TuiPrefs;
@@ -50,6 +52,8 @@ export interface PiSlashHandlerDeps {
   runTask: (task: string, workflowPath?: string) => Promise<void>;
   applyAlwaysFromPrefs: (p: TuiPrefs) => void;
   confirmCwdChange: (from: string, to: string) => Promise<boolean>;
+  /** Refresh autocomplete + footer hint after /lang. */
+  onLocaleChange?: () => void;
 }
 
 export async function handlePiSlash(
@@ -71,7 +75,10 @@ export async function handlePiSlash(
     runTask,
     applyAlwaysFromPrefs,
     confirmCwdChange,
+    onLocaleChange,
   } = deps;
+
+  const locale = () => prefsLocale(uiState.prefs);
 
   if (result.stop) {
     if (runtime.isRunning()) {
@@ -103,7 +110,27 @@ export async function handlePiSlash(
   }
 
   if (result.message === '__help__') {
-    for (const line of SLASH_HELP_LINES) say(`  ${line}`, true);
+    for (const line of formatSlashHelpLines(locale())) say(`  ${line}`, true);
+    resumeEditor();
+    return;
+  }
+
+  if (result.message === '__lang__' || result.message === '__lang_usage__') {
+    if (result.message === '__lang_usage__') {
+      say(ui(locale(), 'langUsage'));
+    } else {
+      say(ui(locale(), 'langStatus')(locale()));
+    }
+    resumeEditor();
+    return;
+  }
+
+  if (result.message?.startsWith('__lang__:')) {
+    const next = result.message.slice('__lang__:'.length);
+    const loc = next === 'en' ? 'en' : 'zh';
+    uiState.prefs = mergePrefs(prefsAnchor, { locale: loc });
+    onLocaleChange?.();
+    say(ui(loc, 'langSet')(loc));
     resumeEditor();
     return;
   }
@@ -133,7 +160,7 @@ export async function handlePiSlash(
       pickProfile: async () => {
         const items = profilePickerItems(runtime);
         const picked = await showPickerOverlay(tui, {
-          title: 'API profiles — Enter to select · Esc cancel',
+          title: String(ui(locale(), 'profilesTitle')),
           items,
           maxVisible: Math.min(items.length, 10),
         });
@@ -145,7 +172,7 @@ export async function handlePiSlash(
           runtime.getEffectiveProfileName(),
         );
         const picked = await showPickerOverlay(tui, {
-          title: 'Models — Enter to select · Esc cancel',
+          title: String(ui(locale(), 'modelsTitle')),
           items,
           maxVisible: Math.min(items.length, 10),
         });
@@ -154,7 +181,7 @@ export async function handlePiSlash(
       pickReasoning: async () => {
         const items = reasoningPickerItems(runtime);
         const picked = await showPickerOverlay(tui, {
-          title: 'Reasoning — Enter to select · Esc cancel',
+          title: String(ui(locale(), 'reasoningTitle')),
           items,
           maxVisible: Math.min(items.length, 10),
         });
@@ -203,7 +230,11 @@ export async function handlePiSlash(
   }
 
   if (result.message === '__sessions__') {
-    const browse = await showSessionsBrowser(tui, runtime, { say, printStatus });
+    const browse = await showSessionsBrowser(tui, runtime, {
+      say,
+      printStatus,
+      locale: locale(),
+    });
     if (browse.kind === 'resume') {
       if (!runtime.resumeSession(browse.sessionId)) {
         say(`Session not found: ${browse.sessionId}`);
@@ -443,7 +474,7 @@ export async function handlePiSlash(
     );
 
     const picked = await showPickerOverlay(tui, {
-      title: 'Skills — Enter to load · Esc cancel',
+      title: String(ui(locale(), 'skillsTitle')),
       items,
       maxVisible: Math.min(items.length, 10),
     });
@@ -550,7 +581,7 @@ export async function handlePiSlash(
     );
 
     const picked = await showPickerOverlay(tui, {
-      title: 'Workflows — Enter to arm · Esc cancel',
+      title: String(ui(locale(), 'workflowsTitle')),
       items,
       maxVisible: Math.min(items.length, 10),
     });
