@@ -45,10 +45,12 @@ PROJECT_SUMMARY.md
 *.zvec
 agent_memory.zvec
 
-# Skills: ship context-design only; install others locally under skills/
+# Skills: ship curated set; install others locally under skills/
 skills/*
 !skills/context-design/
 !skills/context-design/**
+!skills/office-layout/
+!skills/office-layout/**
 
 # Rust / Windows junk under optional local skills
 skills/**/target/

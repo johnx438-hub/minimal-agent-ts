@@ -105,9 +105,10 @@ export const OFFICE_DEFINITIONS: ToolDefinition[] = [
     function: {
       name: 'office_read',
       description:
-        'Read an Office file under the project cwd (docx / pptx / xlsx) into a text summary for the agent. ' +
-        'docx: structured markdown (headings/lists when available); pptx: per-slide outline; ' +
-        'xlsx: sheet names + sampled rows. Large output may spill under .cache/office/. Pure Node — no shell.',
+        'Read an Office file under the project cwd (docx / pptx / xlsx) into a text summary. ' +
+        'docx: structured markdown when possible; pptx: per-slide outline; xlsx: sheet sample. ' +
+        'Large output may spill under .cache/office/. For write recipes/templates: invoke_skill("office-layout"). ' +
+        'Pure Node — no shell.',
       parameters: {
         type: 'object',
         properties: {
@@ -142,13 +143,11 @@ export const OFFICE_DEFINITIONS: ToolDefinition[] = [
     function: {
       name: 'office_write',
       description:
-        'Create/overwrite or append Office files under cwd (generate-oriented; docx append via sidecar). ' +
-        'docx: paragraphs/text OR blocks (heading/paragraph/bullet/number/table/image/pagebreak). ' +
-        'text fields support markdown-like inline **bold** *italic* ~~strike~~ `code` (or set markdown:false). ' +
-        'table rows: string[] (one row / one cell, or "a | b" columns) OR string[][]; cell may be multi-line. ' +
-        'append_blocks: append to existing draft (needs prior blocks write → path.docx.office.json). ' +
-        'pptx: layouts + objects (text/shape/table/image/chart) + masters. ' +
-        'xlsx: append_rows / set_cells / replace. Pure Node — no shell.',
+        'Create/overwrite or append Office files under cwd (generate-oriented). ' +
+        'Light: docx paragraphs/text; pptx title+slides[{title,bullets,body}]; xlsx append_rows/set_cells. ' +
+        'Rich layout (blocks, markdown inline, tables, append_blocks, images, pptx masters/charts/objects): ' +
+        'invoke_skill("office-layout") first for recipes/templates, then call this tool. ' +
+        'docx append_blocks needs prior structured write (path.docx.office.json sidecar). Pure Node — no shell.',
       parameters: {
         type: 'object',
         properties: {
