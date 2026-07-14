@@ -53,6 +53,11 @@ skills/*
 !skills/office-layout/**
 !skills/cloak-fetch/
 !skills/cloak-fetch/**
+!skills/memory/
+!skills/memory/**
+
+# User-level memory (personal — keep local)
+.agent/memory/
 
 # Rust / Windows junk under optional local skills
 skills/**/target/

@@ -310,7 +310,7 @@
     }
   ],
   "skills_dirs": ["./skills"],
-  "loaded_skills": [],
+  "loaded_skills": ["memory"],
   "pointerize_policy": {
     "keep_inline_turns": 2,
     "preview_min_chars": 120,
