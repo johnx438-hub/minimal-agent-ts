@@ -3,7 +3,8 @@
  * No shell / no external CLI.
  *
  * Packages (write = generate; not in-place edit of arbitrary existing files):
- * - docx: paragraphs, headings, runs, bullets/numbers, tables, images, pagebreak, header/footer
+ * - docx: paragraphs, headings, runs, markdown-inline, bullets/numbers, tables, images,
+ *         pagebreak, header/footer; append_blocks via sidecar *.docx.office.json
  * - pptxgenjs: slide layouts, masters, charts, text/tables/shapes/images, notes, backgrounds
  * - mammoth: docx → structured markdown (headings/lists)
  * - exceljs / jszip: xlsx + pptx text extract
@@ -141,12 +142,13 @@ export const OFFICE_DEFINITIONS: ToolDefinition[] = [
     function: {
       name: 'office_write',
       description:
-        'Create/overwrite Office files under cwd (generate; not surgical edit of arbitrary existing OOXML). ' +
-        'docx: simple paragraphs/text OR structured blocks (heading/paragraph/bullet/number/table/image/pagebreak) ' +
-        'with run styles, alignment, page margins/orientation, header/footer. ' +
-        'pptx: title+bullets OR slide layouts + freeform objects (text/shape/table/image/chart), ' +
-        'custom slide masters (masters[] + slide.master), background, notes, presentation layout. ' +
-        'xlsx: light edit — append_rows, set_cells, replace sheet. Pure Node — no shell.',
+        'Create/overwrite or append Office files under cwd (generate-oriented; docx append via sidecar). ' +
+        'docx: paragraphs/text OR blocks (heading/paragraph/bullet/number/table/image/pagebreak). ' +
+        'text fields support markdown-like inline **bold** *italic* ~~strike~~ `code` (or set markdown:false). ' +
+        'table rows: string[] (one row / one cell, or "a | b" columns) OR string[][]; cell may be multi-line. ' +
+        'append_blocks: append to existing draft (needs prior blocks write → path.docx.office.json). ' +
+        'pptx: layouts + objects (text/shape/table/image/chart) + masters. ' +
+        'xlsx: append_rows / set_cells / replace. Pure Node — no shell.',
       parameters: {
         type: 'object',
         properties: {
@@ -158,18 +160,19 @@ export const OFFICE_DEFINITIONS: ToolDefinition[] = [
           paragraphs: {
             type: 'array',
             items: { type: 'string' },
-            description: 'docx: list of plain paragraph strings (if blocks omitted).',
+            description: 'docx: list of plain paragraph strings (if blocks omitted). Markdown inline ok.',
           },
           text: {
             type: 'string',
             description:
-              'docx: whole body; split on blank lines into paragraphs if paragraphs/blocks omitted.',
+              'docx: whole body; split on blank lines into paragraphs if paragraphs/blocks omitted. Markdown inline ok.',
           },
           // ── docx layout ─────────────────────────────────────────────────
           blocks: {
             type: 'array',
             description:
-              'docx preferred: structured body. Types: heading | paragraph | bullet | number | table | image | pagebreak.',
+              'docx preferred: full body replace. Types: heading | paragraph | bullet | number | table | image | pagebreak. ' +
+              'Writes sidecar <path>.office.json for later append_blocks.',
             items: {
               type: 'object',
               properties: {
@@ -185,7 +188,14 @@ export const OFFICE_DEFINITIONS: ToolDefinition[] = [
                     'pagebreak',
                   ],
                 },
-                text: { type: 'string' },
+                text: {
+                  type: 'string',
+                  description: 'Supports **bold** *italic* ~~strike~~ `code` unless markdown:false or runs[] set.',
+                },
+                markdown: {
+                  type: 'boolean',
+                  description: 'Parse markdown-like inline in text/items (default true).',
+                },
                 level: {
                   type: 'number',
                   description: 'heading 1–6, or list indent level 0–4',
@@ -196,23 +206,24 @@ export const OFFICE_DEFINITIONS: ToolDefinition[] = [
                 },
                 runs: {
                   type: 'array',
-                  description: 'paragraph: styled spans {text, bold, italic, underline, color, size_pt, font}',
+                  description: 'paragraph: explicit spans {text, bold, italic, underline, color, size_pt, font} (skips markdown parse)',
                   items: { type: 'object' },
                 },
                 items: {
                   type: 'array',
                   items: { type: 'string' },
-                  description: 'bullet/number list items',
+                  description: 'bullet/number list items (markdown inline ok)',
                 },
                 headers: {
                   type: 'array',
                   items: { type: 'string' },
-                  description: 'table header row',
+                  description: 'table header row (strings; markdown ok)',
                 },
                 rows: {
                   type: 'array',
-                  description: 'table body rows (array of string arrays)',
-                  items: { type: 'array', items: { type: 'string' } },
+                  description:
+                    'table rows. Shorthand string[] = one paragraph per row (single column), or "A | B" for columns. ' +
+                    'Or string[][] cells. Cell string with \\n = multi-paragraph cell.',
                 },
                 path: {
                   type: 'string',
@@ -227,6 +238,13 @@ export const OFFICE_DEFINITIONS: ToolDefinition[] = [
                 spacing_before_pt: { type: 'number' },
               },
             },
+          },
+          append_blocks: {
+            type: 'array',
+            description:
+              'docx: append these blocks to an existing draft. Requires sidecar from a prior blocks/paragraphs write ' +
+              '(path.docx.office.json). Merges then regenerates the whole .docx. Same block shapes as blocks[].',
+            items: { type: 'object' },
           },
           doc_title: {
             type: 'string',
@@ -595,6 +613,166 @@ function buildTextRun(run: DocxRunInput | string): TextRun {
   return new TextRun(opts);
 }
 
+/** Detect common markdown-like inline markers (for skip-fast path). */
+export function hasMarkdownInlineMarkers(text: string): boolean {
+  return /[*_`~]/.test(text);
+}
+
+/**
+ * Expand markdown-like inline markup into run descriptors.
+ * Supports: **bold**, __bold__, *italic*, _italic_, ~~strike~~, `code`, backslash escapes.
+ * Toggle markers; unclosed markers leave remaining text plain with style still on (best-effort).
+ */
+export function parseMarkdownInline(text: string): DocxRunInput[] {
+  const runs: DocxRunInput[] = [];
+  let i = 0;
+  let bold = false;
+  let italic = false;
+  let strike = false;
+  let code = false;
+  let buf = '';
+
+  const push = (): void => {
+    if (buf.length === 0) return;
+    const run: DocxRunInput = { text: buf };
+    if (bold) run.bold = true;
+    if (italic) run.italic = true;
+    if (strike) run.strike = true;
+    if (code) {
+      run.font = 'Consolas';
+      run.size_pt = 10;
+    }
+    runs.push(run);
+    buf = '';
+  };
+
+  while (i < text.length) {
+    const ch = text[i]!;
+
+    if (ch === '\\' && i + 1 < text.length) {
+      buf += text[i + 1]!;
+      i += 2;
+      continue;
+    }
+
+    if (!code && text.startsWith('**', i)) {
+      push();
+      bold = !bold;
+      i += 2;
+      continue;
+    }
+    if (!code && text.startsWith('__', i)) {
+      push();
+      bold = !bold;
+      i += 2;
+      continue;
+    }
+    if (!code && text.startsWith('~~', i)) {
+      push();
+      strike = !strike;
+      i += 2;
+      continue;
+    }
+    if (ch === '`') {
+      push();
+      code = !code;
+      i += 1;
+      continue;
+    }
+    if (!code && ch === '*' && !text.startsWith('**', i)) {
+      push();
+      italic = !italic;
+      i += 1;
+      continue;
+    }
+    if (!code && ch === '_' && !text.startsWith('__', i)) {
+      push();
+      italic = !italic;
+      i += 1;
+      continue;
+    }
+
+    buf += ch;
+    i += 1;
+  }
+  push();
+  return runs.length > 0 ? runs : [{ text: '' }];
+}
+
+function blockMarkdownEnabled(block: Record<string, unknown>): boolean {
+  return block.markdown !== false;
+}
+
+/** text → TextRun[]; uses markdown unless disabled or empty. */
+function textToTextRuns(
+  text: string,
+  opts?: { markdown?: boolean; base?: DocxRunInput },
+): TextRun[] {
+  const useMd = opts?.markdown !== false;
+  const base = opts?.base ?? {};
+  if (!useMd || !hasMarkdownInlineMarkers(text)) {
+    return [buildTextRun({ ...base, text })];
+  }
+  return parseMarkdownInline(text).map((r) =>
+    buildTextRun({
+      ...base,
+      ...r,
+      bold: r.bold === true || base.bold === true,
+      italic: r.italic === true || base.italic === true,
+      strike: r.strike === true || base.strike === true,
+      font: r.font ?? base.font,
+      size_pt: r.size_pt ?? base.size_pt,
+    }),
+  );
+}
+
+/**
+ * Normalize table rows:
+ * - string[] → each string is one row (single cell, or "A | B | C" columns)
+ * - (string|string[])[][] → cells; string[] cell = multi-paragraph
+ * - cell string with \\n → multi-paragraph
+ */
+export function normalizeTableMatrix(block: Record<string, unknown>): string[][] {
+  const headers = Array.isArray(block.headers)
+    ? block.headers.map((h) => String(h ?? ''))
+    : [];
+  const rowsRaw = Array.isArray(block.rows) ? block.rows : [];
+
+  const splitRowString = (s: string): string[] => {
+    // Column shorthand only when " | " present (avoid splitting free text with |)
+    if (s.includes(' | ')) {
+      return s.split(/\s*\|\s*/).map((c) => c.trim());
+    }
+    return [s];
+  };
+
+  const bodyRows: string[][] = [];
+  // string[] shorthand (one row per string) vs string[][] matrix
+  const allAreScalars = rowsRaw.length > 0 && rowsRaw.every((r) => !Array.isArray(r));
+
+  if (allAreScalars) {
+    for (const r of rowsRaw) {
+      bodyRows.push(splitRowString(String(r ?? '')));
+    }
+  } else {
+    for (const r of rowsRaw) {
+      if (Array.isArray(r)) {
+        bodyRows.push(r.map((c) => (Array.isArray(c) ? c.map(String).join('\n') : String(c ?? ''))));
+      } else {
+        bodyRows.push(splitRowString(String(r ?? '')));
+      }
+    }
+  }
+
+  return headers.length > 0 ? [headers, ...bodyRows] : bodyRows;
+}
+
+/** Split a cell value into paragraph strings. */
+function cellToParagraphs(cell: string): string[] {
+  const parts = cell.replace(/\r\n/g, '\n').split('\n');
+  return parts.length > 0 ? parts : [''];
+}
+
 function spacingOpts(block: Record<string, unknown>): IParagraphOptions['spacing'] {
   const after = block.spacing_after_pt;
   const before = block.spacing_before_pt;
@@ -647,16 +825,11 @@ function buildNumberingConfig() {
 }
 
 function buildTableFromBlock(block: Record<string, unknown>): Table | null {
-  const headers = Array.isArray(block.headers)
-    ? block.headers.map((h) => String(h ?? ''))
-    : [];
-  const rowsRaw = Array.isArray(block.rows) ? block.rows : [];
-  const bodyRows = rowsRaw.map((r) =>
-    Array.isArray(r) ? r.map((c) => String(c ?? '')) : [String(r ?? '')],
-  );
-  const allRows = headers.length > 0 ? [headers, ...bodyRows] : bodyRows;
+  const allRows = normalizeTableMatrix(block);
   if (allRows.length === 0) return null;
 
+  const hasHeaderRow = Array.isArray(block.headers) && block.headers.length > 0;
+  const md = blockMarkdownEnabled(block);
   const colCount = Math.max(...allRows.map((r) => r.length), 1);
   let cellCount = 0;
   for (const r of allRows) cellCount += r.length;
@@ -669,6 +842,19 @@ function buildTableFromBlock(block: Record<string, unknown>): Table | null {
   const colW = Math.floor(totalWidth / colCount);
 
   const makeCell = (text: string, header: boolean): TableCell => {
+    const paras = cellToParagraphs(text);
+    const children = paras.map(
+      (p) =>
+        new Paragraph({
+          children: textToTextRuns(p, {
+            markdown: md,
+            base: {
+              bold: header || undefined,
+              size_pt: header ? 11 : 10,
+            },
+          }),
+        }),
+    );
     const opts: ITableCellOptions = {
       width: { size: colW, type: WidthType.DXA },
       borders: {
@@ -677,20 +863,8 @@ function buildTableFromBlock(block: Record<string, unknown>): Table | null {
         left: { style: BorderStyle.SINGLE, size: 4, color: 'CCCCCC' },
         right: { style: BorderStyle.SINGLE, size: 4, color: 'CCCCCC' },
       },
-      children: [
-        new Paragraph({
-          children: [
-            new TextRun({
-              text,
-              bold: header,
-              size: header ? 22 : 20,
-            }),
-          ],
-        }),
-      ],
-      ...(header
-        ? { shading: { type: ShadingType.CLEAR, fill: 'F0F0F0' } }
-        : {}),
+      children: children.length > 0 ? children : [new Paragraph({ children: [new TextRun('')] })],
+      ...(header ? { shading: { type: ShadingType.CLEAR, fill: 'F0F0F0' } } : {}),
     };
     return new TableCell(opts);
   };
@@ -702,7 +876,7 @@ function buildTableFromBlock(block: Record<string, unknown>): Table | null {
       (row, ri) =>
         new TableRow({
           children: Array.from({ length: colCount }, (_, ci) =>
-            makeCell(row[ci] ?? '', ri === 0 && headers.length > 0),
+            makeCell(row[ci] ?? '', hasHeaderRow && ri === 0),
           ),
         }),
     ),
@@ -727,6 +901,8 @@ function blocksToChildren(blocks: unknown[], cwd: string): Array<Paragraph | Tab
       continue;
     }
 
+    const md = blockMarkdownEnabled(b);
+
     if (type === 'heading') {
       const level = clampInt(b.level, 1, 1, 6);
       const text = String(b.text ?? '').trim() || 'Untitled';
@@ -735,7 +911,7 @@ function blocksToChildren(blocks: unknown[], cwd: string): Array<Paragraph | Tab
           heading: HEADING_MAP[level - 1],
           alignment: align,
           spacing,
-          children: [new TextRun({ text, bold: true })],
+          children: textToTextRuns(text, { markdown: md, base: { bold: true } }),
         }),
       );
       continue;
@@ -755,7 +931,7 @@ function blocksToChildren(blocks: unknown[], cwd: string): Array<Paragraph | Tab
           new Paragraph({
             numbering: { reference, level },
             spacing,
-            children: [new TextRun(item)],
+            children: textToTextRuns(item, { markdown: md }),
           }),
         );
       }
@@ -805,7 +981,7 @@ function blocksToChildren(blocks: unknown[], cwd: string): Array<Paragraph | Tab
     // paragraph (default)
     const runs = Array.isArray(b.runs)
       ? (b.runs as Array<DocxRunInput | string>).map(buildTextRun)
-      : [new TextRun(String(b.text ?? ''))];
+      : textToTextRuns(String(b.text ?? ''), { markdown: md });
     const para: IParagraphOptions = {
       children: runs,
       alignment: align,
@@ -815,6 +991,47 @@ function blocksToChildren(blocks: unknown[], cwd: string): Array<Paragraph | Tab
   }
 
   return children.length > 0 ? children : [new Paragraph({ children: [new TextRun('(empty)')] })];
+}
+
+// ─── DOCX sidecar (append_blocks) ───────────────────────────────────────────
+
+const DOCX_SIDECAR_VERSION = 1 as const;
+
+export type DocxSidecar = {
+  v: typeof DOCX_SIDECAR_VERSION;
+  kind: 'docx';
+  blocks: unknown[];
+  doc_title?: string;
+  header?: string;
+  footer?: unknown;
+  page?: unknown;
+  updated_at: string;
+};
+
+export function docxSidecarPath(absDocx: string): string {
+  return `${absDocx}.office.json`;
+}
+
+export function loadDocxSidecar(absDocx: string): DocxSidecar | null {
+  const p = docxSidecarPath(absDocx);
+  if (!existsSync(p)) return null;
+  try {
+    const raw = JSON.parse(readFileSync(p, 'utf8')) as DocxSidecar;
+    if (!raw || raw.kind !== 'docx' || !Array.isArray(raw.blocks)) return null;
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
+function saveDocxSidecar(absDocx: string, draft: DocxSidecar): void {
+  const out: DocxSidecar = {
+    ...draft,
+    v: DOCX_SIDECAR_VERSION,
+    kind: 'docx',
+    updated_at: new Date().toISOString(),
+  };
+  writeFileSync(docxSidecarPath(absDocx), `${JSON.stringify(out, null, 2)}\n`, 'utf8');
 }
 
 function parseFooterArg(
@@ -856,32 +1073,99 @@ export async function readDocxBuffer(buf: Buffer): Promise<string> {
   return text || '(empty document)';
 }
 
+function resolveDocxBlocksAndMeta(
+  absPath: string,
+  args: Record<string, unknown>,
+): {
+  blocks: unknown[];
+  mode: string;
+  doc_title?: string;
+  header?: string;
+  footer?: unknown;
+  page?: unknown;
+} {
+  const appendBlocks = Array.isArray(args.append_blocks) ? args.append_blocks : null;
+  const fullBlocks = Array.isArray(args.blocks) ? args.blocks : null;
+  const hasSimple =
+    (Array.isArray(args.paragraphs) && args.paragraphs.length > 0) ||
+    (typeof args.text === 'string' && args.text.trim().length > 0);
+
+  if (appendBlocks && appendBlocks.length > 0) {
+    if (fullBlocks && fullBlocks.length > 0) {
+      throw new Error('docx: pass either blocks (replace) or append_blocks (append), not both');
+    }
+    const prev = loadDocxSidecar(absPath);
+    if (!prev) {
+      throw new Error(
+        'docx append_blocks requires a prior structured write (missing sidecar ' +
+          `${basename(absPath)}.office.json). First office_write with blocks[] or paragraphs/text.`,
+      );
+    }
+    const merged = [...prev.blocks, ...appendBlocks];
+    if (merged.length > MAX_BLOCKS) {
+      throw new Error(`docx blocks too many after append (${merged.length} > ${MAX_BLOCKS})`);
+    }
+    return {
+      blocks: merged,
+      mode: 'append',
+      doc_title:
+        typeof args.doc_title === 'string'
+          ? args.doc_title
+          : prev.doc_title,
+      header:
+        typeof args.header === 'string'
+          ? args.header
+          : prev.header,
+      footer: args.footer !== undefined ? args.footer : prev.footer,
+      page: args.page !== undefined ? args.page : prev.page,
+    };
+  }
+
+  if (fullBlocks && fullBlocks.length > 0) {
+    return {
+      blocks: fullBlocks,
+      mode: 'blocks',
+      doc_title: typeof args.doc_title === 'string' ? args.doc_title : typeof args.title === 'string' ? args.title : undefined,
+      header: typeof args.header === 'string' ? args.header : undefined,
+      footer: args.footer,
+      page: args.page,
+    };
+  }
+
+  if (hasSimple) {
+    const paragraphs = parseParagraphs(args);
+    return {
+      blocks: paragraphs.map((p) => ({ type: 'paragraph', text: p })),
+      mode: 'paragraphs',
+      doc_title: typeof args.doc_title === 'string' ? args.doc_title : typeof args.title === 'string' ? args.title : undefined,
+      header: typeof args.header === 'string' ? args.header : undefined,
+      footer: args.footer,
+      page: args.page,
+    };
+  }
+
+  throw new Error(
+    'docx write requires blocks[], append_blocks[], paragraphs[], or text',
+  );
+}
+
 async function writeDocxFile(
   absPath: string,
   args: Record<string, unknown>,
   cwd: string,
-): Promise<{ blocks: number; mode: string }> {
-  let mode = 'paragraphs';
-  let children: Array<Paragraph | Table>;
+): Promise<{ blocks: number; mode: string; appended?: number }> {
+  const resolved = resolveDocxBlocksAndMeta(absPath, args);
+  const appendCount =
+    resolved.mode === 'append' && Array.isArray(args.append_blocks)
+      ? args.append_blocks.length
+      : undefined;
 
-  if (Array.isArray(args.blocks) && args.blocks.length > 0) {
-    mode = 'blocks';
-    children = blocksToChildren(args.blocks, cwd);
-  } else {
-    const paragraphs = parseParagraphs(args);
-    if (paragraphs.length === 0) {
-      throw new Error('docx write requires blocks[], paragraphs[], or text');
-    }
-    children = paragraphs.map(
-      (p) =>
-        new Paragraph({
-          children: [new TextRun(p)],
-          spacing: { after: 200 },
-        }),
-    );
-  }
+  const children = blocksToChildren(resolved.blocks, cwd);
 
-  const page = args.page && typeof args.page === 'object' ? (args.page as Record<string, unknown>) : {};
+  const page =
+    resolved.page && typeof resolved.page === 'object'
+      ? (resolved.page as Record<string, unknown>)
+      : {};
   const orientation =
     page.orientation === 'landscape' ? ('landscape' as const) : ('portrait' as const);
   const marginsIn =
@@ -892,8 +1176,10 @@ async function writeDocxFile(
     convertInchesToTwip(clampNum(marginsIn[k], d, 0.25, 3));
 
   const headerText =
-    typeof args.header === 'string' && args.header.trim() ? args.header.trim() : undefined;
-  const footerSpec = parseFooterArg(args.footer);
+    typeof resolved.header === 'string' && resolved.header.trim()
+      ? resolved.header.trim()
+      : undefined;
+  const footerSpec = parseFooterArg(resolved.footer);
 
   let footerChildren: TextRun[] | undefined;
   if (footerSpec) {
@@ -961,12 +1247,7 @@ async function writeDocxFile(
       : {}),
   };
 
-  const docTitle =
-    typeof args.doc_title === 'string'
-      ? args.doc_title
-      : typeof args.title === 'string'
-        ? args.title
-        : undefined;
+  const docTitle = resolved.doc_title;
 
   const doc = new Document({
     title: docTitle,
@@ -976,7 +1257,24 @@ async function writeDocxFile(
   });
   const buffer = await Packer.toBuffer(doc);
   writeFileSync(absPath, buffer);
-  return { blocks: children.length, mode };
+
+  // Sidecar enables append_blocks without re-parsing OOXML
+  saveDocxSidecar(absPath, {
+    v: DOCX_SIDECAR_VERSION,
+    kind: 'docx',
+    blocks: resolved.blocks,
+    doc_title: docTitle,
+    header: headerText,
+    footer: resolved.footer,
+    page: resolved.page,
+    updated_at: new Date().toISOString(),
+  });
+
+  return {
+    blocks: resolved.blocks.length,
+    mode: resolved.mode,
+    ...(appendCount !== undefined ? { appended: appendCount } : {}),
+  };
 }
 
 // ─── XLSX ───────────────────────────────────────────────────────────────────
@@ -2036,7 +2334,14 @@ async function runOfficeWrite(
 
   if (kind === 'docx') {
     const result = await writeDocxFile(abs, args, config.cwd);
-    return `ok: wrote docx ${rawPath} (mode=${result.mode}, children=${result.blocks})`;
+    const bits = [
+      `ok: wrote docx ${rawPath}`,
+      `mode=${result.mode}`,
+      `blocks=${result.blocks}`,
+    ];
+    if (result.appended !== undefined) bits.push(`appended=${result.appended}`);
+    bits.push(`sidecar=${basename(rawPath)}.office.json`);
+    return bits.join(' · ');
   }
 
   if (kind === 'pptx') {

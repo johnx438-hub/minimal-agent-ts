@@ -8,6 +8,9 @@ import { after, before, describe, it } from 'node:test';
 import type { AgentConfig } from '../src/types.js';
 import {
   detectOfficeKind,
+  loadDocxSidecar,
+  normalizeTableMatrix,
+  parseMarkdownInline,
   runOfficeTool,
 } from '../src/tools/office.js';
 
@@ -412,5 +415,124 @@ describe('office tools', () => {
       cfg(dir),
     );
     assert.match(b!, /unsupported/);
+  });
+
+  it('parseMarkdownInline expands bold/italic/code/strike', () => {
+    const runs = parseMarkdownInline('**bold** and *italic* and ~~x~~ and `code`');
+    const joined = runs.map((r) => r.text).join('');
+    assert.match(joined, /bold/);
+    assert.match(joined, /italic/);
+    assert.ok(runs.some((r) => r.bold && r.text === 'bold'));
+    assert.ok(runs.some((r) => r.italic && r.text === 'italic'));
+    assert.ok(runs.some((r) => r.strike && r.text === 'x'));
+    assert.ok(runs.some((r) => r.font === 'Consolas' && r.text === 'code'));
+  });
+
+  it('normalizeTableMatrix accepts string[] and pipe columns', () => {
+    const single = normalizeTableMatrix({ rows: ['Alpha', 'Beta'] });
+    assert.deepEqual(single, [['Alpha'], ['Beta']]);
+    const piped = normalizeTableMatrix({
+      headers: ['K', 'V'],
+      rows: ['a | 1', 'b | 2'],
+    });
+    assert.equal(piped.length, 3);
+    assert.deepEqual(piped[1], ['a', '1']);
+  });
+
+  it('docx markdown text + table string[] rows', async () => {
+    const path = 'notes/md-table.docx';
+    const w = await runOfficeTool(
+      'office_write',
+      {
+        path,
+        blocks: [
+          {
+            type: 'paragraph',
+            text: 'Lead with **bold** and *italic*.',
+          },
+          {
+            type: 'table',
+            headers: ['Item', 'Note'],
+            rows: ['Apple | **fresh**', 'Banana | *ripe*'],
+          },
+          {
+            type: 'table',
+            rows: ['Only column row one', 'Only column row two'],
+          },
+        ],
+      },
+      cfg(dir),
+    );
+    assert.ok(w);
+    assert.match(w!, /mode=blocks/);
+    assert.match(w!, /sidecar=/);
+
+    const r = await runOfficeTool('office_read', { path }, cfg(dir));
+    assert.ok(r);
+    assert.match(r!, /bold|Lead/);
+    assert.match(r!, /Apple|Banana|fresh|Only column/);
+  });
+
+  it('docx append_blocks merges sidecar draft', async () => {
+    const path = 'notes/draft.docx';
+    const w1 = await runOfficeTool(
+      'office_write',
+      {
+        path,
+        header: 'Draft',
+        footer: true,
+        blocks: [
+          { type: 'heading', level: 1, text: 'Draft v1' },
+          { type: 'paragraph', text: 'First section.' },
+        ],
+      },
+      cfg(dir),
+    );
+    assert.ok(w1);
+    assert.match(w1!, /mode=blocks/);
+
+    const sc = loadDocxSidecar(join(dir, path));
+    assert.ok(sc);
+    assert.equal(sc!.blocks.length, 2);
+
+    const w2 = await runOfficeTool(
+      'office_write',
+      {
+        path,
+        append_blocks: [
+          { type: 'heading', level: 2, text: 'Added later' },
+          { type: 'bullet', items: ['**one**', 'two'] },
+        ],
+      },
+      cfg(dir),
+    );
+    assert.ok(w2);
+    assert.match(w2!, /mode=append/);
+    assert.match(w2!, /appended=2/);
+    assert.match(w2!, /blocks=4/);
+
+    const sc2 = loadDocxSidecar(join(dir, path));
+    assert.ok(sc2);
+    assert.equal(sc2!.blocks.length, 4);
+
+    const r = await runOfficeTool('office_read', { path }, cfg(dir));
+    assert.ok(r);
+    assert.match(r!, /Draft v1|First section/);
+    assert.match(r!, /Added later|one|two/);
+  });
+
+  it('docx append without sidecar fails clearly', async () => {
+    const path = 'notes/no-sidecar.docx';
+    // raw overwrite without going through our writer would not exist; empty path new file
+    const w = await runOfficeTool(
+      'office_write',
+      {
+        path,
+        append_blocks: [{ type: 'paragraph', text: 'orphan' }],
+      },
+      cfg(dir),
+    );
+    assert.ok(w);
+    assert.match(w!, /error:.*sidecar|append_blocks requires/i);
   });
 });

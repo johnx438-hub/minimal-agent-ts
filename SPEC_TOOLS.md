@@ -349,13 +349,15 @@ office_write({
   text?: string,
   // docx layout
   blocks?: Array<
-    | { type: 'heading'; level: 1-6; text; align? }
-    | { type: 'paragraph'; text?; runs?: Run[]; align?; spacing_*_pt? }
-    | { type: 'bullet' | 'number'; items: string[]; level? }
-    | { type: 'table'; headers?: string[]; rows: string[][] }
+    | { type: 'heading'; level: 1-6; text; align?; markdown? }
+    | { type: 'paragraph'; text?; runs?: Run[]; align?; markdown?; spacing_*_pt? }
+    | { type: 'bullet' | 'number'; items: string[]; level?; markdown? }
+    | { type: 'table'; headers?: string[]; rows: string[] | string[][]; markdown? }
     | { type: 'image'; path; width_in?|width_px?; height_in?|height_px?; alt? }
     | { type: 'pagebreak' }
   >,
+  /** Append to draft (needs path.docx.office.json from a prior structured write). */
+  append_blocks?: Block[],
   doc_title?: string,
   header?: string,
   footer?: true | string | { text?; page_numbers? },
@@ -393,7 +395,7 @@ office_write({
 
 | 包 | 擅长 | office_* 已接 | 未接 / 不做 |
 |----|------|---------------|-------------|
-| **docx** | 生成：段落/标题/run 样式/列表/表/图/页眉页脚/分页/页边距 | ✅ blocks(+image) + page/header/footer | TOC、数学公式、修订轨、模板合并 |
+| **docx** | 生成：段落/标题/run 样式/列表/表/图/页眉页脚/分页/页边距 | ✅ blocks(+image) + md 内联 + table 简写 + **append_blocks**（sidecar） | 真·OOXML 原地补丁、TOC、公式、修订 |
 | **mammoth** | 读 docx→HTML/text | ✅ HTML→markdown（标题列表） | 保真样式还原 |
 | **pptxgenjs** | 生成：文本框/表/形状/图/图表/母版/背景/备注 | ✅ layout + masters + objects(text/shape/table/image/chart) | combo chart 高级轴、HTML→slides、placeholder 全量 |
 | **jszip** | 抽 pptx slide XML 文本 | ✅ 大纲 | 位置/样式反解 |
@@ -421,6 +423,9 @@ office_write({
 
 - [x] docx 写→读中文段落
 - [x] docx blocks：heading/list/table/image/pagebreak/header/footer
+- [x] docx：`text` markdown 内联（`**`/`*`/`~~`/`` ` ``）；`markdown:false` 可关
+- [x] docx table：`rows: string[]` 简写 + `"A | B"` 分列；单元格 `\n` 多段
+- [x] docx `append_blocks` + sidecar `<path>.office.json`（先草稿再追加）
 - [x] pptx 写→读 slide 大纲
 - [x] pptx layouts + objects（text/shape/table/image/chart）+ notes + masters
 - [x] xlsx 读写 + set_cells / append
