@@ -154,6 +154,8 @@ export function isRegressionTaskPrompt(prompt: string): boolean {
   const trimmed = prompt.trim();
   if (/^\[regression\]/i.test(trimmed)) return true;
   if (/^regression\s*:/i.test(trimmed)) return true;
+  // Env backdoor for integration harness only — never force all prompts in unit tests.
+  if (process.env.NODE_ENV === 'test') return false;
   return process.env.LOOP_GUARD_REGRESSION === '1';
 }
 

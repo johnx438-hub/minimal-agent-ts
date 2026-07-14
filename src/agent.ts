@@ -352,10 +352,11 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         continue;
       }
 
+      // Only persist valid tool_calls (invalid JSON args must not enter session history).
       const assistantMsg: ChatMessage = {
         role: 'assistant',
         content: message.content,
-        tool_calls: message.tool_calls,
+        tool_calls: validToolCalls,
         turn,
       };
 
@@ -363,20 +364,14 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         tracker.onAssistantMessage(assistantMsg, turn);
       }
 
-      commitAssistantToolCalls(messages, message, turn);
+      commitAssistantToolCalls(
+        messages,
+        { ...message, tool_calls: validToolCalls },
+        turn,
+      );
 
+      // Do not executeTool on invalid args — wasted work and results are not useful to the model.
       if (invalidToolCalls.length > 0) {
-        for (const call of invalidToolCalls) {
-          const output = await executeTool(call.function.name, call.function.arguments, toolConfig);
-          const toolMsg: ChatMessage = {
-            role: 'tool',
-            tool_call_id: call.id,
-            content: output,
-            turn,
-          };
-          if (tracker) tracker.onToolResult(toolMsg);
-          messages.push(toolMsg);
-        }
         onStep?.({ type: 'tool_args_invalid', turn, count: invalidToolCalls.length });
       }
 

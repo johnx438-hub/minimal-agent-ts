@@ -4,7 +4,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, extname, join, relative, resolve } from 'node:path';
 
 import { createRequire } from 'node:module';
@@ -34,6 +34,12 @@ const MAX_MAX_CHARS = 120_000;
 const DEFAULT_XLSX_MAX_ROWS = 50;
 const MAX_XLSX_MAX_ROWS = 500;
 const SPILL_THRESHOLD = 12_000;
+/** Reject Office files larger than this before parsing (zip-bomb / DoS guard). */
+export const MAX_OFFICE_FILE_BYTES = 40 * 1024 * 1024;
+/** Max entries inside a pptx/zip archive we will enumerate. */
+export const MAX_ZIP_ENTRIES = 400;
+/** Max total uncompressed slide XML we will load from a pptx. */
+export const MAX_ZIP_UNCOMPRESSED_BYTES = 32 * 1024 * 1024;
 
 export type OfficeKind = 'docx' | 'xlsx' | 'pptx';
 
@@ -271,19 +277,13 @@ export async function readXlsxFile(
   }
 
   const rows: string[][] = [];
-  let rowCount = 0;
-  ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-    if (rowCount >= opts.maxRows) return;
+  let totalRows = 0;
+  ws.eachRow({ includeEmpty: false }, (row) => {
+    totalRows += 1;
+    if (rows.length >= opts.maxRows) return;
     const values = row.values;
     const arr = Array.isArray(values) ? values.slice(1) : [];
     rows.push(arr.map(cellToString));
-    rowCount = rowNumber;
-  });
-
-  // Count total non-empty rows roughly
-  let totalRows = 0;
-  ws.eachRow({ includeEmpty: false }, () => {
-    totalRows += 1;
   });
 
   const mdLines = [
@@ -392,9 +392,16 @@ function extractTextFromSlideXml(xml: string): string[] {
 }
 
 export async function readPptxBuffer(buf: Buffer): Promise<string> {
-  const zip = await JSZip.loadAsync(buf);
-  const slidePaths = Object.keys(zip.files)
-    .filter((n) => /^ppt\/slides\/slide\d+\.xml$/i.test(n))
+  const zip = await JSZip.loadAsync(buf, { checkCRC32: true });
+  const allNames = Object.keys(zip.files);
+  if (allNames.length > MAX_ZIP_ENTRIES) {
+    throw new Error(
+      `pptx has too many zip entries (${allNames.length} > ${MAX_ZIP_ENTRIES})`,
+    );
+  }
+
+  const slidePaths = allNames
+    .filter((n) => /^ppt\/slides\/slide\d+\.xml$/i.test(n) && !zip.files[n]!.dir)
     .sort((a, b) => {
       const na = Number(a.match(/slide(\d+)/i)?.[1] ?? 0);
       const nb = Number(b.match(/slide(\d+)/i)?.[1] ?? 0);
@@ -406,8 +413,16 @@ export async function readPptxBuffer(buf: Buffer): Promise<string> {
   }
 
   const lines = [`# Presentation (${slidePaths.length} slides)`, ''];
+  let uncompressed = 0;
   for (let i = 0; i < slidePaths.length; i++) {
-    const xml = await zip.files[slidePaths[i]!]!.async('string');
+    const entry = zip.files[slidePaths[i]!]!;
+    const xml = await entry.async('string');
+    uncompressed += Buffer.byteLength(xml, 'utf8');
+    if (uncompressed > MAX_ZIP_UNCOMPRESSED_BYTES) {
+      throw new Error(
+        `pptx slide XML exceeds uncompressed budget (${MAX_ZIP_UNCOMPRESSED_BYTES} bytes)`,
+      );
+    }
     const texts = extractTextFromSlideXml(xml);
     lines.push(`## Slide ${i + 1}`);
     if (texts.length === 0) lines.push('(no text)');
@@ -536,6 +551,16 @@ async function runOfficeRead(
   const kind = detectOfficeKind(abs);
   if (!kind) {
     return 'error: unsupported type (use .docx, .pptx, or .xlsx)';
+  }
+
+  let fileSize = 0;
+  try {
+    fileSize = statSync(abs).size;
+  } catch {
+    return `error: cannot stat file: ${rawPath}`;
+  }
+  if (fileSize > MAX_OFFICE_FILE_BYTES) {
+    return `error: file too large (${fileSize} bytes > ${MAX_OFFICE_FILE_BYTES}); refuse to parse`;
   }
 
   const maxChars = clampInt(args.max_chars, DEFAULT_MAX_CHARS, 1_000, MAX_MAX_CHARS);

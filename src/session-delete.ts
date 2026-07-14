@@ -11,7 +11,7 @@ import {
   statSync,
   unlinkSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 
 import { getActionPath, listActions } from './action-store.js';
 import { jobDir, jobsDir } from './spawn/job-paths.js';
@@ -26,10 +26,33 @@ import {
   actionsDir,
   handoffPath,
   sessionPath,
+  sessionsDir,
   spawnActionsDir,
   spawnRunsDir,
   transcriptPath,
 } from './workspace.js';
+
+/** Main session ids only (matches generateSessionId). Rejects path traversal. */
+export const SAFE_SESSION_ID_RE = /^session_[A-Za-z0-9_-]{1,80}$/;
+/** Background job ids (matches newJobId). */
+export const SAFE_JOB_ID_RE = /^job_[A-Za-z0-9_-]{1,80}$/;
+
+export function isSafeSessionId(id: string): boolean {
+  return SAFE_SESSION_ID_RE.test(id.trim());
+}
+
+export function isSafeJobId(id: string): boolean {
+  return SAFE_JOB_ID_RE.test(id.trim());
+}
+
+/** True if resolved path is root or a strict descendant (no .. escape). */
+export function isPathInsideRoot(root: string, candidate: string): boolean {
+  const rootAbs = resolve(root);
+  const candAbs = resolve(candidate);
+  if (candAbs === rootAbs) return true;
+  const rel = relative(rootAbs, candAbs);
+  return rel !== '' && !rel.startsWith(`..${sep}`) && !rel.startsWith('..') && !rel.includes(`..${sep}`);
+}
 
 export interface SessionArtifacts {
   session_id: string;
@@ -261,8 +284,11 @@ export function formatSessionDeleteSummary(art: SessionArtifacts): string {
   return lines.join('\n');
 }
 
-function rmPath(path: string, recursive = false): boolean {
+function rmPath(path: string, recursive = false, allowedRoot?: string): boolean {
   if (!existsSync(path)) return false;
+  if (allowedRoot && !isPathInsideRoot(allowedRoot, path)) {
+    return false;
+  }
   try {
     rmSync(path, { recursive, force: true });
     return true;
@@ -280,11 +306,11 @@ export function deleteSession(
   opts?: DeleteSessionOptions,
 ): DeleteSessionResult {
   const sid = sessionId.trim();
-  if (!sid || sid.startsWith('spawn_')) {
-    const empty = collectSessionArtifacts(sid || '(invalid)');
+  if (!sid || sid.startsWith('spawn_') || !isSafeSessionId(sid)) {
+    const empty = collectSessionArtifacts(isSafeSessionId(sid) ? sid : '(invalid)');
     return {
       ok: false,
-      reason: 'invalid session id (main sessions only)',
+      reason: 'invalid session id (expected session_[A-Za-z0-9_-]+, no path segments)',
       artifacts: empty,
     };
   }
@@ -356,19 +382,25 @@ export function deleteSession(
     /* ignore */
   }
 
-  deleted.spawn_actions_dir = rmPath(artifacts.spawn_actions_dir, true);
-  deleted.spawn_runs_dir = rmPath(artifacts.spawn_runs_dir, true);
+  const sessionsRoot = sessionsDir();
+  const jobsRoot = jobsDir();
 
-  const jobIds = artifacts.jobs.map((j) => j.job_id);
+  deleted.spawn_actions_dir = rmPath(artifacts.spawn_actions_dir, true, sessionsRoot);
+  deleted.spawn_runs_dir = rmPath(artifacts.spawn_runs_dir, true, sessionsRoot);
+
+  const jobIds = artifacts.jobs
+    .map((j) => j.job_id)
+    .filter((id) => isSafeJobId(id));
   for (const id of jobIds) {
-    if (rmPath(jobDir(id), true)) deleted.jobs += 1;
+    const dir = jobDir(id);
+    if (rmPath(dir, true, jobsRoot)) deleted.jobs += 1;
   }
 
   deleted.index_entries_removed = rewriteJobIndexForSessionDelete(sid, jobIds);
 
-  deleted.handoff = rmPath(artifacts.handoff_path);
-  deleted.transcript = rmPath(artifacts.transcript_path);
-  deleted.session = rmPath(artifacts.session_path);
+  deleted.handoff = rmPath(artifacts.handoff_path, false, sessionsRoot);
+  deleted.transcript = rmPath(artifacts.transcript_path, false, sessionsRoot);
+  deleted.session = rmPath(artifacts.session_path, false, sessionsRoot);
 
   return { ok: true, artifacts, deleted };
 }

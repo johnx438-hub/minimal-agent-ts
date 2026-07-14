@@ -16,6 +16,8 @@ import {
   collectSessionArtifacts,
   deleteSession,
   formatSessionDeleteSummary,
+  isPathInsideRoot,
+  isSafeSessionId,
   rewriteJobIndexForSessionDelete,
 } from '../src/session-delete.js';
 import { createSession, loadSession, saveSession } from '../src/session.js';
@@ -211,6 +213,21 @@ describe('session delete', () => {
     const r = deleteSession('spawn_abc_1');
     assert.equal(r.ok, false);
     assert.match(r.reason ?? '', /invalid/i);
+  });
+
+  it('rejects path-traversal session ids', () => {
+    assert.equal(isSafeSessionId('../../etc/passwd'), false);
+    assert.equal(isSafeSessionId('session_../x'), false);
+    assert.equal(isSafeSessionId('session_20260714120000'), true);
+    const r = deleteSession('../../etc');
+    assert.equal(r.ok, false);
+    assert.match(r.reason ?? '', /invalid session id/i);
+  });
+
+  it('isPathInsideRoot blocks escape', () => {
+    const root = join(dir, 'root');
+    assert.equal(isPathInsideRoot(root, join(root, 'a', 'b')), true);
+    assert.equal(isPathInsideRoot(root, join(root, '..', 'outside')), false);
   });
 
   it('rewriteJobIndexForSessionDelete is idempotent when nothing matches', () => {
