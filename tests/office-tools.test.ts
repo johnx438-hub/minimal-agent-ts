@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { after, before, describe, it } from 'node:test';
 
 import type { AgentConfig } from '../src/types.js';
@@ -9,6 +10,12 @@ import {
   detectOfficeKind,
   runOfficeTool,
 } from '../src/tools/office.js';
+
+const FIXTURE_PNG = join(
+  dirname(fileURLToPath(import.meta.url)),
+  'fixtures',
+  'pixel.png',
+);
 
 function cfg(cwd: string): AgentConfig {
   return {
@@ -60,6 +67,53 @@ describe('office tools', () => {
     assert.match(r!, /中文/);
   });
 
+  it('writes structured docx blocks (heading/list/table/runs)', async () => {
+    const path = 'notes/layout.docx';
+    const w = await runOfficeTool(
+      'office_write',
+      {
+        path,
+        doc_title: 'Layout Demo',
+        header: 'Confidential',
+        footer: true,
+        page: { orientation: 'portrait', margins_in: { top: 0.8, left: 0.8, right: 0.8, bottom: 0.8 } },
+        blocks: [
+          { type: 'heading', level: 1, text: 'Project Overview', align: 'center' },
+          {
+            type: 'paragraph',
+            runs: [
+              { text: 'Bold lead. ', bold: true },
+              { text: 'Normal body with 中文.' },
+            ],
+          },
+          { type: 'bullet', items: ['Alpha', 'Beta'] },
+          { type: 'number', items: ['First', 'Second'] },
+          {
+            type: 'table',
+            headers: ['Name', 'Status'],
+            rows: [
+              ['API', 'ok'],
+              ['TUI', 'ok'],
+            ],
+          },
+          { type: 'pagebreak' },
+          { type: 'heading', level: 2, text: 'Appendix' },
+          { type: 'paragraph', text: 'After break.', align: 'right' },
+        ],
+      },
+      cfg(dir),
+    );
+    assert.ok(w);
+    assert.match(w!, /mode=blocks/);
+
+    const r = await runOfficeTool('office_read', { path }, cfg(dir));
+    assert.ok(r);
+    assert.match(r!, /Project Overview|Overview/);
+    assert.match(r!, /Alpha|Beta/);
+    assert.match(r!, /API|Status/);
+    assert.match(r!, /Appendix|After break/);
+  });
+
   it('writes and reads pptx outline', async () => {
     const path = 'decks/demo.pptx';
     const w = await runOfficeTool(
@@ -83,6 +137,221 @@ describe('office tools', () => {
     assert.match(r!, /Slide 1/);
     assert.match(r!, /Agenda|Intro/);
     assert.match(r!, /Slide 2/);
+  });
+
+  it('writes pptx with layouts, objects, notes', async () => {
+    const path = 'decks/rich.pptx';
+    const w = await runOfficeTool(
+      'office_write',
+      {
+        path,
+        title: 'Rich Deck',
+        layout: 'LAYOUT_16x9',
+        slides: [
+          {
+            layout: 'title',
+            title: 'Welcome',
+            subtitle: 'Q3 update',
+            notes: 'Open with metrics.',
+          },
+          {
+            layout: 'section',
+            title: 'Architecture',
+            subtitle: 'System map',
+          },
+          {
+            layout: 'two_column',
+            title: 'Compare',
+            left: { title: 'Before', bullets: ['Slow', 'Manual'] },
+            right: { title: 'After', bullets: ['Fast', 'Automated'] },
+          },
+          {
+            layout: 'blank',
+            background: 'F5F7FA',
+            objects: [
+              {
+                kind: 'shape',
+                shape: 'rect',
+                x: 0.5,
+                y: 0.5,
+                w: 9,
+                h: 0.15,
+                fill: '0088CC',
+              },
+              {
+                kind: 'text',
+                text: 'Custom panel',
+                x: 0.5,
+                y: 1,
+                w: 9,
+                h: 0.6,
+                fontSize: 24,
+                bold: true,
+                color: '1A1A1A',
+              },
+              {
+                kind: 'table',
+                x: 0.5,
+                y: 2,
+                w: 9,
+                rows: [
+                  ['Metric', 'Value'],
+                  ['Latency', '12ms'],
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      cfg(dir),
+    );
+    assert.ok(w);
+    assert.match(w!, /4 slides/);
+
+    const r = await runOfficeTool('office_read', { path }, cfg(dir));
+    assert.ok(r);
+    assert.match(r!, /Welcome|Architecture|Compare|Custom panel|Latency/);
+  });
+
+  it('writes docx with embedded image', async () => {
+    mkdirSync(join(dir, 'assets'), { recursive: true });
+    copyFileSync(FIXTURE_PNG, join(dir, 'assets', 'logo.png'));
+    const path = 'notes/with-image.docx';
+    const w = await runOfficeTool(
+      'office_write',
+      {
+        path,
+        blocks: [
+          { type: 'heading', level: 1, text: 'With Image' },
+          {
+            type: 'image',
+            path: 'assets/logo.png',
+            width_in: 1.5,
+            height_in: 1.5,
+            alt: 'logo',
+            align: 'center',
+          },
+          { type: 'paragraph', text: 'Caption under image.' },
+        ],
+      },
+      cfg(dir),
+    );
+    assert.ok(w);
+    assert.match(w!, /mode=blocks/);
+
+    const r = await runOfficeTool('office_read', { path }, cfg(dir));
+    assert.ok(r);
+    assert.match(r!, /With Image|Caption under image/);
+  });
+
+  it('writes pptx with chart + custom slide master', async () => {
+    mkdirSync(join(dir, 'assets'), { recursive: true });
+    copyFileSync(FIXTURE_PNG, join(dir, 'assets', 'logo.png'));
+    const path = 'decks/chart-master.pptx';
+    const w = await runOfficeTool(
+      'office_write',
+      {
+        path,
+        title: 'Chart Master Deck',
+        layout: 'LAYOUT_16x9',
+        masters: [
+          {
+            name: 'CORP',
+            background: 'FFFFFF',
+            slide_number: { x: 9.0, y: 5.15, color: '888888', fontSize: 10 },
+            objects: [
+              {
+                kind: 'rect',
+                x: 0,
+                y: 0,
+                w: '100%',
+                h: 0.45,
+                fill: '1E3A5F',
+              },
+              {
+                kind: 'text',
+                text: 'Acme Corp',
+                x: 0.3,
+                y: 0.05,
+                w: 4,
+                h: 0.35,
+                color: 'FFFFFF',
+                fontSize: 12,
+                bold: true,
+              },
+              {
+                kind: 'line',
+                x: 0,
+                y: 5.35,
+                w: '100%',
+                color: 'CCCCCC',
+                line_width: 1,
+              },
+            ],
+          },
+        ],
+        slides: [
+          {
+            master: 'CORP',
+            layout: 'title_body',
+            title: 'Revenue',
+            body: 'Quarterly trend',
+            objects: [
+              {
+                kind: 'chart',
+                chart_type: 'bar',
+                x: 0.5,
+                y: 1.5,
+                w: 9,
+                h: 3.5,
+                title: 'Revenue by Quarter',
+                show_legend: true,
+                labels: ['Q1', 'Q2', 'Q3', 'Q4'],
+                values: [12, 18, 15, 22],
+                series_name: '2026',
+                colors: ['0088CC'],
+              },
+            ],
+          },
+          {
+            master: 'CORP',
+            layout: 'blank',
+            objects: [
+              {
+                kind: 'chart',
+                chart_type: 'line',
+                x: 0.5,
+                y: 0.8,
+                w: 9,
+                h: 4,
+                title: 'Two series',
+                show_legend: true,
+                series: [
+                  {
+                    name: 'A',
+                    labels: ['Jan', 'Feb', 'Mar'],
+                    values: [1, 3, 2],
+                  },
+                  {
+                    name: 'B',
+                    labels: ['Jan', 'Feb', 'Mar'],
+                    values: [2, 2, 4],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      cfg(dir),
+    );
+    assert.ok(w);
+    assert.match(w!, /2 slides/);
+    assert.match(w!, /masters=1/);
+
+    const r = await runOfficeTool('office_read', { path }, cfg(dir));
+    assert.ok(r);
+    assert.match(r!, /Revenue|Acme Corp|Two series|2026|Q1|Jan/);
   });
 
   it('xlsx read + light append/set_cells', async () => {

@@ -320,13 +320,14 @@ convert_document({
 ## 6. `office_read` / `office_write` — Node Office 三件套 ✅
 
 > **已落地**（2026-07-14）：纯 Node，无 shell / 无外部 CLI。  
-> **重点**：docx · pptx 读写；xlsx **读 + 轻改**（append_rows / set_cells / replace_sheet）。
+> **重点**：docx · pptx **结构化排版生成**；xlsx **读 + 轻改**（append_rows / set_cells / replace_sheet）。  
+> **写语义**：生成/覆盖（`docx` + `pptxgenjs` 擅长新建），不是对任意已有 OOXML 做外科手术式补丁。
 
 ### 模式
 
 ```
 Agent → office_read / office_write (builtin)
-           → mammoth | docx | exceljs | pptxgenjs | jszip
+           → mammoth | docx | exceljs | pptxgenjs | jszip | turndown
            → 摘要进 context；大结果 spill → .cache/office/
 ```
 
@@ -343,12 +344,42 @@ office_read({
 
 office_write({
   path: string,        // extension selects kind
-  // docx
+  // docx simple
   paragraphs?: string[],
   text?: string,
+  // docx layout
+  blocks?: Array<
+    | { type: 'heading'; level: 1-6; text; align? }
+    | { type: 'paragraph'; text?; runs?: Run[]; align?; spacing_*_pt? }
+    | { type: 'bullet' | 'number'; items: string[]; level? }
+    | { type: 'table'; headers?: string[]; rows: string[][] }
+    | { type: 'image'; path; width_in?|width_px?; height_in?|height_px?; alt? }
+    | { type: 'pagebreak' }
+  >,
+  doc_title?: string,
+  header?: string,
+  footer?: true | string | { text?; page_numbers? },
+  page?: { orientation?: 'portrait'|'landscape'; margins_in?: {...} },
   // pptx
   title?: string,
-  slides?: Array<{ title?: string, bullets?: string[], body?: string }>,
+  layout?: 'LAYOUT_16x9'|'LAYOUT_4x3'|'LAYOUT_16x10'|'LAYOUT_WIDE',
+  masters?: Array<{
+    name: string; background?; slide_number?: { x,y,color?,fontSize? };
+    objects?: Array<{ kind: 'text'|'rect'|'line'|'image'; ... }>;  // chrome
+  }>,
+  slides?: Array<{
+    title?, subtitle?, bullets?, body?, notes?, background?,
+    master?: string,         // masters[].name
+    layout?: 'title'|'title_bullets'|'title_body'|'section'|'two_column'|'blank',
+    left?, right?,           // two_column panes
+    objects?: Array<         // freeform
+      | { kind: 'text'; text|runs, x,y,w,h, fontSize?, bold?, color?, align? }
+      | { kind: 'shape'; shape: 'rect'|'roundRect'|'ellipse'|'line'|…, fill? }
+      | { kind: 'table'; rows, x,y,w }
+      | { kind: 'image'; path, x,y,w?,h? }
+      | { kind: 'chart'; chart_type: 'bar'|'line'|'pie'|…; series?|labels+values; title? }
+    >
+  }>,
   // xlsx light
   sheet?: string,
   headers?: string[],
@@ -358,27 +389,40 @@ office_write({
 })
 ```
 
+### 包能力对照（我们暴露的子集）
+
+| 包 | 擅长 | office_* 已接 | 未接 / 不做 |
+|----|------|---------------|-------------|
+| **docx** | 生成：段落/标题/run 样式/列表/表/图/页眉页脚/分页/页边距 | ✅ blocks(+image) + page/header/footer | TOC、数学公式、修订轨、模板合并 |
+| **mammoth** | 读 docx→HTML/text | ✅ HTML→markdown（标题列表） | 保真样式还原 |
+| **pptxgenjs** | 生成：文本框/表/形状/图/图表/母版/背景/备注 | ✅ layout + masters + objects(text/shape/table/image/chart) | combo chart 高级轴、HTML→slides、placeholder 全量 |
+| **jszip** | 抽 pptx slide XML 文本 | ✅ 大纲 | 位置/样式反解 |
+| **exceljs** | 读写 xlsx | ✅ 读采样 + 轻改 | 公式引擎/图表/整表重排 |
+
 ### 实现要点
 
 | 格式 | 读 | 写 |
 |------|----|----|
-| **docx** | mammoth raw text | `docx` Packer 段落 |
-| **pptx** | jszip 抽 `a:t` 大纲 | pptxgenjs 标题+要点 |
+| **docx** | mammoth→markdown | `docx` blocks / 纯段落 + 页眉页脚 |
+| **pptx** | jszip 抽 `a:t` 大纲 | pptxgenjs 预设版式 + freeform objects |
 | **xlsx** | exceljs 表名+采样行 | exceljs append/set/replace（轻） |
 
 - 路径：`resolveReadablePath` / `resolveWritablePath`（**不需** shell）
 - 大输出：`.cache/office/` spill + 短预览
 - 注册：`BuiltinToolProvider` + `agent.json` + `dev-worker`
 
-### 明确不做（v1）
+### 明确不做
 
-- WYSIWYG / 样式完美还原 / 宏 / 加密文档
+- 对已有复杂 docx/pptx 做原地精细改版（库是 generator）
+- WYSIWYG 完美还原 / 宏 / 加密文档
 - xlsx 复杂公式引擎或整表重排 API
 
 ### 验收
 
 - [x] docx 写→读中文段落
+- [x] docx blocks：heading/list/table/image/pagebreak/header/footer
 - [x] pptx 写→读 slide 大纲
+- [x] pptx layouts + objects（text/shape/table/image/chart）+ notes + masters
 - [x] xlsx 读写 + set_cells / append
 - [x] 错误扩展名 / 缺 path
 

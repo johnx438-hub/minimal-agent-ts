@@ -118,7 +118,7 @@ npm start -- "读 README，用三句话说明这个项目做什么"
 |------|------|
 | 文件 | `read_file` · `write_file` · `edit_file` · `apply_patch` · `grep_search` · `list_files` · `diff_file` |
 | 上下文 | `recall_query` |
-| Office | `office_read` · `office_write`（docx / pptx 重点；xlsx 读+轻改，纯 Node） |
+| Office | `office_read` · `office_write`（docx/pptx 结构化排版生成；xlsx 读+轻改；纯 Node） |
 | 代码 | `git_status` · `git_diff` · `git_log` · `lsp_query` · `test_run` |
 | 执行 / 网 | `run_shell` · `web_fetch` · `web_search` |
 | 委派 | `spawn_agent` · `spawn_background` · `code_review` |
