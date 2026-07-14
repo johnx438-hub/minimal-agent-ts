@@ -53,6 +53,10 @@ skills/*
 !skills/office-layout/**
 !skills/cloak-fetch/
 !skills/cloak-fetch/**
+!skills/opencli-usage/
+!skills/opencli-usage/**
+!skills/cli-web-search/
+!skills/cli-web-search/**
 !skills/memory/
 !skills/memory/**
 
