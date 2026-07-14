@@ -122,7 +122,7 @@ MY_GW_KEY=sk-xxxxxxxx
 
 ### CloakFetch（网页抓取）
 
-- **依赖**：Python 3 + [`cloak_fetch.py`](https://github.com/nickclyde/cloakFetch) 脚本（或同目录的 `cloak_fetch.sh`）
+- **依赖**：Python 3 + [`cloak_fetch.py`](https://github.com/Agents365-ai/cloakFetch) 脚本（或同目录的 `cloak_fetch.sh`）
 - **作用**：带 JS 渲染的网页抓取（`web_fetch` 的 L2 通道），没有时自动退回纯 HTTP fetch
 - **自动探测**：按优先级搜索 → 环境变量 `CLOAK_FETCH_SCRIPT` → `skills/cloak-fetch/` → `~/.claude/skills/` → `~/github/cloakFetch/` → Windows 常见路径
 - **探测逻辑**：`src/tools/cloak-resolve.ts`（全平台兼容 Linux / macOS / Windows / Git Bash）
@@ -141,3 +141,5 @@ MY_GW_KEY=sk-xxxxxxxx
 1. **设置环境变量**：`CLOAK_FETCH_SCRIPT=/your/path/cloak_fetch.py`、`DDGR_PATH=/your/path/ddgr`
 2. **或在 `agent.json` 中指定路径**：`web_search.ddgr_path`、`cloak_fetch.script_path`
 3. **让 Agent 自己修**：探测源码都在 `src/tools/cloak-resolve.ts`，告诉 Agent "帮我把 ddgr 路径配好"，它会读代码、找到对应配置项、帮你改
+
+> 🙏 感谢 [Agents365-ai/cloakFetch](https://github.com/Agents365-ai/cloakFetch)（MIT）提供的 CloakBrowser 抓取方案，本项目的 `skills/cloak-fetch/` 及 L2 抓取通道基于此构建。

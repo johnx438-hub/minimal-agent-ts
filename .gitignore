@@ -51,6 +51,8 @@ skills/*
 !skills/context-design/**
 !skills/office-layout/
 !skills/office-layout/**
+!skills/cloak-fetch/
+!skills/cloak-fetch/**
 
 # Rust / Windows junk under optional local skills
 skills/**/target/
