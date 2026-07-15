@@ -28,7 +28,7 @@
     },
     {
       "loop": {
-        "when": "{{reviewer.verdict}} == 'needs_revision'",
+        "when": { "path": "reviewer.verdict", "eq": "needs_revision" },
         "max_rounds": 2,
         "steps": [
           {

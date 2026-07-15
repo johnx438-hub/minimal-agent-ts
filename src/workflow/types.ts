@@ -19,18 +19,50 @@ export interface WorkflowRoleConfig {
   description?: string;
 }
 
+/** Structured when (W2); string form kept for compatibility. */
+export interface WorkflowWhenClause {
+  path: string;
+  eq: string;
+}
+
+export type WorkflowWhen = string | WorkflowWhenClause;
+
 export interface WorkflowStep {
   role: string;
   input: string;
+  id?: string;
+  /**
+   * Context slot name for this step's output (default = role).
+   * Required to distinguish parallel steps that share the same role.
+   */
+  as?: string;
 }
 
 export interface WorkflowLoop {
-  when: string;
+  when: WorkflowWhen;
   max_rounds: number;
   steps: WorkflowStep[];
 }
 
-export type WorkflowFlowItem = WorkflowStep | { loop: WorkflowLoop };
+export interface WorkflowParallel {
+  steps: WorkflowStep[];
+  /** Reserved; only 'all' supported (Promise.all). */
+  join?: 'all';
+}
+
+export interface WorkflowSwitch {
+  /** Template path, e.g. reviewer.verdict or {{reviewer.verdict}} */
+  on: string;
+  /** Branch key → nested flow items */
+  cases: Record<string, WorkflowFlowItem[]>;
+  default?: WorkflowFlowItem[];
+}
+
+export type WorkflowFlowItem =
+  | WorkflowStep
+  | { loop: WorkflowLoop }
+  | { parallel: WorkflowParallel }
+  | { switch: WorkflowSwitch };
 
 export interface WorkflowDefinition {
   name: string;
@@ -48,7 +80,7 @@ export interface ResolvedWorkflowRole {
   api_profile?: string;
   maxTurns?: number;
   /** Applied via spawnShellPolicy + spawnDepth when role runs. */
-  shellPolicy?: import('../plugins/types.js').SpawnShellPolicy;
+  shellPolicy?: SpawnShellPolicy;
 }
 
 export interface WorkflowRoleResult {
@@ -83,3 +115,5 @@ export interface WorkflowResult {
   /** Set when workflow exits early and returns control to the main agent. */
   handback?: WorkflowHandback;
 }
+
+export type WorkflowStepPhase = 'role' | 'loop' | 'parallel' | 'switch';
