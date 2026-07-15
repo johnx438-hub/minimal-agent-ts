@@ -59,6 +59,8 @@ skills/*
 !skills/cli-web-search/**
 !skills/memory/
 !skills/memory/**
+!skills/workflow-design/
+!skills/workflow-design/**
 
 # User-level memory (personal — keep local)
 .agent/memory/
