@@ -3,17 +3,15 @@
   "share_session": false,
   "roles": {
     "planner": {
-      "prompt_file": "../roles/planner.md",
+      "preset": "skeleton-reader",
       "tools": ["read_file", "grep_search", "list_files", "recall_query"],
       "max_turns": 8
     },
     "worker": {
-      "prompt_file": "../roles/worker.md",
-      "tools": ["read_file", "write_file", "edit_file", "grep_search", "list_files", "diff_file", "recall_query"],
-      "max_turns": 15
+      "preset": "dev-worker"
     },
     "reviewer": {
-      "prompt_file": "../roles/reviewer.md",
+      "prompt_file": "roles/reviewer.md",
       "tools": ["read_file", "grep_search", "diff_file", "recall_query"],
       "max_turns": 6
     }

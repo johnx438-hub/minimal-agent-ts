@@ -1,3 +1,5 @@
+import { isAbsolute, resolve } from 'node:path';
+
 import { saveSessionThrottled } from '../session.js';
 import { runAgent } from '../agent.js';
 import type { AgentStepEvent } from '../events.js';
@@ -91,6 +93,9 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
   const { workflowPath, userTask, config, session, stream, onStep, onWorkflowStep } = opts;
   const definition = loadWorkflowDefinition(workflowPath, config.cwd);
   const shareSession = definition.share_session === true;
+  const workflowAbs = isAbsolute(workflowPath)
+    ? workflowPath
+    : resolve(config.cwd, workflowPath);
 
   const ctx: WorkflowContext = {
     user_task: userTask,
@@ -99,7 +104,14 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
 
   const resolvedRoles = new Map<string, ResolvedWorkflowRole>();
   for (const [name, roleConfig] of Object.entries(definition.roles)) {
-    resolvedRoles.set(name, resolveWorkflowRole(name, roleConfig, workflowPath));
+    resolvedRoles.set(
+      name,
+      resolveWorkflowRole(name, roleConfig, workflowAbs, {
+        cwd: config.cwd,
+        workflowPath: workflowAbs,
+        pluginConfig: config.llmPluginConfig,
+      }),
+    );
   }
 
   function returnHandback(handback: WorkflowHandback): WorkflowResult {
@@ -131,6 +143,9 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
       maxTurns: role.maxTurns ?? config.maxTurns,
       toolAllowlist: role.tools.length > 0 ? role.tools : undefined,
       sessionId: session.session_id,
+      // Treat workflow roles as nested agents: shell policy + no recursive spawn.
+      spawnDepth: Math.max(1, config.spawnDepth ?? 0),
+      spawnShellPolicy: role.shellPolicy,
     };
 
     if (config.llmPluginConfig) {
@@ -140,7 +155,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
         config.llm,
       );
       configureAgentLlmBinding(roleConfig, config.llmPluginConfig, {
-        profileName: roleBinding.profileName,
+        profileName: role.api_profile?.trim() || roleBinding.profileName,
         model: role.model?.trim(),
       });
     } else {
