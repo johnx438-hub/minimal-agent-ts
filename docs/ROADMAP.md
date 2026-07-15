@@ -52,7 +52,7 @@
 | **P1 底座** | 底座 | ToolProvider 拆分、context pipeline、**MessageBridge 出站**（§6 H1–H5；类型已有） |
 | **P2 底座** | 底座 | **InboundAdapter + Dispatch + Schedule**（§6.5–6.8；cron ≠ bridge） |
 | **P2** | G5 | Anthropic 显式缓存 `anthropic_breakpoints` |
-| **P2** | A/E | workflow if/else（M6）、TUI jobs 状态条抛光 |
+| **P2** | A/E | workflow **W1** preset 共用（[SPEC_WORKFLOW](../SPEC_WORKFLOW.md)）；其后 parallel/switch；TUI jobs 抛光 |
 | **P3** | C | Rust 内核（profiling 证明需要后再议） |
 | **按需** | SPEC_TOOLS | office_* ✅ Node；convert_document 可选 |
 | **梳理中** | [DEPS.md](./DEPS.md) | 宿主/npm 分层；打包前 `.npmignore` |
