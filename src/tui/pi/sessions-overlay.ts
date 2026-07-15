@@ -174,9 +174,8 @@ export async function showSessionsBrowser(
     });
 
     if (!picked) {
-      return lastDeleted
-        ? { kind: 'deleted', sessionId: lastDeleted }
-        : { kind: 'cancel' };
+      // Esc / dismiss always cancel; lastDeleted only used when list becomes empty after delete.
+      return { kind: 'cancel' };
     }
     if (picked.value.startsWith('__refresh__:')) continue;
     return { kind: 'resume', sessionId: picked.value };

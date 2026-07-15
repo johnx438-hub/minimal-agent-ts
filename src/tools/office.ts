@@ -45,6 +45,8 @@ import JSZip from 'jszip';
 import mammoth from 'mammoth';
 import TurndownService from 'turndown';
 
+import { isAbortError } from '../events.js';
+
 // pptxgenjs is CJS; ESM default interop is unreliable across Node loaders.
 const require = createRequire(import.meta.url);
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -1185,8 +1187,8 @@ export async function writeXlsxLight(
     ws = wb.addWorksheet(opts.sheet);
   }
 
-  if (opts.replaceSheet) {
-    ws.spliceRows(1, ws.rowCount || 1);
+  if (opts.replaceSheet && ws.rowCount > 0) {
+    ws.spliceRows(1, ws.rowCount);
   }
 
   if (opts.headers?.length && (opts.replaceSheet || ws.rowCount === 0)) {
@@ -2066,7 +2068,7 @@ export async function runOfficeTool(
     }
     return await runOfficeWrite(args, config);
   } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') {
+    if (isAbortError(err)) {
       return '[aborted]';
     }
     const msg = err instanceof Error ? err.message : String(err);

@@ -129,14 +129,19 @@ function probePython(): HostDepStatus {
 function probeShell(): HostDepStatus {
   const envShell = process.env.MINIMAL_SHELL?.trim() || process.env.SHELL?.trim();
   if (envShell && existsSync(envShell)) {
-    return {
-      id: 'shell',
-      tier: 'recommended',
-      label: 'user shell',
-      usedBy: ['run_shell', 'test_run'],
-      available: true,
-      detail: envShell,
-    };
+    // Verify the binary actually responds (existsSync alone is not enough).
+    const probed = probePathCommand(envShell, ['-c', 'echo ok']);
+    if (probed.ok) {
+      return {
+        id: 'shell',
+        tier: 'recommended',
+        label: 'user shell',
+        usedBy: ['run_shell', 'test_run'],
+        available: true,
+        detail: envShell,
+      };
+    }
+    // Fall through to platform defaults if env shell is broken.
   }
   if (process.platform === 'win32') {
     const p = probePathCommand('cmd.exe', ['/c', 'echo', 'ok']);
