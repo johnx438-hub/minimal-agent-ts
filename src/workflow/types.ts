@@ -133,7 +133,9 @@ export type WorkflowHandbackReason =
   | 'loop_guard'
   | 'max_rounds_exhausted'
   | 'turn_ceiling'
-  | 'agent_stopped';
+  | 'agent_stopped'
+  /** DAG scheduler hit maxIterations or stuck with unfinished nodes. */
+  | 'dag_exhausted';
 
 export interface WorkflowHandback {
   reason: WorkflowHandbackReason;

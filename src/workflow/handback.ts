@@ -51,6 +51,12 @@ export function formatWorkflowHandbackMessage(hb: WorkflowHandback): string {
         `Detail: ${hb.detail}`,
       );
       break;
+    case 'dag_exhausted':
+      lines.push(
+        'DAG scheduler stopped (iteration limit or unfinished nodes).',
+        `Detail: ${hb.detail}`,
+      );
+      break;
   }
 
   if (hb.partial_output) {

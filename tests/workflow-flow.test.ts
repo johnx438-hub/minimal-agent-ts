@@ -67,6 +67,21 @@ describe('workflow W2 when / template', () => {
   });
 });
 
+describe('workflow parallel slot uniqueness', () => {
+  it('documents auto as = role#index when as omitted', () => {
+    // Mirrors runner parallel branch: as: step.as?.trim() || `${step.role}#${index}`
+    const steps = [
+      { role: 'worker', input: 'a' },
+      { role: 'worker', input: 'b' },
+    ];
+    const slots = steps.map(
+      (s, i) => (s as { as?: string }).as?.trim() || `${s.role}#${i}`,
+    );
+    assert.deepEqual(slots, ['worker#0', 'worker#1']);
+    assert.notEqual(slots[0], slots[1]);
+  });
+});
+
 describe('workflow flow item guards', () => {
   it('classifies step / loop / parallel / switch', () => {
     const step: WorkflowFlowItem = { role: 'worker', input: 'go', as: 'worker_a' };

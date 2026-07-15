@@ -56,6 +56,8 @@ export interface RunWorkflowOptions {
     round?: number;
     input: string;
     as?: string;
+    /** DAG node id when phase is dag/job from a node. */
+    nodeId?: string;
   }) => void;
   onTaskComplete?: (summary: TaskSummaryDoc, taskBlock: TaskBlock) => void;
 }
@@ -208,6 +210,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
     round?: number,
     sessionClone?: SessionFile,
     extraSlots?: string[],
+    nodeId?: string,
   ): Promise<WorkflowResult | null> {
     const role = resolvedRoles.get(step.role);
     if (!role) {
@@ -225,7 +228,8 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
       role: step.role,
       round,
       input: prompt,
-      as: step.as,
+      as: step.as ?? (nodeId || undefined),
+      nodeId,
     });
 
     // ── job mode: background spawn and wait ─────────────────────────────
@@ -360,7 +364,8 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
     return {
       role: node.role,
       input: node.input,
-      as: node.as,
+      // Prefer explicit as; else node id so ctx + UI always have a stable slot.
+      as: node.as?.trim() || nodeId,
       mode: node.mode,
     };
   }
@@ -376,7 +381,8 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
     let guard = 0;
     const maxIterations = Object.keys(definition.nodes ?? {}).length * 30 + 20;
 
-    while (guard++ < maxIterations) {
+    while (guard < maxIterations) {
+      guard += 1;
       const { ready, toSkip } = findReadyAndSkippable(
         definition,
         edgeState,
@@ -394,6 +400,18 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
 
       if (ready.length === 0) {
         if (toSkip.length > 0) continue;
+        // Natural stop or stuck: unfinished nodes without ready work → handback
+        const unfinished = Object.keys(definition.nodes ?? {}).filter(
+          (id) => !finished.has(id) && !skipped.has(id),
+        );
+        if (unfinished.length > 0) {
+          return returnHandback({
+            reason: 'dag_exhausted',
+            detail:
+              `DAG stuck with unfinished node(s): ${unfinished.join(', ')} ` +
+              `(no ready work after ${guard} schedule round(s))`,
+          });
+        }
         break;
       }
 
@@ -422,6 +440,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
             undefined,
             ready.length > 1 ? clone : undefined,
             [nodeId],
+            nodeId,
           );
           return { nodeId, hb };
         }),
@@ -445,6 +464,20 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
           finished.delete(nodeId);
         }
       }
+    }
+
+    if (guard >= maxIterations) {
+      const unfinished = Object.keys(definition.nodes ?? {}).filter(
+        (id) => !finished.has(id) && !skipped.has(id),
+      );
+      return returnHandback({
+        reason: 'dag_exhausted',
+        detail:
+          `DAG exceeded max schedule rounds (${maxIterations})` +
+          (unfinished.length
+            ? `; unfinished: ${unfinished.join(', ')}`
+            : ''),
+      });
     }
 
     return null;
@@ -500,8 +533,9 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
       if (steps.length === 0) return null;
 
       // Isolated session clones so parallel runAgent calls do not race current_messages.
+      // Auto-unique slots when `as` missing so same role does not overwrite ctx.roles[role].
       const results = await Promise.all(
-        steps.map(async (step) => {
+        steps.map(async (step, index) => {
           const clone: SessionFile = {
             session_id: session.session_id,
             user_id: session.user_id,
@@ -515,7 +549,11 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
               ? [...session.skills_invoked]
               : undefined,
           };
-          return runRoleStep(step, 'parallel', undefined, clone);
+          const effective: WorkflowStep = {
+            ...step,
+            as: step.as?.trim() || `${step.role}#${index}`,
+          };
+          return runRoleStep(effective, 'parallel', undefined, clone);
         }),
       );
       for (const hb of results) {

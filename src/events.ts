@@ -165,7 +165,12 @@ export type RuntimeEvent =
   | {
       type: 'workflow_handback';
       workflow: string;
-      reason: 'loop_guard' | 'max_rounds_exhausted' | 'turn_ceiling' | 'agent_stopped';
+      reason:
+        | 'loop_guard'
+        | 'max_rounds_exhausted'
+        | 'turn_ceiling'
+        | 'agent_stopped'
+        | 'dag_exhausted';
       detail: string;
       role?: string;
       round?: number;

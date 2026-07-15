@@ -3,7 +3,7 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve, sep } from 'node:path';
 
 import type {
   SpawnPolicy,
@@ -105,27 +105,65 @@ export function parseToolsList(raw: string | undefined): string[] {
   );
 }
 
-/** Spawn-style: path relative to cwd (absolute ok). */
+/** Reject paths that resolve outside project cwd (no JIT for profile files). */
+export function assertProfilePathUnderCwd(
+  cwd: string,
+  absPath: string,
+  inputLabel: string,
+): string {
+  const root = resolve(cwd);
+  const target = resolve(absPath);
+  if (target !== root && !target.startsWith(root + sep)) {
+    throw new Error(`path escapes working directory: ${inputLabel}`);
+  }
+  return target;
+}
+
+/** Spawn-style: path relative to cwd (absolute ok), must stay under cwd. */
 export function resolvePromptFileCwd(cwd: string, promptFile: string): string {
-  return isAbsolute(promptFile) ? promptFile : resolve(cwd, promptFile);
+  const abs = isAbsolute(promptFile) ? promptFile : resolve(cwd, promptFile);
+  return assertProfilePathUnderCwd(cwd, abs, promptFile);
 }
 
 /**
- * SPEC_WORKFLOW §5.2: try cwd first, then relative to workflow file directory.
+ * SPEC_WORKFLOW §5.2: try cwd-relative first, then relative to workflow file directory.
+ * Each candidate is rejected if it escapes project cwd (path traversal).
  */
 export function resolvePromptFileWithFallback(
   cwd: string,
   promptFile: string,
   workflowPath?: string,
 ): string {
-  const cwdPath = resolvePromptFileCwd(cwd, promptFile);
-  if (existsSync(cwdPath)) return cwdPath;
+  const candidates: string[] = [];
+  candidates.push(isAbsolute(promptFile) ? promptFile : resolve(cwd, promptFile));
   if (workflowPath) {
     const base = dirname(workflowPath);
-    const wfPath = isAbsolute(promptFile) ? promptFile : resolve(base, promptFile);
-    if (existsSync(wfPath)) return wfPath;
+    candidates.push(
+      isAbsolute(promptFile) ? promptFile : resolve(base, promptFile),
+    );
   }
-  return cwdPath;
+
+  let lastEscape: Error | null = null;
+  for (const candidate of candidates) {
+    try {
+      const safe = assertProfilePathUnderCwd(cwd, candidate, promptFile);
+      if (existsSync(safe)) return safe;
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('escapes working directory')) {
+        lastEscape = err;
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  // Prefer not-found under cwd-relative path for loadMdFile; if only escapes, rethrow.
+  try {
+    return assertProfilePathUnderCwd(cwd, candidates[0]!, promptFile);
+  } catch (err) {
+    if (lastEscape) throw lastEscape;
+    throw err;
+  }
 }
 
 function findSpawnPresetConfig(
@@ -289,13 +327,12 @@ export function resolveAgentProfile(
     );
     const { meta, body: mdBody } = loadMdFile(path);
     if (mdBody) body = mdBody;
-    // Frontmatter tools only if role did not set tools and we did not already take preset tools
-    // When preset was used, role.tools already handled; fm tools apply only without tools override
-    // and only when not loadedFromPreset OR when role had no tools and preset had none?
-    // SPEC: for non-preset path, fm tools fill if tools unset.
+    // Frontmatter tools fill when role did not set tools[] (preset tools already applied above).
     if (tools === undefined && meta.tools) {
       tools = parseToolsList(meta.tools);
     }
+    // Non-preset path: also take max_turns / model / api_profile from frontmatter.
+    // When loadedFromPreset, those fields stay from the preset unless role JSON set them.
     if (!loadedFromPreset) {
       if (maxTurns === undefined && meta.max_turns) {
         const n = Number(meta.max_turns);
@@ -304,8 +341,6 @@ export function resolveAgentProfile(
       if (!apiProfile && meta.api_profile) apiProfile = meta.api_profile;
       if (!model && meta.model) model = meta.model;
       if (!description && meta.description) description = meta.description;
-    } else if (input.tools === undefined && meta.tools && !input.preset) {
-      tools = parseToolsList(meta.tools);
     }
   }
 

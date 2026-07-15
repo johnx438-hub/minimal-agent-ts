@@ -176,4 +176,16 @@ describe('workflow W1 preset resolve', () => {
       /Unknown agent preset "nope"/,
     );
   });
+
+  it('rejects prompt_file path escape outside cwd', () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'wf-esc-'));
+    assert.throws(
+      () =>
+        resolveAgentProfile(
+          { name: 'x', prompt_file: '../../etc/passwd' },
+          { cwd, childKind: 'workflow' },
+        ),
+      /escapes working directory/,
+    );
+  });
 });
