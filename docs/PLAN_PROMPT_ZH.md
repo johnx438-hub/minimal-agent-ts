@@ -1,50 +1,91 @@
 # 提示词中文化计划（演示可观测性）
 
-> **目的**：周一对外演示时，主 Agent / spawn 子 Agent / workflow 角色的**系统与角色提示**以中文呈现，便于旁观理解「谁在干什么」。  
-> **原则**：同词义翻译，**不改协议**；工程量大但机械，**分步合并、每步可演示**。  
-> **状态**：规划中（2026-07-16）· 未开工实现。
+> **目的**：周一对外演示时，主 Agent / spawn 子 Agent / workflow 角色的**身份与职责**以中文可读，便于旁观理解「谁在干什么」。  
+> **原则（最小化，2026-07-16 约定）**：只译 **「你是谁 / 负责什么 / 行为边界」**；**协议、工具用法、核心约束（含负反馈）保持英文**；行业词如 bug / issue / quality **不硬译**。  
+> **状态**：口径已定 · 未大规模开工。
 
 ---
 
-## 1. 范围地图（先分清「译 / 不译」）
+## 0. 最小中文化口径（权威）
 
-| 层 | 位置（示例） | 演示是否必看 | 是否中文化 |
-|----|--------------|--------------|------------|
-| **主 Agent system** | `src/agent-prompt.ts` `buildSystemPrompt` | ✅ 核心 | ✅ |
-| **Workflow 信封** | `src/workflow/envelope.ts` | ✅ 多角色步骤 | ✅ |
-| **Workflow 角色人设** | `roles/planner.md` 等 | ✅ | ✅ |
-| **Workflow 步骤 input** | `workflows/*.json` 的 `input` 字符串 | ✅ | ✅ |
-| **Spawn 预设人设** | `agents/*.md` + `agent.json` `description` | ✅ 子 Agent | ✅ |
-| **Fallback 短句** | `src/agent-profile.ts` 默认 “You are…” | 中 | ✅ |
-| **Handback / digest 文案** | `src/workflow/handback.ts` | 中（失败路径） | ✅ 建议 |
-| **TUI 中文** | `src/tui/i18n.ts` 等 | 已部分中文 | 本计划外（已可用） |
-| **工具 schema description** | `src/tools/**` 英文说明 | 模型可见，旁观较少 | ⏳ 后期可选 |
-| **Skill 正文** | `skills/**/SKILL.md` | 按需 invoke | ⏳ 演示用到再译 |
-| **SPEC / README 工程文档** | `SPEC_*.md` | 给人看的 | ⏳ 非演示阻塞 |
-| **协议字段** | `verdict` 枚举、`workflow_handoff` 参数名、工具名 | 机器契约 | ❌ **保持英文** |
-| **代码标识符** | 变量 / JSON key | — | ❌ 不译 |
+### 0.1 译什么（中文）
 
-**硬约束（防回归）**
+| 类型 | 例子 |
+|------|------|
+| 身份句 | 「你是 workflow 里的 **planner**，只做计划、不实现。」 |
+| 职责 / 边界 | 「不要改代码」「以 plan 为真源」「验收、不重做」 |
+| 旁观向行为描述 | 「探索后给出编号计划」「结束时说明 Done / 如何验证」 |
+| UI 向短 description | spawn 列表里一句话是干什么的（可选中英混排） |
 
-1. 工具名：`read_file` / `workflow_handoff` 等 **永远英文**。  
-2. 分支字段：`approved` | `needs_revision` | `needs_human` **永远英文**（可在中文说明里写「取值必须是 …」）。  
-3. 模板变量：`{{user_task}}` / `{{plan.output}}` **不译**。  
-4. 主 system 与 role system **路径不变**（envelope 仍只进 role，不污染主 system）。
+### 0.2 不译什么（英文保留）
 
----
-
-## 2. 策略选择（建议）
-
-| 方案 | 做法 | 适合 |
+| 类型 | 例子 | 原因 |
 |------|------|------|
-| **A. 就地中文（推荐演示周）** | md / 字符串直接改成中文，git 历史可回滚 | 受众明确中文、少分叉 |
-| B. 双文件 `agents/zh/` + locale | `prompt_locale: zh\|en` 解析 | 长期双语，工程多一截 |
-| C. 仅演示分支 `demo/zh-prompts` | 不进 master | 临时演示，合并成本后置 |
+| 工具名与调用法 | `read_file`、`workflow_handoff(kind=plan)` | API / schema 英文 |
+| 协议与枚举 | `verdict`: `approved` \| `needs_revision` \| `needs_human` | 分支解析 |
+| 模板与 slot | `{{user_task}}`、`{{plan.output}}` | 运行时 |
+| **核心规则 / 负反馈** | envelope 里 handoff success criteria、burn max_turns、parent preserved | 约束要稳、少歧义 |
+| 领域常见英文词 | bug、issue、quality、security、diff、LGTM | 中文语境已通用 |
+| 工具 schema 长说明 | `src/tools/**` description | 演示非必须，改动面大 |
 
-**建议：演示周用 A**；若会后要长期 EN 上游协作，再开 B（locale 开关）。  
-一步一步推进时，**不要**一上来做 B。
+### 0.3 混排模板（推荐写法）
 
-翻译语气：简体、短句、条目化；保留 Markdown 结构（`##`、列表）；专有名可中英并列一次（如「开发工人 dev-worker」）。
+```text
+你是多角色 workflow 中的 **planner**（只规划、不实现）。
+- 用只读工具探索；产出编号 plan（paths / steps / verify）。
+- Do NOT implement or claim the task is done.
+- Handoff: prefer workflow_handoff(kind=plan); final message also counts.
+- verdict / tool names stay English as required by the runner.
+```
+
+即：**中文讲角色，英文钉契约**。
+
+### 0.4 对 LLM / 子 Agent 的风险（结论：可控）
+
+| 担心 | 实际 |
+|------|------|
+| 中英混排会不会乱 | 常见且稳；模型对「中文 instruction + 英文 identifier」很熟 |
+| 输出会不会全变中文 | **主要由 user_task 语言驱动**；system 中英混不强迫输出语言 |
+| 子 Agent / workflow 更特殊？ | 特殊在 **冷启动 + 无父会话**，更依赖本步 system/input；因此 **契约段保持英文** 比「全文中文」更安全 |
+| 负反馈改中文会不会变软 | 可能；故 **envelope / 硬停止条件保持英文**（你的选择正确） |
+| verdict 被写成中文 | 低～中；中文职责旁保留英文枚举 + 现有 normalize 可兜一点 |
+| 工具用法改中文 | 易和 schema 英文描述不一致 → **不改** |
+
+**理论**：LLM 会随用户输入切换叙述语言；workflow/spawn 的「特殊」主要是 **上下文隔离**，不是「必须全中文才能懂」。最小化混排对演示可观测性足够，对执行契约更稳。
+
+---
+
+## 1. 范围地图（按最小口径）
+
+| 层 | 位置 | 演示 | 改动 |
+|----|------|------|------|
+| **主 Agent system** | `buildSystemPrompt` | ✅ | 身份/行为句中文；工具列表与 guidance **英文可留** |
+| **Workflow 信封** | `envelope.ts` | ✅ | **默认保持英文**（核心规则）；仅可给 duty 一行中文身份（可选） |
+| **Workflow 角色人设** | `roles/*.md` | ✅ | 身份/职责中文；handoff/verdict/工具 **英文** |
+| **Workflow 步骤 input** | `workflows/*.json` | ✅ | Role 合同中文一句 + 英文约束 bullet |
+| **Spawn 预设** | `agents/*.md` | ✅ | 同上最小混排 |
+| **Fallback** | `agent-profile.ts` | 中 | 短中文身份 + 英文 complete task |
+| **Handback 给人看** | `handback.ts` | 中 | 可中文（用户 UI）；reason 枚举英文 |
+| **工具 schema** | `src/tools/**` | — | ❌ 本阶段不动 |
+| **协议字段** | verdict / tool names | — | ❌ 不译 |
+
+**硬约束**
+
+1. 工具名、verdict 枚举、`{{…}}` 永不改成中文取值。  
+2. Envelope 负反馈 / success criteria **优先全文英文**（与「核心规则不译」一致）。  
+3. 不碰主 system 注入路径（envelope 仍只进 role）。
+
+---
+
+## 2. 策略
+
+| 方案 | 说明 |
+|------|------|
+| **A′. 最小混排（推荐）** | 就地改 md/短句：中文职责 + 英文契约；不建 locale 双文件 |
+| B. 全量中文 | 不推荐演示周：契约漂移风险↑、工作量↑ |
+| C. locale 开关 | 演示后再说 |
+
+不上一上来做 B/C。
 
 ---
 
@@ -72,77 +113,65 @@
 - [ ] 确认 **不译** 清单（§1）给所有改提示的人。  
 - [ ] 开 checklist issue / 本文件勾选；**禁止**顺手大改逻辑。
 
-### S1 — 运行时「骨架句」（高可见、文件少）
+### S1 — 主 Agent 身份句（可选、小）
 
 | 文件 | 动作 |
 |------|------|
-| `src/agent-prompt.ts` | `buildSystemPrompt` 主文案 → 中文；工具名保留 |
-| `src/workflow/envelope.ts` | 信封 duty / 负反馈 / 交接说明 → 中文 |
-| `src/workflow/handoff-tool.ts` | tool `description` + 成功 ok 文案 → 中文（参数名英文） |
-| `src/agent-profile.ts` | 默认 fallback “You are…” → 中文 |
+| `src/agent-prompt.ts` | 仅「You are a minimal coding assistant…」类身份/行为 → 中文；**工具 bullet 保持英文** |
+| `src/agent-profile.ts` | fallback 身份半句中文即可 |
+| `src/workflow/envelope.ts` | **默认不改**（核心规则英文）；若演示要一眼看懂角色，最多给 duty 一行中文前缀 |
+| `handoff-tool` description | **默认不改**（工具协议英文） |
 
-**验收**：新会话主 Agent 首条可见中文 system 行为；workflow 一步里日志/行为符合中文信封；`npm test` 中断言英文短语的用例改为中文或语义匹配。
+**验收**：主对话人设中文可读；工具行为与现网一致。
 
-### S2 — Workflow 演示路径（周一最该稳）
+### S2 — Workflow 演示路径（优先）
 
 | 文件 | 动作 |
 |------|------|
-| `roles/planner.md` / `worker.md` / `reviewer.md` | 全文同义中文 |
-| `workflows/dag-review.json` | 各节点 `input` 中文合同（保留 `{{…}}` 与 verdict 英文） |
-| `workflows/review-loop.json` | 同上 |
+| `roles/*.md` | 身份/职责中文；Scope 里工具与 handoff **英文保留** |
+| `workflows/*.json` `input` | 中文 Role 一句 + 英文 Do NOT / Prefer / verdict 行 |
 
-**验收**：arm `dag-review`，一句中文任务能跑完；digest 里角色产出可读；旁观能听懂 planner≠worker≠reviewer。
+**验收**：旁观能听懂三角色分工；`verdict` 与 handoff 仍稳定。
 
 ### S3 — Spawn 演示路径
 
-| 优先 | 文件 |
+| 优先 | 动作 |
 |------|------|
-| P0 | `agents/dev-worker.md` |
-| P1 | `agents/skeleton-reader.md`（若演示仍 spawn 它） |
-| P2 | `code-review-*.md`（若演示 code_review / 并行审查） |
-| P3 | `web-researcher.md` / `hackernews-digest.md` |
+| `dev-worker.md` 等 | 开篇 You are… → 中文身份；Capabilities / Hard limits / Workflow 步骤里工具法 **英文** |
+| `agent.json` description | 列表用中文短句（可夹 bug/quality） |
 
-同步：`agent.json` 里对应 `spawn_presets[].description` 中文（列表/UI 展示）。
+**验收**：spawn 行为不漂；列表可读。
 
-**验收**：`spawn_agent(preset=dev-worker)` 子任务行为与英文版同质；TUI/列表描述为中文。
+### S4–S5 — 扫尾
 
-### S4 — 扫尾 spawn 与默认句
+- 其余 agents 按需同一混排  
+- handback **给人看**的段落可中文  
+- 测试：只改「我们主动译掉」的断言；**envelope 英文断言尽量不动**
 
-- 剩余 `agents/*`  
-- `handback.ts` / `formatWorkflowReturnSummary` 用户可见块  
-- 任何 “Complete the delegated task…” 残留 `rg "You are"` 清零（提示词语境）
+### S6 — 不做（除非明确要）
 
-### S5 — 测试与门禁
-
-- 更新 `tests/workflow-envelope.test.ts` 等对英文片段的 `assert.match`  
-- 可选：加一条「主 system 含中文关键词 / 不含 You are a minimal」的冒烟  
-- **不要**要求模型输出必须是中文（用户任务语言决定即可）
-
-### S6 — 可选增强（演示后）
-
-- 工具 definition 中文（体积大、与 MCP 混杂）  
-- `prompt_locale` 双语文档方案 B  
-- Skill 按演示脚本点名翻译  
+- 工具 schema 全文中文  
+- skills 全译  
+- locale 双文件  
 
 ---
 
-## 5. 翻译规范（给执行的人）
+## 5. 执行规范
 
-1. **先结构后措辞**：标题层级与列表与原文对齐，再润色。  
-2. **中英锚点**：首次出现角色名可写「规划员（planner）」，后文可只用中文。  
-3. **命令式**：用「请…」「不要…」「必须…」，避免文学腔。  
-4. **负反馈**（envelope）：保持「无交接则本步失败、父会话保留」语义，不写「作废删除」。  
-5. **禁止**把 `needs_revision` 译成中文当作 JSON 值。  
-6. 每步 PR/commit 信息：`docs(i18n): …` 或 `i18n(prompts): S2 workflow roles`。
+1. **只动身份/职责句**，不动协议段。  
+2. 角色名可「规划员 planner」一次，后文 planner 即可。  
+3. bug / issue / quality / security / diff **不硬译**。  
+4. 禁止中文 verdict 取值。  
+5. Commit：`i18n(prompts): minimal role blurbs for demo`。
 
-### 对照示例（风格）
+### 对照（最小混排）
 
-| EN | ZH |
-|----|-----|
-| You are the **planner** role in a multi-agent **workflow**. | 你是多角色 **workflow** 中的 **规划员（planner）**。 |
-| Do NOT implement. | 不要实现代码或改文件。 |
-| Prefer workflow_handoff(kind=plan). | 优先调用 `workflow_handoff`（`kind=plan`），再结束本步。 |
-| End with verdict: approved \| needs_revision \| needs_human | 结束时给出裁决，`verdict` 必须是：`approved` \| `needs_revision` \| `needs_human` |
+| 部分 | 语言 |
+|------|------|
+| 你是 **planner**，只出 plan、不实现 | 中文 |
+| Do NOT call write tools. Prefer `workflow_handoff(kind=plan)`. | 英文 |
+| End with `verdict`: `approved` \| `needs_revision` \| `needs_human` | 英文 |
+| 检查 logic bug、error handling | 中英：中文动词 + 英文名词 |
 
 ---
 
