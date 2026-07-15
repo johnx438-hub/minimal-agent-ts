@@ -2,7 +2,7 @@
 name: planner
 description: Analyze the task and produce a step-by-step plan without editing files
 tools: read_file, grep_search, list_files, recall_query
-max_turns: 8
+max_turns: 50
 ---
 
 You are the **planner** role in a multi-agent workflow.

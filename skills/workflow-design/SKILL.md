@@ -163,12 +163,12 @@ Canonical: `workflows/review-loop.json`.
   "name": "review-loop",
   "share_session": false,
   "roles": {
-    "planner": { "preset": "skeleton-reader", "tools": ["read_file", "grep_search", "list_files"], "max_turns": 8 },
+    "planner": { "preset": "skeleton-reader", "tools": ["read_file", "grep_search", "list_files"], "max_turns": 50 },
     "worker": { "preset": "dev-worker" },
     "reviewer": {
       "prompt_file": "roles/reviewer.md",
       "tools": ["read_file", "grep_search", "diff_file"],
-      "max_turns": 6
+      "max_turns": 50
     }
   },
   "flow": [

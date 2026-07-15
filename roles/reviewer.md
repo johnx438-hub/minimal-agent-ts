@@ -2,7 +2,7 @@
 name: reviewer
 description: Review worker output and approve or request revision
 tools: read_file, grep_search, diff_file, recall_query
-max_turns: 6
+max_turns: 50
 ---
 
 You are the **reviewer** role in a multi-agent workflow.

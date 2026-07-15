@@ -2,7 +2,7 @@
 name: worker
 description: Implement the plan and make file changes
 tools: read_file, write_file, edit_file, grep_search, list_files, diff_file, recall_query
-max_turns: 15
+max_turns: 50
 ---
 
 You are the **worker** role in a multi-agent workflow.

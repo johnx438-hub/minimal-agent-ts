@@ -194,9 +194,9 @@ Skill 同理——在 `skills/<name>/SKILL.md` 写一份 Markdown，Agent 通过
 {
   "name": "review-loop",
   "roles": {
-    "planner": { "prompt_file": "roles/planner.md", "tools": ["read_file","grep_search","list_files","recall_query"], "max_turns": 8 },
-    "worker":   { "prompt_file": "roles/worker.md",   "max_turns": 20 },
-    "reviewer": { "prompt_file": "roles/reviewer.md", "max_turns": 6 }
+    "planner": { "prompt_file": "roles/planner.md", "tools": ["read_file","grep_search","list_files","recall_query"], "max_turns": 50 },
+    "worker":   { "prompt_file": "roles/worker.md",   "max_turns": 50 },
+    "reviewer": { "prompt_file": "roles/reviewer.md", "max_turns": 50 }
   },
   "flow": [
     { "role": "planner",   "handoff": "worker" },
