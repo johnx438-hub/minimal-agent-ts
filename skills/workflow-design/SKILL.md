@@ -161,11 +161,11 @@ Set `true` only when you intentionally share full message history (rare).
 a short **user task + assistant digest** (role slots + final output), not the
 full multi-role transcript. Cancel/abort restores prior history without digest.
 
-**Handoff (W4):** each role gets a `[workflow_envelope]` (role system only) stressing
-“stop tools → hand off”. Optional tool `workflow_handoff` is injected only when
-`config.workflowRole` is set. Final message still counts as handoff. Reviewer
-verdicts: `approved` | `needs_revision` | `needs_human` (→ handback to parent,
-not infinite loops). Missing handoff does **not** delete the parent session.
+**Handoff (W4):** each role gets a `[workflow_envelope]` (role system only) with
+workflow-specific **negative feedback**: only a clear handoff advances the pipeline;
+tooling without a deliverable burns turns and fails the step; parent history is
+kept. Optional `workflow_handoff` (preferred) **or** a final message as the body.
+Reviewer verdicts: `approved` | `needs_revision` | `needs_human`.
 
 ---
 

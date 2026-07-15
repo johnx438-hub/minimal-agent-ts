@@ -17,7 +17,7 @@ import {
 import { extractWorkflowVerdict } from '../src/workflow/verdict.js';
 
 describe('workflow envelope (W4 isolation)', () => {
-  it('injects handoff importance without voiding language', () => {
+  it('injects handoff duty with negative feedback, no self-contradiction', () => {
     const env = buildWorkflowRoleEnvelope({
       workflowName: 'dag-review',
       role: 'planner',
@@ -28,10 +28,20 @@ describe('workflow envelope (W4 isolation)', () => {
       dutyHint: 'planner',
     });
     assert.match(env, /workflow_envelope/);
-    assert.match(env, /stop calling tools/i);
-    assert.match(env, /parent session/i);
-    assert.doesNotMatch(env, /voided|作废|session will be deleted/i);
+    assert.match(env, /What counts as success/);
+    assert.match(env, /Negative feedback/);
     assert.match(env, /workflow_handoff/);
+    assert.match(env, /Also valid/);
+    assert.match(env, /parent session/i);
+    assert.match(env, /burns max_turns|turn_ceiling|incomplete/i);
+    // Do not paste third-party “stop calling all tools / start summarizing” compression copy.
+    assert.doesNotMatch(env, /stop calling (all )?tools and (start )?summar/i);
+    assert.doesNotMatch(env, /voided|作废|session will be deleted/i);
+    // Avoid “stop tools” in the same breath as “use the handoff tool”.
+    assert.doesNotMatch(
+      env,
+      /stop calling tools[^\n]*handoff text \(tool/i,
+    );
   });
 
   it('applyWorkflowEnvelope appends to role system only', () => {

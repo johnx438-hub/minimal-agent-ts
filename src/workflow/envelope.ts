@@ -64,8 +64,10 @@ function dutyLine(hint: WorkflowEnvelopeMeta['dutyHint'], canWrite: boolean): st
 }
 
 /**
- * Append to role system prompt. Claude-style “stop tools and summarize” for handoff importance —
- * failure still returns to parent session (no voiding).
+ * Append to role system prompt.
+ * Strong negative-feedback framing for “must hand off” (workflow-specific copy —
+ * not a paste of any third-party compression prompt). Failure → parent session
+ * keeps history; pipeline simply cannot advance.
  */
 export function buildWorkflowRoleEnvelope(meta: WorkflowEnvelopeMeta): string {
   const step = meta.nodeId ? `${meta.nodeId}` : meta.slot;
@@ -78,12 +80,26 @@ export function buildWorkflowRoleEnvelope(meta: WorkflowEnvelopeMeta): string {
     `workflow: ${meta.workflowName}`,
     `step: ${step} | role: ${meta.role} | slot: ${meta.slot} | phase: ${meta.phase}${round}`,
     duty,
-    'Handoff: your final message is the handoff body written to the next step as this slot’s output.',
-    'Preferred: call workflow_handoff once with a clear summary (and verdict if reviewing), then stop.',
-    'When ready to hand off: stop calling tools and produce the handoff text (tool and/or final reply).',
-    'Further tool calls after you are ready waste budget and do not improve the handoff.',
-    'If you never produce a usable handoff, this step fails and control returns to the parent session',
-    '(parent chat history is preserved; the pipeline simply cannot continue cleanly without a handoff).',
+    '',
+    '## What counts as success for this step',
+    `Only a clear **handoff** into slot \`${meta.slot}\` advances the pipeline.`,
+    'Exploration and edits that never become a handoff are treated as incomplete work.',
+    '',
+    '## How to hand off (pick one)',
+    `1. **Preferred:** call \`${'workflow_handoff'}\` once with a complete summary` +
+      ' (reviewers: include verdict), then send a short final reply and end the step.',
+    '2. **Also valid:** end with a single final message that *is* the full handoff body' +
+      ' (no tool required). Downstream reads that text as this slot’s output.',
+    '',
+    '## Negative feedback (what hurts this step)',
+    '- Tooling with no eventual handoff burns max_turns and still fails the step.',
+    '- After the deliverable is already clear, more tool calls do not improve the handoff' +
+      ' and risk turn_ceiling / early handback.',
+    '- Vague or empty endings leave the next role with nothing usable — same as failing the step.',
+    '',
+    '## If there is no usable handoff',
+    'This step fails. Control returns to the **parent session** (chat history preserved).',
+    'The workflow does not invent a substitute deliverable for you.',
     '[/workflow_envelope]',
   ].join('\n');
 }
