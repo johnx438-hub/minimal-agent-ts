@@ -100,7 +100,7 @@ npm start -- "读一下README，用三句话总结这个项目是做什么的"
 | 模块 | 能力 |
 |------|------|
 | **主循环** | 流式LLM输出、并行工具调用、循环防死锁、会话断点续跑 |
-| **上下文管理** | 指针卡片、异步写队列、任务摘要、token预算自动剪枝 |
+| **上下文管理** | 指针卡片、异步写队列、任务摘要、token预算自动剪枝；`invoke_skill` 全文常驻保护（灵感来源：朋友吐槽 Codex 经常在长任务中遗漏 skill 细节） |
 | **可观测性** | TUI底栏实时显示token/会话数/上下文占比/前缀缓存命中率；支持`--json-events`输出结构化事件 |
 | **内置工具** | 文件编辑、patch应用、git全套、LSP查询、Office文档读写（docx/pptx/xlsx纯Node实现）、shell/测试、网页抓取搜索、Skill/MCP扩展 |
 | **子Agent** | `spawn_agent`/后台spawn/三角色代码审查，任务日志落地在`workspace/jobs/` |
