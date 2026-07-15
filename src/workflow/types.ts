@@ -27,6 +27,8 @@ export interface WorkflowWhenClause {
 
 export type WorkflowWhen = string | WorkflowWhenClause;
 
+export type WorkflowRunMode = 'agent' | 'job';
+
 export interface WorkflowStep {
   role: string;
   input: string;
@@ -36,6 +38,11 @@ export interface WorkflowStep {
    * Required to distinguish parallel steps that share the same role.
    */
   as?: string;
+  /**
+   * agent (default) — blocking runAgent.
+   * job — spawn_background + await result (SPEC_WORKFLOW W3).
+   */
+  mode?: WorkflowRunMode;
 }
 
 export interface WorkflowLoop {
@@ -64,12 +71,41 @@ export type WorkflowFlowItem =
   | { parallel: WorkflowParallel }
   | { switch: WorkflowSwitch };
 
+/** DAG node (W3). Output always stored under node id; optional `as` alias. */
+export interface WorkflowNode {
+  role: string;
+  input: string;
+  as?: string;
+  mode?: WorkflowRunMode;
+  /** Cap how many times this node may run (default 1; raise for loop-backs). */
+  max_visits?: number;
+}
+
+export interface WorkflowEdge {
+  from: string;
+  to: string;
+  /** If set, edge only activates when condition is true after `from` completes. */
+  when?: WorkflowWhen;
+  /** Cap activations of this edge (default unlimited). */
+  max_visits?: number;
+}
+
 export interface WorkflowDefinition {
   name: string;
   /** When false, each role only sees its templated input (default). */
   share_session?: boolean;
   roles: Record<string, WorkflowRoleConfig>;
-  flow: WorkflowFlowItem[];
+  /**
+   * Linear / structured flow (W1–W2). Mutually exclusive with nodes+edges+entry.
+   */
+  flow?: WorkflowFlowItem[];
+  /**
+   * DAG mode (W3). Requires `entry` + `edges`. Mutually exclusive with `flow`.
+   */
+  nodes?: Record<string, WorkflowNode>;
+  edges?: WorkflowEdge[];
+  /** DAG entry node id. */
+  entry?: string;
 }
 
 export interface ResolvedWorkflowRole {
@@ -116,4 +152,10 @@ export interface WorkflowResult {
   handback?: WorkflowHandback;
 }
 
-export type WorkflowStepPhase = 'role' | 'loop' | 'parallel' | 'switch';
+export type WorkflowStepPhase =
+  | 'role'
+  | 'loop'
+  | 'parallel'
+  | 'switch'
+  | 'dag'
+  | 'job';

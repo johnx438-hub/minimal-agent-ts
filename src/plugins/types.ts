@@ -197,6 +197,13 @@ export interface AgentPluginConfig {
   transcript_policy?: TranscriptPolicy;
   /** Skill names to prepend into system prompt for this session. */
   loaded_skills?: string[];
+  /**
+   * Named workflow registry: name → path (relative cwd or absolute).
+   * SPEC_WORKFLOW W3: `--workflow review-loop` resolves here first.
+   */
+  workflows?: Record<string, string>;
+  /** Extra directories to scan for `{name}.json` workflows (default includes ./workflows). */
+  workflow_dirs?: string[];
 }
 
 export interface SkillDefinition {

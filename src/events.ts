@@ -158,7 +158,7 @@ export type RuntimeEvent =
     }
   | {
       type: 'workflow_step';
-      phase: 'role' | 'loop' | 'parallel' | 'switch';
+      phase: 'role' | 'loop' | 'parallel' | 'switch' | 'dag' | 'job';
       role: string;
       round?: number;
     }

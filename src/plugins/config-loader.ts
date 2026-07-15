@@ -67,6 +67,8 @@ function mergeConfig(base: AgentPluginConfig, patch: Partial<AgentPluginConfig>)
     transcript_policy: { ...base.transcript_policy, ...patch.transcript_policy },
     default_api_profile: patch.default_api_profile ?? base.default_api_profile,
     api_profiles: patch.api_profiles ?? base.api_profiles,
+    workflows: patch.workflows ?? base.workflows,
+    workflow_dirs: patch.workflow_dirs ?? base.workflow_dirs,
   };
 }
 

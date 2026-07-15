@@ -8,6 +8,14 @@ import { resolveWorkflowRoleLlmBinding } from '../llm-profiles.js';
 
 import type { TaskBlock } from '../task-tracker.js';
 import type { AgentConfig, ChatMessage, SessionFile, TaskSummaryDoc } from '../types.js';
+import { getJobRegistry } from '../spawn/job-registry.js';
+import type { ResolvedSpawnPreset } from '../spawn/types.js';
+import {
+  findReadyAndSkippable,
+  settleOutgoingEdges,
+  waiveOutgoingFromSkipped,
+  type DagEdgeState,
+} from './dag.js';
 import { loadWorkflowDefinition } from './load-workflow.js';
 import { resolveWorkflowRole } from './load-role.js';
 import {
@@ -27,6 +35,7 @@ import type {
   WorkflowFlowItem,
   WorkflowHandback,
   WorkflowLoop,
+  WorkflowNode,
   WorkflowParallel,
   WorkflowResult,
   WorkflowStep,
@@ -88,6 +97,29 @@ function roleNeedsWeb(role: ResolvedWorkflowRole): boolean {
 function contextSlot(step: WorkflowStep): string {
   const as = step.as?.trim();
   return as || step.role;
+}
+
+function writeContextResult(
+  ctx: WorkflowContext,
+  keys: string[],
+  output: string,
+  verdict: string | undefined,
+): void {
+  const result = { output, verdict };
+  for (const k of keys) {
+    if (k) ctx.roles[k] = result;
+  }
+}
+
+function roleToSpawnPreset(role: ResolvedWorkflowRole): ResolvedSpawnPreset {
+  return {
+    name: role.name,
+    description: role.name,
+    systemPrompt: role.systemPrompt,
+    tools: role.tools,
+    maxTurns: role.maxTurns ?? 15,
+    shellPolicy: role.shellPolicy,
+  };
 }
 
 function formatWhen(when: WorkflowLoop['when']): string {
@@ -175,6 +207,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
     phase: WorkflowStepPhase,
     round?: number,
     sessionClone?: SessionFile,
+    extraSlots?: string[],
   ): Promise<WorkflowResult | null> {
     const role = resolvedRoles.get(step.role);
     if (!role) {
@@ -185,13 +218,48 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
 
     const prompt = renderWorkflowTemplate(step.input, ctx);
     const slot = contextSlot(step);
+    const slots = [...new Set([slot, ...(extraSlots ?? [])].filter(Boolean))];
+    const runMode = step.mode === 'job' ? 'job' : 'agent';
     onWorkflowStep?.({
-      phase,
+      phase: runMode === 'job' ? 'job' : phase,
       role: step.role,
       round,
       input: prompt,
       as: step.as,
     });
+
+    // ── job mode: background spawn and wait ─────────────────────────────
+    if (runMode === 'job') {
+      if ((config.spawnDepth ?? 0) > 0) {
+        throw new Error('workflow job mode is not available inside a nested agent');
+      }
+      const handle = getJobRegistry().start({
+        preset: roleToSpawnPreset(role),
+        task: prompt,
+        parentConfig: { ...config, spawnDepth: 0 },
+      });
+      const jobResult = await handle.promise;
+      if (config.abortSignal?.aborted || jobResult.status === 'cancelled') {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+      const text = jobResult.text || jobResult.summaryLine || '';
+      if (!jobResult.ok && text.startsWith('error:')) {
+        // treat as agent stop for handback
+        saveSessionThrottled(session, { force: true });
+        return returnHandback({
+          reason: 'agent_stopped',
+          detail: jobResult.error ?? text,
+          role: step.role,
+          round,
+          partial_output: text,
+        });
+      }
+      const verdict = extractWorkflowVerdict(text);
+      writeContextResult(ctx, slots, text, verdict);
+      lastSlot = slot;
+      saveSessionThrottled(session, { force: true });
+      return null;
+    }
 
     const roleConfig: AgentConfig = {
       ...config,
@@ -283,8 +351,102 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
     saveSessionThrottled(session, { force: true });
 
     const verdict = extractWorkflowVerdict(result.text);
-    ctx.roles[slot] = { output: result.text, verdict };
+    writeContextResult(ctx, slots, result.text, verdict);
     lastSlot = slot;
+    return null;
+  }
+
+  function nodeToStep(nodeId: string, node: WorkflowNode): WorkflowStep {
+    return {
+      role: node.role,
+      input: node.input,
+      as: node.as,
+      mode: node.mode,
+    };
+  }
+
+  async function runDagMode(): Promise<WorkflowResult | null> {
+    const edges = definition.edges ?? [];
+    const edgeState = new Map<string, DagEdgeState>();
+    const nodeVisits = new Map<string, number>();
+    const finished = new Set<string>();
+    const skipped = new Set<string>();
+    const running = new Set<string>();
+
+    let guard = 0;
+    const maxIterations = Object.keys(definition.nodes ?? {}).length * 30 + 20;
+
+    while (guard++ < maxIterations) {
+      const { ready, toSkip } = findReadyAndSkippable(
+        definition,
+        edgeState,
+        nodeVisits,
+        finished,
+        skipped,
+        running,
+      );
+
+      for (const id of toSkip) {
+        if (skipped.has(id)) continue;
+        skipped.add(id);
+        waiveOutgoingFromSkipped(id, edges, edgeState);
+      }
+
+      if (ready.length === 0) {
+        if (toSkip.length > 0) continue;
+        break;
+      }
+
+      for (const id of ready) running.add(id);
+
+      const results = await Promise.all(
+        ready.map(async (nodeId) => {
+          const node = definition.nodes![nodeId]!;
+          const step = nodeToStep(nodeId, node);
+          const clone: SessionFile = {
+            session_id: session.session_id,
+            user_id: session.user_id,
+            created_at: session.created_at,
+            updated_at: session.updated_at,
+            tasks: [],
+            current_messages: [],
+            llm_override: session.llm_override,
+            note: session.note,
+            skills_invoked: session.skills_invoked
+              ? [...session.skills_invoked]
+              : undefined,
+          };
+          const hb = await runRoleStep(
+            step,
+            node.mode === 'job' ? 'job' : 'dag',
+            undefined,
+            ready.length > 1 ? clone : undefined,
+            [nodeId],
+          );
+          return { nodeId, hb };
+        }),
+      );
+
+      for (const { nodeId, hb } of results) {
+        running.delete(nodeId);
+        if (hb) return hb;
+
+        nodeVisits.set(nodeId, (nodeVisits.get(nodeId) ?? 0) + 1);
+        const node = definition.nodes![nodeId]!;
+        const maxV = node.max_visits ?? 1;
+        const visits = nodeVisits.get(nodeId) ?? 0;
+
+        // Mark finished for join purposes (required edges) even if re-visitable via optional edges
+        finished.add(nodeId);
+        settleOutgoingEdges(nodeId, edges, edgeState, ctx);
+
+        // Allow another visit if under max_visits and a loop edge may fire later
+        if (visits < maxV) {
+          finished.delete(nodeId);
+        }
+      }
+    }
+
     return null;
   }
 
@@ -381,8 +543,13 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
     throw new Error('Invalid workflow flow item (expected step, loop, parallel, or switch)');
   }
 
-  const early = await runFlowItems(definition.flow, 'role');
-  if (early) return early;
+  if (definition.nodes && definition.entry) {
+    const dagHb = await runDagMode();
+    if (dagHb) return dagHb;
+  } else {
+    const early = await runFlowItems(definition.flow ?? [], 'role');
+    if (early) return early;
+  }
 
   const finalText = lastSlot ? (ctx.roles[lastSlot]?.output ?? '') : '';
 

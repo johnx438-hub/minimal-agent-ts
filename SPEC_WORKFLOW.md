@@ -2,7 +2,7 @@
 
 > **定位**: 多角色 `runWorkflow` 与 spawn 预设如何共用「人设 + 工具」真源；编排 JSON 风格对齐 `agent.json`；DAG 变体分阶段演进。  
 > **原则**: profile 共用、编排分离；兼容现有 `flow[]` + `loop`；先 W1 再并行/分支。  
-> **状态**: Draft v0.2（2026-07-15）· **W1 ✅ · W2 ✅**  
+> **状态**: Draft v0.3（2026-07-15）· **W1–W3 ✅**  
 > **代码锚点**: `src/workflow/*` · `src/spawn/load-preset.ts` · `agent.json` `spawn_presets` · `agents/` · `roles/` · `workflows/`  
 > **相关**: [SPEC_CONTEXT](./SPEC_CONTEXT_MANAGEMENT.md)（role 仍走 `runAgent` + 指针化）· [docs/ROADMAP.md](./docs/ROADMAP.md)
 
@@ -226,20 +226,45 @@ type WhenClause = { path: string; eq: string };
 }
 ```
 
-### 7.3 W3 — 可选真 DAG / job 节点
+### 7.3 W3 — DAG + job 节点 + 注册表（✅）
 
-- `nodes` + `edges` + `entry`（与 `flow` 互斥）  
-- 或 step `mode: "job"` → `spawn_background`，join 等 job 完成  
+**互斥**：`flow[]` **或** `nodes` + `edges` + `entry`（不可同时）。
 
-仅在 W2 不够用时立项。
+```jsonc
+{
+  "name": "dag-review",
+  "roles": { "planner": { "preset": "skeleton-reader" }, "worker": { "preset": "dev-worker" }, … },
+  "entry": "plan",
+  "nodes": {
+    "plan": { "role": "planner", "input": "{{user_task}}" },
+    "impl": { "role": "worker", "as": "worker", "input": "{{plan.output}}", "max_visits": 3 },
+    "review": { "role": "reviewer", "input": "{{worker.output}}", "max_visits": 3 }
+  },
+  "edges": [
+    { "from": "plan", "to": "impl" },
+    { "from": "impl", "to": "review" },
+    { "from": "review", "to": "impl", "when": { "path": "reviewer.verdict", "eq": "needs_revision" }, "max_visits": 2 }
+  ]
+}
+```
 
-### 7.4 W2 验收
+| 能力 | 行为 |
+|------|------|
+| **join** | 无 `when` 的边为 **必选**：source 完成且边 fired 后后继可跑 |
+| **条件边** | 有 `when`：source 完成后 fire/waive；**不阻塞**首次仅靠必选边的激活 |
+| **max_visits** | 节点/边上限制循环次数 |
+| **ctx 键** | 写入 `as`（若有）+ **node id**（模板 `{{plan.output}}`） |
+| **mode: "job"** | step/node 走 `spawn_background` 并 **await** 结果（文本进 ctx） |
+| **注册表** | `agent.json` `workflows: { "name": "path.json" }` + `workflow_dirs`；`--workflow name` |
 
-- [x] `when: { path, eq }` 与字符串形式等价  
-- [x] `as` 写入独立 ctx slot；模板 `{{slot.output}}`  
-- [x] `parallel` 多步完成且不互相覆盖（靠 `as`）  
-- [x] `switch` 按 verdict 选分支  
-- [x] 单测 `tests/workflow-flow.test.ts`  
+示例文件：`workflows/dag-review.json`。
+
+### 7.4 W2 / W3 验收
+
+- [x] W2：`when` 对象、`as`、`parallel`、`switch`  
+- [x] W3：DAG 加载与就绪判定单测；`resolveWorkflowRef` 注册名  
+- [x] `flow` 与 `nodes` 互斥校验  
+- [x] job mode 接线（registry.start + await）
 
 ---
 
@@ -259,8 +284,8 @@ type WhenClause = { path: string; eq: string };
 | 阶段 | 内容 | 状态 |
 |------|------|------|
 | **W1** | `resolveAgentProfile`；workflow `preset`；路径 cwd+兼容；shell 策略；示例迁移 | ✅ `src/agent-profile.ts` |
-| **W2** | `when` 对象；`parallel` + `as`；`switch` | ✅ `runner` / `template` |
-| **W3** | nodes/edges 或 job 节点；workflows 注册表 | 规划 |
+| **W2** | `when` 对象；`parallel` + `as`；`switch` | ✅ |
+| **W3** | nodes/edges/entry；`mode: job`；workflows 注册表 | ✅ `dag.ts` + `resolveWorkflowRef` |
 
 ---
 
@@ -268,7 +293,8 @@ type WhenClause = { path: string; eq: string };
 
 | 日期 | 版本 | 说明 |
 |------|------|------|
-| 2026-07-15 | v0.2 | **W2**：parallel/switch/as、结构化 when；session clone 防竞态 |
+| 2026-07-15 | v0.3 | **W3**：DAG 执行、job 节点、workflows 注册解析 |
+| 2026-07-15 | v0.2 | **W2**：parallel/switch/as、结构化 when |
 | 2026-07-15 | v0.1 | 初稿：W1 契约 + W2/W3 轮廓 |
 
 ---

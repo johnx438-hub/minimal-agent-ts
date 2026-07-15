@@ -82,6 +82,7 @@ import {
 } from './spawn/job-query.js';
 import type { SpawnJobMeta } from './spawn/job-store.js';
 import { listWorkflowMetaForCwd } from './workflow/catalog.js';
+import { resolveWorkflowRef } from './workflow/load-workflow.js';
 import { runWorkflow } from './workflow/runner.js';
 import { appendTaskTranscript } from './session-transcript.js';
 import { flushTranscriptWrites } from './session-transcript-queue.js';
@@ -946,7 +947,11 @@ export class AgentRuntime {
   }
 
   listWorkflowMeta() {
-    return listWorkflowMetaForCwd(this.config.cwd);
+    const dirs = [
+      ...(this.pluginConfig.workflow_dirs ?? []),
+      'workflows',
+    ];
+    return listWorkflowMetaForCwd(this.config.cwd, dirs);
   }
 
   getSessionOverview(sessionId: string): SessionOverview | null {
@@ -981,13 +986,7 @@ export class AgentRuntime {
   }
 
   resolveWorkflowPath(nameOrPath: string): string | null {
-    let path = nameOrPath;
-    if (!path.includes('/') && !path.endsWith('.json')) {
-      path = `workflows/${path}.json`;
-    }
-    const resolved = isAbsolute(path) ? path : resolve(this.config.cwd, path);
-    if (!existsSync(resolved)) return null;
-    return resolved;
+    return resolveWorkflowRef(nameOrPath, this.config.cwd, this.pluginConfig);
   }
 
   listToolNames(): string[] {
