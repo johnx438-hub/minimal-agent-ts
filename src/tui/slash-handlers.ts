@@ -592,7 +592,9 @@ export async function handlePiSlash(
       } else {
         runtime.armWorkflow(path);
         uiState.armedWorkflow = picked.value;
-        say(`Armed workflow: ${picked.value} — next line is the task`);
+        say(
+          `Workflow ON: ${picked.value} — next message is the task (then auto OFF). /workflow off to cancel.`,
+        );
       }
     }
     resumeEditor();
@@ -604,14 +606,18 @@ export async function handlePiSlash(
     if (name === null) {
       runtime.armWorkflow(null);
       uiState.armedWorkflow = null;
-      say('Workflow disarmed');
+      say('Workflow OFF — normal chat');
+      printStatus();
     } else {
       const path = runtime.resolveWorkflowPath(name);
       if (!path) say(`Workflow not found: ${name}`);
       else {
         runtime.armWorkflow(path);
         uiState.armedWorkflow = name;
-        say(`Armed workflow: ${name} — next line is the task`);
+        say(
+          `Workflow ON: ${name} — next message is the task (then auto OFF). /workflow off to cancel.`,
+        );
+        printStatus();
       }
     }
     resumeEditor();
@@ -625,6 +631,9 @@ export async function handlePiSlash(
       resumeEditor();
       return;
     }
+    // One-shot run: do not leave runtime armed.
+    runtime.armWorkflow(null);
+    uiState.armedWorkflow = null;
     await runTask(result.runWorkflow.task, path);
     return;
   }

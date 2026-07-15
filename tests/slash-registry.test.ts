@@ -39,6 +39,9 @@ describe('slash registry', () => {
   it('resolves aliases to primary commands', () => {
     assert.equal(parseSlashLine('/r last')?.message, '__resume_last__');
     assert.equal(parseSlashLine('/wf')?.message, '__workflow_list__');
+    assert.equal(parseSlashLine('/workflow off')?.armWorkflow, null);
+    assert.equal(parseSlashLine('/wf disarm')?.armWorkflow, null);
+    assert.equal(parseSlashLine('/workflow clear')?.armWorkflow, null);
     assert.equal(parseSlashLine('?')?.message, '__help__');
     assert.equal(parseSlashLine('/mcp')?.message, '__mcp_list__');
     assert.equal(parseSlashLine('/mcp list')?.message, '__mcp_list__');

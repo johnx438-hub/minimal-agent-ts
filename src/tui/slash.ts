@@ -203,8 +203,14 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
   {
     command: '/workflow',
     aliases: ['/wf'],
-    hintZh: '选择并武装 workflow',
-    hintEn: 'Pick and arm a workflow',
+    hintZh: '选择并武装 workflow（下一条消息=任务，用完自动 off）',
+    hintEn: 'Pick and arm a workflow (next line = task; auto-off after run)',
+  },
+  {
+    command: '/workflow off',
+    aliases: ['/wf off', '/workflow disarm'],
+    hintZh: '关闭武装（回到普通对话）',
+    hintEn: 'Disarm workflow (normal chat)',
   },
   {
     command: '/workflow !<name>',
@@ -215,8 +221,8 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
   {
     command: '/workflow run <name> <task>',
     autocomplete: false,
-    hintZh: '带检查点运行 workflow',
-    hintEn: 'Run workflow with checkpoint',
+    hintZh: '带检查点运行 workflow（不保留武装）',
+    hintEn: 'Run workflow with checkpoint (does not stay armed)',
   },
   {
     command: '/workflow <name> [task]',
@@ -612,7 +618,12 @@ export function parseSlashLine(line: string): SlashResult | null {
         return { handled: true, message: '__workflow_list__' };
       }
       const sub = parts[1];
-      if (sub.toLowerCase() === 'run') {
+      const subLower = sub.toLowerCase();
+      // Explicit off (arm is one-shot by default, not sticky mode).
+      if (subLower === 'off' || subLower === 'disarm' || subLower === 'clear') {
+        return { handled: true, armWorkflow: null };
+      }
+      if (subLower === 'run') {
         const name = parts[2];
         const task = parts.slice(3).join(' ');
         if (!name || !task) {

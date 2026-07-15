@@ -337,11 +337,17 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
       say('(injecting brief context)', true);
     }
     chat.appendUserMessage(task);
+    // One-shot arm: clear UI + runtime before the run so the next line is normal chat.
+    const hadWorkflow = Boolean(workflowPath) || Boolean(runtime.getArmedWorkflow());
     uiState.armedWorkflow = null;
+    runtime.armWorkflow(null);
     printStatus();
     try {
       if (workflowPath) {
         await runtime.runWorkflowTask(task, workflowPath);
+        if (hadWorkflow) {
+          say('Workflow finished — disarmed (normal chat). /workflow to arm again.', true);
+        }
       } else {
         await runtime.runTask(task);
       }

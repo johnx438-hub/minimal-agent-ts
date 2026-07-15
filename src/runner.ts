@@ -1121,6 +1121,10 @@ export class AgentRuntime {
       throw new Error('Agent is already running');
     }
 
+    // One-shot: arm is only for the next task. Direct runWorkflowTask must not leave
+    // runtime armed (TUI used to clear uiState only → next chat re-entered workflow).
+    this.armedWorkflowPath = null;
+
     this.resetWebSearchTaskBudget();
     const session = this.ensureSession();
     // Spawn-style: keep parent transcript; roles run isolated inside runWorkflow.
