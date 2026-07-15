@@ -22,7 +22,28 @@ TypeScript 写的 Agent 框架，目标针对长程任务三大顽疾：**越跑
 
 ---
 
-## 五层意外特性金字塔
+## 快速开始
+
+```bash
+git clone https://github.com/johnx438-hub/minimal-agent-ts.git
+cd minimal-agent-ts
+npm install
+
+# 1. 配置环境变量：密钥只写在.env里，绝对不要提交到git
+cp .env.example .env
+# 编辑.env，至少填一个可用的API Key，默认配置用DeepSeek：
+# DEEPSEEK_API_KEY=sk-xxx
+# 可选其他Key：OPENROUTER_API_KEY=xxx / ZAI_API_KEY=xxx / XAI_API_KEY=xxx
+
+# 2. 启动
+npm run tui                   # 推荐：启动交互式TUI
+# 或者直接命令行跑单次任务：
+npm start -- "读一下README，用三句话总结这个项目是做什么的"
+```
+
+---
+
+## 五层价值金字塔
 
 目标痛点催生了五层架构，从地基到塔尖，每一层都踩在别人容易踩偏的点上：
 
@@ -72,17 +93,6 @@ TypeScript 写的 Agent 框架，目标针对长程任务三大顽疾：**越跑
 > 2. 告诉 Agent："帮我把 xxx 的 skill 关联到 skills 文件夹"，它会自己搞定  
 > ——— 反正 Agent 就是干这个的，何必再写一个安装器 😄
 
-### 推荐社区 Skill
-
-除核心自带外，`skills/` 里还附带了一些好用的社区 skill（需自行决定是否纳入 `.gitignore` 白名单）：
-
-| Skill | 用途 | 上游 / 致谢 |
-|-------|------|------------|
-| `opencli-usage` | OpenCLI 通用适配层 — 让 Agent 统一驱动网站、桌面应用、外部 CLI | [OpenCLI](https://github.com/johnx438-hub/opencli) |
-| `cli-web-search` | 跨平台 CLI 搜索引擎（Google/Bing/Brave/DuckDuckGo 等 7 种后端）+ MCP 支持 | [scottgl9/cli-web-search](https://github.com/scottgl9/cli-web-search)（Apache-2.0） |
-
-> 🙏 感谢 Scott Glover 及上述开源项目维护者。
-
 ---
 
 ## 当前特性
@@ -108,6 +118,24 @@ TypeScript 写的 Agent 框架，目标针对长程任务三大顽疾：**越跑
 > ⚠️ **API 并发限制**：如果用的是 DeepSeek / OpenRouter 等有限流 API（比如同一 API Key 只允许 1 个并发请求），后台模式下的并行子 Agent 会触发 429 错误。此时应在 Prompt 里明确指定 `spawn_agent`（同步模式），子 Agent 会排队串行执行。  
 > 当前框架**不会自动降级**——同步还是后台由 Agent 根据你的 Prompt 自行选择，所以想串行就说「用 spawn_agent 一个个做」。  
 > **后台通信机制**：后台子 Agent 不使用消息总线，而是通过文件事件流（`workspace/jobs/<id>/events.jsonl`）写入进度，结果落盘到 `report.md` / `result.json`。主 Agent 不会主动「监听」——想查看后台任务进度，请在本轮 Prompt 中要求 Agent 调用 `npm run spawn:status` 检查 `/jobs` 面板，或在下一轮对话中提醒它验收（读 report）或终止（`npm run spawn:kill`）已完成/跑偏的作业。
+
+---
+
+## FAQ
+
+### 为什么几乎 100% TypeScript？Go / Rust 不更快吗？
+
+Agent 框架的性能瓶颈不在 CPU，在 LLM API 延迟。主循环快 10 倍也没意义——还是在等 HTTP 响应。TypeScript 的 async/await 处理 I/O 并发天然顺手，JSON 操作零解析成本，npm 生态里 LLM SDK、MCP Server 最先支持，TS 迭代改进调试更快。
+
+### 现在都有 1M 上下文窗口了，指针卡片还有必要吗？
+
+1M 上下文解决的是 **「能不能装下」**，指针卡片解决的是 **「装下之后还能不能有效思考」**。两者不是替代关系：
+
+- **经济账**：用 1M 上下文跑 100 轮，每轮重编码全量历史，token 开销线性增长。指针化让上下文体量保持稳定。
+- **质量账**：LLM 在长上下文中的注意力不是均匀分布的（参见「Lost in the Middle」），历史越长越容易忽略关键信息。指针卡片保证当前上下文只有「此刻相关的东西」。
+- **前缀缓存账**：指针卡片是 hash 引用的，稳定前缀带来高 KV-cache 命中率。稳态会话实测 **95%+** 命中——越跑越快，越跑越便宜。而全量上下文每轮前缀都在变，cache 命中为零。
+
+**1M 是更大的仓库，指针卡片是仓库里的索引系统，让大模型注意力能放在当前任务，且随时清楚已发生的事件结构顺序。**
 
 ---
 
@@ -183,27 +211,6 @@ Skill 同理——在 `skills/<name>/SKILL.md` 写一份 Markdown，Agent 通过
 
 ---
 
-## 快速开始
-
-```bash
-git clone https://github.com/johnx438-hub/minimal-agent-ts.git
-cd minimal-agent-ts
-npm install
-
-# 1. 配置环境变量：密钥只写在.env里，绝对不要提交到git
-cp .env.example .env
-# 编辑.env，至少填一个可用的API Key，默认配置用DeepSeek：
-# DEEPSEEK_API_KEY=sk-xxx
-# 可选其他Key：OPENROUTER_API_KEY=xxx / ZAI_API_KEY=xxx / XAI_API_KEY=xxx
-
-# 2. 启动
-npm run tui                   # 推荐：启动交互式TUI
-# 或者直接命令行跑单次任务：
-npm start -- "读一下README，用三句话总结这个项目是做什么的"
-```
-
----
-
 ## 自定义 API Key 与 Profile
 
 密钥**只写在 `.env`**，不在 `agent.json` 里硬编码。`agent.json` 通过 `api_key_env` 字段声明"从哪个环境变量取密钥"。
@@ -253,9 +260,9 @@ MY_GW_KEY=sk-xxxxxxxx
 
 ### CloakFetch（网页抓取）
 
-- **依赖**：Python 3 + [`cloak_fetch.py`](https://github.com/Agents365-ai/cloakFetch) 脚本（或同目录的 `cloak_fetch.sh`）
+- **依赖**：Python 3 + [`cloak_fetch.py`](https://github.com/Agents365-ai/cloakFetch) 脚本（或同目录的 `cloak_fetch.py`）
 - **作用**：带 JS 渲染的网页抓取（`web_fetch` 的 L2 通道），没有时自动退回纯 HTTP fetch
-- **自动探测**：按优先级搜索 → 环境变量 `CLOAK_FETCH_SCRIPT` → `skills/cloak-fetch/` → `~/.claude/skills/` → `~/github/cloakFetch/` → Windows 常见路径
+- **自动探测**：按优先级搜索 → 环境变量 `CLOAK_FETCH_SCRIPT` → `skills/cloak-fetch/` → `~/.claude/skills/` → `~/github/cloakFetch/`
 - **探测逻辑**：`src/tools/cloak-resolve.ts`（全平台兼容 Linux / macOS / Windows / Git Bash）
 
 ### ddgr（网页搜索）
@@ -273,22 +280,31 @@ MY_GW_KEY=sk-xxxxxxxx
 2. **或在 `agent.json` 中指定路径**：`web_search.ddgr_path`、`cloak_fetch.script_path`
 3. **让 Agent 自己修**：探测源码都在 `src/tools/cloak-resolve.ts`，告诉 Agent "帮我把 ddgr 路径配好"，它会读代码、找到对应配置项、帮你改
 
+---
+
+## 推荐社区 Skill
+
+除核心自带外，`skills/` 里还附带了一些好用的社区 skill（需自行决定是否纳入 `.gitignore` 白名单）：
+
+| Skill | 用途 | 上游 / 致谢 |
+|-------|------|------------|
+| `opencli-usage` | OpenCLI 通用适配层 — 让 Agent 统一驱动网站、桌面应用、外部 CLI | [OpenCLI](https://github.com/johnx438-hub/opencli) |
+| `cli-web-search` | 跨平台 CLI 搜索引擎（Google/Bing/Brave/DuckDuckGo 等 7 种后端）+ MCP 支持 | [scottgl9/cli-web-search](https://github.com/scottgl9/cli-web-search)（Apache-2.0） |
+
+> 🙏 感谢 Scott Glover 及上述开源项目维护者。
+>
 > 🙏 感谢 [Agents365-ai/cloakFetch](https://github.com/Agents365-ai/cloakFetch)（MIT）提供的 CloakBrowser 抓取方案，本项目的 `skills/cloak-fetch/` 及 L2 抓取通道基于此构建。
 
 ---
 
-## FAQ
+## 致谢
 
-### 为什么几乎 100% TypeScript？Go / Rust 不更快吗？
+本项目开发过程中深度使用了以下模型，特此感谢：
 
-Agent 框架的性能瓶颈不在 CPU，在 LLM API 延迟。主循环快 10 倍也没意义——还是在等 HTTP 响应。TypeScript 的 async/await 处理 I/O 并发天然顺手，JSON 操作零解析成本，npm 生态里 LLM SDK、MCP Server 最先支持，ts迭代改进调试更快。
+| 模型 | 角色 |
+|------|------|
+| **Grok 4.5 + Composer 2.5** | 主力开发 — 大部分源码由其直接生成 |
+| **DeepSeek V4 Pro** | 完整驻扎体验 + 代码审查 + 长期运行验证 |
+| **豆包 2.1 Pro** | 文档与 README 文本润色 |
 
-### 现在都有 1M 上下文窗口了，指针卡片还有必要吗？
-
-1M 上下文解决的是 **「能不能装下」**，指针卡片解决的是 **「装下之后还能不能有效思考」**。两者不是替代关系：
-
-- **经济账**：用 1M 上下文跑 100 轮，每轮重编码全量历史，token 开销线性增长。指针化让上下文体量保持稳定。
-- **质量账**：LLM 在长上下文中的注意力不是均匀分布的（参见「Lost in the Middle」），历史越长越容易忽略关键信息。指针卡片保证当前上下文只有「此刻相关的东西」。
-- **前缀缓存账**：指针卡片是 hash 引用的，稳定前缀带来高 KV-cache 命中率。稳态会话实测 **95%+** 命中——越跑越快，越跑越便宜。而全量上下文每轮前缀都在变，cache 命中为零。
-
-**1M 是更大的仓库，指针卡片是仓库里的索引系统，让大模型注意力能放在当前任务，且随时清楚已发生的事件结构顺序**
+> 一个 Agent 框架，由三个不同的 Agent 协作完成——这本身就是最好的证明。
