@@ -23,6 +23,16 @@ import {
   renderWorkflowTemplate,
   resolveSwitchOn,
 } from './template.js';
+import {
+  applyWorkflowEnvelope,
+  inferDutyHint,
+  roleCanWrite,
+} from './envelope.js';
+import {
+  WORKFLOW_HANDOFF_TOOL,
+  formatHandoffPayloadAsOutput,
+  type WorkflowRoleRuntime,
+} from './handoff-tool.js';
 import { extractWorkflowVerdict } from './verdict.js';
 import {
   buildHandbackWorkflowResult,
@@ -265,13 +275,22 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
       return null;
     }
 
+    const workflowRoleRuntime: WorkflowRoleRuntime = { handoff: null };
+    // Optional structured handoff for workflow roles only; final text still counts.
+    // Empty role.tools → undefined allowlist (all builtins) + handoff via workflowRole.
+    const toolAllowlist =
+      role.tools.length > 0
+        ? [...new Set([...role.tools, WORKFLOW_HANDOFF_TOOL])]
+        : undefined;
+
     const roleConfig: AgentConfig = {
       ...config,
       maxTurns: role.maxTurns ?? config.maxTurns,
-      toolAllowlist: role.tools.length > 0 ? role.tools : undefined,
+      toolAllowlist,
       sessionId: session.session_id,
       spawnDepth: Math.max(1, config.spawnDepth ?? 0),
       spawnShellPolicy: role.shellPolicy,
+      workflowRole: workflowRoleRuntime,
     };
 
     if (config.llmPluginConfig) {
@@ -300,13 +319,24 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
       activeSession.current_messages = [];
     }
 
+    const systemPrompt = applyWorkflowEnvelope(role.systemPrompt, {
+      workflowName: definition.name,
+      role: step.role,
+      slot,
+      phase,
+      nodeId,
+      round,
+      canWrite: roleCanWrite(role.tools),
+      dutyHint: inferDutyHint(step.role),
+    });
+
     const result = await runAgent({
       prompt,
       config: roleConfig,
       session: activeSession,
       sessionId: session.session_id,
       stream,
-      systemPrompt: role.systemPrompt,
+      systemPrompt,
       isolated: true,
       signal: config.abortSignal,
       onStep,
@@ -354,9 +384,31 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
     }
     saveSessionThrottled(session, { force: true });
 
-    const verdict = extractWorkflowVerdict(result.text);
-    writeContextResult(ctx, slots, result.text, verdict);
+    // Structured handoff preferred; final text remains a valid handoff body.
+    const structured = workflowRoleRuntime.handoff;
+    const output = structured
+      ? formatHandoffPayloadAsOutput(structured)
+      : result.text;
+    const verdict =
+      structured?.verdict?.trim().toLowerCase() ||
+      extractWorkflowVerdict(output) ||
+      extractWorkflowVerdict(result.text);
+    writeContextResult(ctx, slots, output, verdict);
     lastSlot = slot;
+
+    if (verdict === 'needs_human') {
+      return returnHandback({
+        reason: 'needs_human',
+        detail:
+          structured?.open_questions?.trim() ||
+          structured?.summary?.trim() ||
+          'Role requested human clarification (needs_human).',
+        role: step.role,
+        round,
+        partial_output: output,
+      });
+    }
+
     return null;
   }
 

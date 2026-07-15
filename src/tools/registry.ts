@@ -23,6 +23,11 @@ import { SKILLS_TOOL_DEFINITIONS } from './skills-tool.js';
 import { WEB_FETCH_DEFINITIONS } from './web-fetch.js';
 import { WEB_SEARCH_DEFINITIONS } from './web-search.js';
 import { parseToolArgsJson } from './tool-args.js';
+import {
+  WORKFLOW_HANDOFF_DEFINITIONS,
+  WORKFLOW_HANDOFF_TOOL,
+  runWorkflowHandoffTool,
+} from '../workflow/handoff-tool.js';
 
 export { DEFAULT_BUILTIN_TOOLS };
 
@@ -143,6 +148,19 @@ export class ToolRegistry {
       this.mcpProvider.getDefinitions(ctx),
     );
 
+    // Workflow-only handoff tool (SPEC_WORKFLOW W4) — not a global builtin.
+    if (config.workflowRole && !seen.has(WORKFLOW_HANDOFF_TOOL)) {
+      const allowlist = config.toolAllowlist;
+      if (isRoleToolAllowlisted(WORKFLOW_HANDOFF_TOOL, allowlist)) {
+        for (const def of WORKFLOW_HANDOFF_DEFINITIONS) {
+          if (!seen.has(def.function.name)) {
+            seen.add(def.function.name);
+            defs.push(def);
+          }
+        }
+      }
+    }
+
     return defs;
   }
 
@@ -163,6 +181,10 @@ export class ToolRegistry {
       const allowlist = config.toolAllowlist;
       if (allowlist?.length && !isRoleToolAllowlisted(name, allowlist)) {
         return `error: tool ${name} is not allowed for this role`;
+      }
+
+      if (name === WORKFLOW_HANDOFF_TOOL) {
+        return runWorkflowHandoffTool(args, config.workflowRole);
       }
 
       const ctx = { ...this.providerContext(), config };

@@ -3,8 +3,8 @@
   "share_session": false,
   "roles": {
     "planner": {
-      "preset": "skeleton-reader",
-      "tools": ["read_file", "grep_search", "list_files", "recall_query"],
+      "prompt_file": "roles/planner.md",
+      "tools": ["read_file", "grep_search", "list_files", "recall_query", "diff_file"],
       "max_turns": 50
     },
     "worker": {
@@ -12,7 +12,7 @@
     },
     "reviewer": {
       "prompt_file": "roles/reviewer.md",
-      "tools": ["read_file", "grep_search", "diff_file", "recall_query"],
+      "tools": ["read_file", "grep_search", "diff_file", "recall_query", "list_files"],
       "max_turns": 50
     }
   },
@@ -20,18 +20,18 @@
   "nodes": {
     "plan": {
       "role": "planner",
-      "input": "{{user_task}}"
+      "input": "## Role: planner (workflow step plan)\nUpstream: none. Downstream: worker will implement ONLY your plan.\n\nProduce an executable numbered plan (paths, changes, how to verify).\nInclude ## Assumptions and ## Open questions if the goal is incomplete.\nDo NOT implement, edit files, or claim the task is done.\nPrefer workflow_handoff(kind=plan) then stop tools.\n\n## User task\n{{user_task}}"
     },
     "impl": {
       "role": "worker",
       "as": "worker",
-      "input": "## Plan\n{{plan.output}}\n\n## Task\n{{user_task}}\n\nImplement the plan.",
+      "input": "## Role: worker (workflow step impl)\nPrimary source of truth: ## Plan below. User task is context only.\nDo NOT re-explore from scratch or rewrite the plan. Implement the plan.\nEnd with Done / paths / how to verify. Prefer workflow_handoff(kind=impl_summary).\n\n## Plan\n{{plan.output}}\n\n## User task\n{{user_task}}",
       "max_visits": 3
     },
     "review": {
       "role": "reviewer",
       "as": "reviewer",
-      "input": "## Work\n{{worker.output}}\n\nReview. End with JSON: {\"verdict\":\"approved\"|\"needs_revision\",\"notes\":\"...\"}",
+      "input": "## Role: reviewer (workflow step review)\nVerify the work. Do NOT re-implement.\nEnd with verdict: approved | needs_revision | needs_human (use needs_human when the goal is unclear rather than looping forever).\nPrefer workflow_handoff(kind=review, verdict=...).\n\n## Work\n{{worker.output}}\n\n## Original task\n{{user_task}}",
       "max_visits": 3
     }
   },

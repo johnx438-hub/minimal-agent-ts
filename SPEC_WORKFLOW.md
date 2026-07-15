@@ -286,7 +286,7 @@ type WhenClause = { path: string; eq: string };
 | **W1** | `resolveAgentProfile`；workflow `preset`；路径 cwd+兼容；shell 策略；示例迁移 | ✅ `src/agent-profile.ts` |
 | **W2** | `when` 对象；`parallel` + `as`；`switch` | ✅ |
 | **W3** | nodes/edges/entry；`mode: job`；workflows 注册表 | ✅ `dag.ts` + `resolveWorkflowRef` |
-| **W4** | Hands-off 预设流水线 + role 信封（§11）；不污染主 session system | 设计 ✅ · 实现 ⏳ |
+| **W4** | Hands-off 预设流水线 + role 信封（§11）；不污染主 session system | 设计 ✅ · **W4a/b 实现中**（信封 + handoff 工具 + 示例） |
 
 ---
 
@@ -416,12 +416,13 @@ ctx.roles[slot].verdict← 可选机器字段（分支）
 
 ### 11.6 实现切片（建议顺序，未开工）
 
-| 切片 | 内容 |
-|------|------|
-| **W4a** | 示例 JSON：正确 profile + 步骤 input 合同；`roles/*` 强化交接口吻 |
-| **W4b** | `buildWorkflowRoleEnvelope` + 拼入 role `systemPrompt`；隔离单测 |
-| **W4c** | 可选：output 小节轻量提示（plan/worker/reviewer）；不做重型 schema 引擎 |
-| **W4d** | 文档 / skill：hands-off 用法；明确 vs 循环 goal |
+| 切片 | 内容 | 状态 |
+|------|------|------|
+| **W4a** | 示例 JSON：`roles/planner.md` 等 + 步骤 input 合同 | ✅ |
+| **W4b** | `envelope` 拼入 role system；Claude 式「停工具→交接」文案；**不**作废 session | ✅ |
+| **W4b′** | 可选 `workflow_handoff`（仅 `config.workflowRole`）；final text 仍有效；`needs_human` handback | ✅ |
+| **W4c** | 更重的 section 校验（可选） | ⏳ |
+| **W4d** | 文档 / skill：hands-off 用法 | 部分 ✅ |
 
 **非目标（W4）**：可视化编辑器、任意表达式语言、默认全量 session 共享、无 cap 的自动重试 goal。
 

@@ -3,8 +3,8 @@
   "share_session": false,
   "roles": {
     "planner": {
-      "preset": "skeleton-reader",
-      "tools": ["read_file", "grep_search", "list_files", "recall_query"],
+      "prompt_file": "roles/planner.md",
+      "tools": ["read_file", "grep_search", "list_files", "recall_query", "diff_file"],
       "max_turns": 50
     },
     "worker": {
@@ -12,19 +12,22 @@
     },
     "reviewer": {
       "prompt_file": "roles/reviewer.md",
-      "tools": ["read_file", "grep_search", "diff_file", "recall_query"],
+      "tools": ["read_file", "grep_search", "diff_file", "recall_query", "list_files"],
       "max_turns": 50
     }
   },
   "flow": [
-    { "role": "planner", "input": "{{user_task}}" },
+    {
+      "role": "planner",
+      "input": "## Role: planner\nDownstream worker will implement ONLY your plan. Do not implement.\nNumbered plan + ## Assumptions / ## Open questions if needed.\nPrefer workflow_handoff(kind=plan).\n\n## User task\n{{user_task}}"
+    },
     {
       "role": "worker",
-      "input": "## Plan (from planner)\n{{planner.output}}\n\n## Original task\n{{user_task}}\n\nExecute the plan. Summarize files changed."
+      "input": "## Role: worker\nPrimary: ## Plan. Do not re-plan from scratch. Prefer workflow_handoff(kind=impl_summary).\n\n## Plan\n{{planner.output}}\n\n## User task\n{{user_task}}"
     },
     {
       "role": "reviewer",
-      "input": "## Work output\n{{worker.output}}\n\nReview the changes. End with JSON: {\"verdict\":\"approved\"|\"needs_revision\",\"notes\":\"...\"}"
+      "input": "## Role: reviewer\nVerify only. Verdict: approved | needs_revision | needs_human.\nPrefer workflow_handoff(kind=review, verdict=...).\n\n## Work\n{{worker.output}}\n\n## User task\n{{user_task}}"
     },
     {
       "loop": {
@@ -33,11 +36,11 @@
         "steps": [
           {
             "role": "worker",
-            "input": "## Reviewer feedback\n{{reviewer.output}}\n\n## Original task\n{{user_task}}\n\nApply fixes and summarize."
+            "input": "## Role: worker (revision)\nApply reviewer feedback. Prefer workflow_handoff(kind=impl_summary).\n\n## Reviewer feedback\n{{reviewer.output}}\n\n## User task\n{{user_task}}"
           },
           {
             "role": "reviewer",
-            "input": "## Revised work\n{{worker.output}}\n\nRe-review. End with JSON: {\"verdict\":\"approved\"|\"needs_revision\",\"notes\":\"...\"}"
+            "input": "## Role: reviewer (re-review)\nVerdict: approved | needs_revision | needs_human.\n\n## Revised work\n{{worker.output}}\n\n## User task\n{{user_task}}"
           }
         ]
       }

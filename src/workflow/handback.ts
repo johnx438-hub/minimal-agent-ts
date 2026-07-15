@@ -62,6 +62,13 @@ export function formatWorkflowHandbackMessage(hb: WorkflowHandback): string {
         `Detail: ${hb.detail}`,
       );
       break;
+    case 'needs_human':
+      lines.push(
+        `Role "${hb.role ?? 'unknown'}" needs human input (goal unclear or blocked).`,
+        `Detail: ${hb.detail}`,
+        'Clarify the task in chat, then re-arm the workflow if needed.',
+      );
+      break;
   }
 
   if (hb.partial_output) {

@@ -158,6 +158,11 @@ export interface AgentConfig {
   sessionReasoningLevel?: string;
   /** agent.json snapshot for spawn/workflow per-preset LLM resolution. */
   llmPluginConfig?: AgentPluginConfig;
+  /**
+   * Set only for workflow role steps (SPEC_WORKFLOW W4).
+   * Enables workflow_handoff tool; never set on main-agent runs.
+   */
+  workflowRole?: import('./workflow/handoff-tool.js').WorkflowRoleRuntime;
 }
 
 export type SpawnLifecycleEvent =

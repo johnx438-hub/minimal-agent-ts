@@ -170,7 +170,8 @@ export type RuntimeEvent =
         | 'max_rounds_exhausted'
         | 'turn_ceiling'
         | 'agent_stopped'
-        | 'dag_exhausted';
+        | 'dag_exhausted'
+        | 'needs_human';
       detail: string;
       role?: string;
       round?: number;
