@@ -203,14 +203,16 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
   {
     command: '/workflow',
     aliases: ['/wf'],
-    hintZh: '选择并武装 workflow（下一条消息=任务，用完自动 off）',
-    hintEn: 'Pick and arm a workflow (next line = task; auto-off after run)',
+    hintZh: '选择并武装（下一条=任务，用完自动 off）',
+    hintEn: 'Pick and arm (next line = task; auto-off after run)',
   },
   {
+    // Distinct autocomplete name — default would be first token "workflow" and
+    // collide with /workflow, so Enter always opened the picker.
     command: '/workflow off',
-    aliases: ['/wf off', '/workflow disarm'],
-    hintZh: '关闭武装（回到普通对话）',
-    hintEn: 'Disarm workflow (normal chat)',
+    autocompleteName: 'workflow off',
+    hintZh: '取消武装（回到普通对话）',
+    hintEn: 'Disarm (return to normal chat)',
   },
   {
     command: '/workflow !<name>',

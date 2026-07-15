@@ -82,7 +82,12 @@ describe('slash registry', () => {
 
     const workflow = zh.find((i) => i.name === 'workflow');
     assert.ok(workflow);
-    assert.match(workflow!.description, /workflow/i);
+    assert.match(workflow!.description, /武装|arm/i);
+    // Must not share the bare name "workflow" or Enter always opens the picker.
+    const workflowOff = zh.find((i) => i.name === 'workflow off');
+    assert.ok(workflowOff, 'expected distinct autocomplete name "workflow off"');
+    assert.match(workflowOff!.description, /取消武装|Disarm|普通对话|normal chat/i);
+    assert.equal(zh.filter((i) => i.name === 'workflow').length, 1);
 
     const actions = SLASH_HELP_LINES.find((l) => l.includes('/actions'));
     assert.ok(actions);
