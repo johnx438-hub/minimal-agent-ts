@@ -43,6 +43,11 @@ import {
 } from './tools/tool-args.js';
 import { splitEditToolOutput } from './tools/edit-display.js';
 import { splitWriteToolOutput } from './tools/write-display.js';
+import {
+  isSuccessfulSkillInvokeOutput,
+  parseInvokeSkillArgs,
+  recordSessionSkillInvoked,
+} from './session-skills.js';
 import { TaskTracker, type TaskBlock } from './task-tracker.js';
 import type { AgentConfig, ChatMessage, TaskSummaryDoc, SessionFile, ToolCall } from './types.js';
 
@@ -440,6 +445,20 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
               config.previewPolicy ?? DEFAULT_PREVIEW_POLICY,
             )
           : undefined;
+
+        if (
+          session &&
+          name === 'invoke_skill' &&
+          isSuccessfulSkillInvokeOutput(output)
+        ) {
+          const { name: skillName, query } = parseInvokeSkillArgs(args);
+          recordSessionSkillInvoked(session, {
+            name: skillName,
+            action_id: actionId,
+            query,
+            turn,
+          });
+        }
 
         resultById.set(call.id, { output, actionId });
       }

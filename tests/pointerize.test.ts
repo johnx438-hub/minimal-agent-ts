@@ -41,10 +41,11 @@ describe('shouldPointerize', () => {
     assert.equal(shouldPointerize('edit_file', `ok: edited ${huge}`), false);
   });
 
-  it('never pointerizes write_file, edit_file, or apply_patch', () => {
+  it('never pointerizes write_file, edit_file, apply_patch, or invoke_skill', () => {
     assert.equal(shouldPointerize('write_file', chars(5000)), false);
     assert.equal(shouldPointerize('edit_file', lines(100)), false);
     assert.equal(shouldPointerize('apply_patch', chars(5000)), false);
+    assert.equal(shouldPointerize('invoke_skill', chars(20_000)), false);
   });
 
   it('uses 400-char default for unknown tools', () => {

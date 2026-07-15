@@ -9,7 +9,13 @@ import { assembleApiMessages } from './assemble.js';
 import { NOTICE_PREFIX, TASK_SUMMARY_PREFIX } from './estimate.js';
 import { compactPointerCardsUntilUnderBudget } from './pointer-compact.js';
 import { applyPrune } from './prune.js';
-import type { ChatMessage, SessionFile, TaskSummaryDoc } from '../types.js';
+import { formatSkillsInvokedForNotice } from '../session-skills.js';
+import type {
+  ChatMessage,
+  SessionFile,
+  SessionSkillInvoked,
+  TaskSummaryDoc,
+} from '../types.js';
 
 export function hasCompressionNotice(messages: ChatMessage[]): boolean {
   return messages.some((m) => (m.content ?? '').startsWith(NOTICE_PREFIX));
@@ -30,14 +36,22 @@ export function buildTaskSummaryMessages(tasks: TaskSummaryDoc[]): ChatMessage[]
   }));
 }
 
-export function appendCompressionNotice(topics: string[]): ChatMessage {
+export function appendCompressionNotice(
+  topics: string[],
+  skillsInvoked?: SessionSkillInvoked[],
+): ChatMessage {
   const topicStr = topics.length > 0 ? topics.join(', ') : '(see task summaries above)';
+  let content =
+    `${NOTICE_PREFIX} Earlier conversation was compressed. ` +
+    `Large tool outputs appear as [action:…] cards — use recall_query(action_id=...) for details. ` +
+    `Topics discussed: ${topicStr}.`;
+  const skillsLine = formatSkillsInvokedForNotice(skillsInvoked);
+  if (skillsLine) {
+    content += ` ${skillsLine}`;
+  }
   return {
     role: 'user',
-    content:
-      `${NOTICE_PREFIX} Earlier conversation was compressed. ` +
-      `Large tool outputs appear as [action:…] cards — use recall_query(action_id=...) for details. ` +
-      `Topics discussed: ${topicStr}.`,
+    content,
   };
 }
 
@@ -89,7 +103,7 @@ export function runCompressionEvent(opts: CompressionEventOptions): boolean {
 
   if (!isRepeat) {
     const topics = [...new Set(session?.tasks.flatMap((t) => t.tech_concepts) ?? [])];
-    messages.push(appendCompressionNotice(topics));
+    messages.push(appendCompressionNotice(topics, session?.skills_invoked));
     messages.push(replayLastUserTask(userTask));
   }
 

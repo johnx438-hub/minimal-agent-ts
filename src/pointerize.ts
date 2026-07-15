@@ -16,6 +16,8 @@ export const POINTER_RULES: Record<
   write_file: { minChars: Number.POSITIVE_INFINITY },
   edit_file: { minChars: Number.POSITIVE_INFINITY },
   apply_patch: { minChars: Number.POSITIVE_INFINITY },
+  /** Skill bodies are operational recipes; keep full text across turns (session list + recall still available). */
+  invoke_skill: { minChars: Number.POSITIVE_INFINITY },
   grep_search: { minChars: 500, alwaysIfLines: 20 },
   list_files: { minChars: 500, alwaysIfLines: 30 },
   diff_file: { minChars: 600, alwaysIfLines: 30 },

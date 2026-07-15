@@ -784,6 +784,8 @@ src/
 | **压缩事件** | notice + replay；system 不变 | ✅ |
 | **Turn pipeline** | 单步 compression 事件可观测 | ✅ |
 | **关键词 recall** | `query=` session 内命中 | ✅（非向量） |
+| **invoke_skill 指针** | `POINTER_RULES.invoke_skill = ∞`（全文留热路径） | ✅ |
+| **session skills_invoked** | 成功 invoke 登记；首次 compression notice 列 name + action_id | ✅ |
 | **向量语义 recall** | 原 2d 准确率目标 | ⏸ 未合入 |
 
 ---

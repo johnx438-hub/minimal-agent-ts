@@ -123,6 +123,7 @@ function isSmartTool(toolName: string): boolean {
     toolName === 'run_shell' ||
     toolName === 'web_fetch' ||
     toolName === 'web_search' ||
+    toolName === 'invoke_skill' ||
     isMcpTool(toolName)
   );
 }
@@ -224,6 +225,28 @@ export function buildSmartToolPreview(
           policy,
         ),
         preview_lines: lines.slice(0, policy.preview_max_lines).map((l) => truncateLine(l, 100)),
+      };
+    }
+
+    case 'invoke_skill': {
+      const nameFromArgs =
+        typeof args.name === 'string' && args.name.trim() ? args.name.trim() : '';
+      const nameFromBody = text.match(/^#\s*Skill:\s*(\S+)/m)?.[1]?.trim() ?? '';
+      const skillName = nameFromArgs || nameFromBody || '?';
+      const headings = text
+        .split('\n')
+        .filter((l) => /^#{1,3}\s+\S/.test(l.trim()))
+        .slice(0, policy.preview_max_lines)
+        .map((l) => truncateLine(l.trim(), 80));
+      return {
+        summary: clipSummary(
+          `invoke_skill: ${skillName}${args.query ? ` q=${String(args.query).slice(0, 40)}` : ''}`,
+          policy,
+        ),
+        preview_lines:
+          headings.length > 0
+            ? headings
+            : nonEmptyLines(text, policy.preview_max_lines).map((l) => truncateLine(l, 100)),
       };
     }
 

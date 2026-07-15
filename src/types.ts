@@ -204,6 +204,16 @@ export interface SessionLlmOverride {
   reasoningLevel?: string;
 }
 
+/** One successful mid-session invoke_skill (for compression notice + recall). */
+export interface SessionSkillInvoked {
+  name: string;
+  action_id?: string;
+  query?: string;
+  turn?: number;
+  /** Unix ms when last loaded / refreshed. */
+  at: number;
+}
+
 /** Session state persisted to session.json. */
 export interface SessionFile {
   session_id: string;
@@ -220,6 +230,11 @@ export interface SessionFile {
    * Empty / missing = no note.
    */
   note?: string;
+  /**
+   * Skills loaded via invoke_skill this session (not agent.json loaded_skills).
+   * Upsert by name; used in compression notice for recall pointers.
+   */
+  skills_invoked?: SessionSkillInvoked[];
 }
 
 /** Session metadata for quick lookup. */
