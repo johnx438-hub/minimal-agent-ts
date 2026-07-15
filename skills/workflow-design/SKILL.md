@@ -13,11 +13,22 @@ description: >
 Help humans **name intent, choose topology, pick roles**, then write a loadable
 `workflows/<name>.json` for this repo’s `runWorkflow` (W1–W3).
 
-**Spec / code:** `SPEC_WORKFLOW.md` · `src/workflow/*` · examples:
-`workflows/review-loop.json` (flow) · `workflows/dag-review.json` (DAG).
+**Spec / code:** `SPEC_WORKFLOW.md`（含 **§11 W4 hands-off 设计**）· `src/workflow/*` ·
+examples: `workflows/review-loop.json` (flow) · `workflows/dag-review.json` (DAG).
+
+**Product north stars (W4):**
+
+1. **Isolation** — role envelopes attach only to that role’s `runAgent`
+   (`systemPrompt` / step user prompt). Never rewrite the main session’s
+   system prompt; parent only gets prior history + digest after the run.
+2. **Hands-off pipeline** — arm a preset, user types a normal task, multi-role
+   division with **independent perspectives** and **finite** loops/handback.
+   Not a single-agent “[goal] keep trying” loop when the goal is fuzzy.
 
 **Do not** invent a second orchestrator. Output is always a workflow JSON
 (plus optional role md / preset note). Nested `spawn_*` inside roles is stripped.
+Default `share_session: false`. Prefer dedicated planner/reviewer profiles over
+generic spawn personas that “just do the task”.
 
 ---
 
@@ -210,12 +221,12 @@ Canonical: `workflows/dag-review.json`.
   "name": "dag-review",
   "share_session": false,
   "roles": {
-    "planner": { "preset": "skeleton-reader", "max_turns": 8 },
+    "planner": { "preset": "skeleton-reader", "max_turns": 50 },
     "worker": { "preset": "dev-worker" },
     "reviewer": {
       "prompt_file": "roles/reviewer.md",
       "tools": ["read_file", "grep_search", "diff_file"],
-      "max_turns": 6
+      "max_turns": 50
     }
   },
   "entry": "plan",
@@ -259,9 +270,9 @@ activation that already has required edges satisfied. Cap cycles with
 {
   "name": "parallel-reviews",
   "roles": {
-    "bug": { "preset": "code-review-bug", "max_turns": 6 },
-    "sec": { "preset": "code-review-security", "max_turns": 6 },
-    "merge": { "preset": "skeleton-reader", "tools": ["read_file"], "max_turns": 4 }
+    "bug": { "preset": "code-review-bug", "max_turns": 50 },
+    "sec": { "preset": "code-review-security", "max_turns": 50 },
+    "merge": { "preset": "skeleton-reader", "tools": ["read_file"], "max_turns": 50 }
   },
   "flow": [
     {
