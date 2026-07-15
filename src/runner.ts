@@ -16,7 +16,12 @@ import {
   type RuntimeEvent,
 } from './events.js';
 import { parseLoopGuardMode, stripLoopGuardInjections } from './loop-guard.js';
-import { classifyAgentStopReason, parseAgentStopReason } from './workflow/handback.js';
+import {
+  classifyAgentStopReason,
+  formatWorkflowReturnSummary,
+  mergeWorkflowResultIntoSessionMessages,
+  parseAgentStopReason,
+} from './workflow/handback.js';
 import {
   ensureToolRegistry,
   reinitializeToolRegistry,
@@ -1118,6 +1123,8 @@ export class AgentRuntime {
 
     this.resetWebSearchTaskBudget();
     const session = this.ensureSession();
+    // Spawn-style: keep parent transcript; roles run isolated inside runWorkflow.
+    const priorMessages = [...session.current_messages];
 
     const resolved = this.resolveWorkflowPath(workflowPath) ?? workflowPath;
     if (!existsSync(resolved)) {
@@ -1135,6 +1142,12 @@ export class AgentRuntime {
     setActiveActionSessionId(session.session_id);
     this.publishUserTaskToBridge(prompt);
 
+    const restorePrior = (): void => {
+      session.current_messages = [...priorMessages];
+      this.sessionDirty = true;
+      this.saveIfDirty();
+    };
+
     try {
       this.emit(workflowConfirmStartEvent(checkpoint));
       const approved = await this.confirmWorkflowEntry(checkpoint, signal);
@@ -1142,8 +1155,7 @@ export class AgentRuntime {
       if (!approved) {
         const aborted = signal.aborted;
         if (aborted) {
-          this.sessionDirty = true;
-          this.saveIfDirty();
+          restorePrior();
         }
         this.emit({
           type: 'run_end',
@@ -1160,8 +1172,7 @@ export class AgentRuntime {
 
       if (checkpoint.needsShell && !(await this.permissionGate.ensureShell(runConfig, 'workflow'))) {
         if (signal.aborted) {
-          this.sessionDirty = true;
-          this.saveIfDirty();
+          restorePrior();
           this.emit({ type: 'run_end', reason: 'aborted' });
           return { text: '[aborted]', messages: session.current_messages };
         }
@@ -1177,8 +1188,7 @@ export class AgentRuntime {
       }
       if (checkpoint.needsWeb && !(await this.permissionGate.ensureWeb(runConfig, 'workflow'))) {
         if (signal.aborted) {
-          this.sessionDirty = true;
-          this.saveIfDirty();
+          restorePrior();
           this.emit({ type: 'run_end', reason: 'aborted' });
           return { text: '[aborted]', messages: session.current_messages };
         }
@@ -1212,7 +1222,20 @@ export class AgentRuntime {
         },
       });
 
-      session.current_messages = [];
+      const summary = formatWorkflowReturnSummary({
+        workflowName: wfResult.workflow,
+        userTask: prompt,
+        resultText: wfResult.text,
+        context: wfResult.context,
+        handback: wfResult.handback,
+      });
+
+      // Restore parent history + append digest (do not keep multi-role transcripts).
+      session.current_messages = mergeWorkflowResultIntoSessionMessages(
+        priorMessages,
+        prompt,
+        summary,
+      );
       this.sessionDirty = true;
       this.saveIfDirty();
 
@@ -1228,14 +1251,15 @@ export class AgentRuntime {
       }
 
       this.emit({ type: 'run_end', reason: 'completed' });
-      return { text: wfResult.text, messages: [] };
+      return { text: summary, messages: session.current_messages };
     } catch (err) {
       if (isAbortError(err)) {
-        this.sessionDirty = true;
-        this.saveIfDirty();
+        restorePrior();
         this.emit({ type: 'run_end', reason: 'aborted' });
         return { text: '[aborted]', messages: session.current_messages };
       }
+      // Leave session consistent for retry / inspection.
+      restorePrior();
       const message = err instanceof Error ? err.message : String(err);
       this.emit({ type: 'run_end', reason: 'error', message });
       throw err;

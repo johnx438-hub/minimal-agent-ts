@@ -8,12 +8,17 @@ import {
   resolveSwitchOn,
 } from '../src/workflow/template.js';
 import {
+  formatWorkflowReturnSummary,
+  mergeWorkflowResultIntoSessionMessages,
+} from '../src/workflow/handback.js';
+import {
   isLoopItem,
   isParallelItem,
   isSwitchItem,
   isWorkflowStep,
 } from '../src/workflow/runner.js';
 import type { WorkflowContext, WorkflowFlowItem } from '../src/workflow/types.js';
+import type { ChatMessage } from '../src/types.js';
 
 function ctx(partial: Partial<WorkflowContext> & { user_task?: string }): WorkflowContext {
   return {
@@ -79,6 +84,53 @@ describe('workflow parallel slot uniqueness', () => {
     );
     assert.deepEqual(slots, ['worker#0', 'worker#1']);
     assert.notEqual(slots[0], slots[1]);
+  });
+});
+
+describe('workflow session return (spawn-style)', () => {
+  it('preserves prior messages and appends task + digest', () => {
+    const prior: ChatMessage[] = [
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: 'hi' },
+    ];
+    const summary = formatWorkflowReturnSummary({
+      workflowName: 'dag-review',
+      userTask: 'fix the bug',
+      resultText: 'all good',
+      context: {
+        user_task: 'fix the bug',
+        roles: {
+          plan: { output: 'step 1' },
+          review: { output: 'lgtm', verdict: 'approved' },
+        },
+      },
+    });
+    assert.match(summary, /Workflow complete: dag-review/);
+    assert.match(summary, /all good/);
+    assert.match(summary, /verdict=approved/);
+
+    const merged = mergeWorkflowResultIntoSessionMessages(prior, 'fix the bug', summary);
+    assert.equal(merged.length, 4);
+    assert.equal(merged[0]?.content, 'hello');
+    assert.equal(merged[1]?.content, 'hi');
+    assert.match(String(merged[2]?.content), /fix the bug/);
+    assert.equal(merged[3]?.role, 'assistant');
+    assert.match(String(merged[3]?.content), /dag-review/);
+  });
+
+  it('handback summary uses handback formatter', () => {
+    const summary = formatWorkflowReturnSummary({
+      workflowName: 'x',
+      userTask: 't',
+      resultText: 'partial',
+      context: { user_task: 't', roles: {} },
+      handback: {
+        reason: 'dag_exhausted',
+        detail: 'stuck nodes: impl',
+      },
+    });
+    assert.match(summary, /handback/i);
+    assert.match(summary, /dag_exhausted|stuck|DAG/i);
   });
 });
 

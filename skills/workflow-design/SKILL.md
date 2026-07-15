@@ -145,6 +145,11 @@ End with JSON: {"verdict":"approved"|"needs_revision","notes":"..."}
 `share_session` (default false): each role only sees its **templated input**.
 Set `true` only when you intentionally share full message history (rare).
 
+**Parent session (slash / active chat):** like **spawn** — pre-workflow
+`current_messages` are **preserved**. On success/handback the runtime appends
+a short **user task + assistant digest** (role slots + final output), not the
+full multi-role transcript. Cancel/abort restores prior history without digest.
+
 ---
 
 ## Pattern library (pick → adapt)
