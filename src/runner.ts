@@ -61,6 +61,7 @@ import type {
   SessionOverview,
   SpawnLifecycleEvent,
   TaskSummaryDoc,
+  VisionRef,
   WorkspacePromptBundle,
 } from './types.js';
 import {
@@ -1419,7 +1420,7 @@ export class AgentRuntime {
    */
   async runTask(
     prompt: string,
-    opts?: { skipArmedWorkflow?: boolean },
+    opts?: { skipArmedWorkflow?: boolean; visionRefs?: VisionRef[] },
   ): Promise<AgentResult> {
     if (this.running) {
       throw new Error('Agent is already running');
@@ -1432,7 +1433,7 @@ export class AgentRuntime {
       opts?.skipArmedWorkflow === true || isSyntheticSystemEventPrompt(prompt);
 
     if (skipArm) {
-      return this.runSingleTask(prompt);
+      return this.runSingleTask(prompt, { visionRefs: opts?.visionRefs });
     }
 
     // One-shot arm: consume for this user task only.
@@ -1442,7 +1443,7 @@ export class AgentRuntime {
     if (workflowPath) {
       return this.runWorkflowTask(prompt, workflowPath);
     }
-    return this.runSingleTask(prompt);
+    return this.runSingleTask(prompt, { visionRefs: opts?.visionRefs });
   }
 
   async runWorkflowTask(prompt: string, workflowPath: string): Promise<AgentResult> {
@@ -1613,7 +1614,10 @@ export class AgentRuntime {
     }
   }
 
-  private async runSingleTask(prompt: string): Promise<AgentResult> {
+  private async runSingleTask(
+    prompt: string,
+    opts?: { visionRefs?: VisionRef[] },
+  ): Promise<AgentResult> {
     const session = this.ensureSession();
     this.resetWebSearchTaskBudget();
     this.running = true;
@@ -1637,6 +1641,7 @@ export class AgentRuntime {
         sessionId: session.session_id,
         stream: this.useStream,
         signal,
+        visionRefs: opts?.visionRefs,
         onStep: this.onStep,
         onTaskComplete: (taskSummary, taskBlock) => {
           this.handleTaskComplete(session, taskSummary, taskBlock);

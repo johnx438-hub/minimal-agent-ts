@@ -11,8 +11,17 @@ export function getHandoffPath(sessionId: string): string {
 function latestUserIntent(session: SessionFile): string {
   for (let i = session.current_messages.length - 1; i >= 0; i--) {
     const msg = session.current_messages[i];
-    if (msg.role === 'user' && msg.content?.trim()) {
-      return msg.content.trim();
+    if (msg.role === 'user') {
+      const text =
+        typeof msg.content === 'string'
+          ? msg.content
+          : Array.isArray(msg.content)
+            ? msg.content
+                .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+                .map((p) => p.text)
+                .join('\n')
+            : '';
+      if (text.trim()) return text.trim();
     }
   }
   const lastTask = session.tasks[session.tasks.length - 1];

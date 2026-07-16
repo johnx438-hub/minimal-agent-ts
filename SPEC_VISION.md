@@ -2,8 +2,8 @@
 
 > **定位**: 为多模态（vision）模型接入 **用户图片输入 → session → LLM API** 的端到端管线，兼容现有纯文本路径。  
 > **原则**: content parts 扩展、落盘优先不撑爆 session JSON、发送时再 materialize、路径受 workspace grants 约束。  
-> **状态**: Design draft v0.1（2026-07-17）· **未实现**  
-> **现状**: `ChatMessage.content: string | null`；`buildChatBody` 原样发送；TUI 纯文本 Editor。  
+> **状态**: Design draft v0.2（2026-07-17）· **VI-0～VI-2 / 部分 VI-4～5 已落地**（TUI 粘贴仍待）  
+> **代码锚点**: `src/vision.ts` · `types.ChatMessage.vision_refs` · `assembleApiMessages` · CLI `--image`  
 > **相关**: [SPEC_LLM_ROUTER.md](./SPEC_LLM_ROUTER.md) · [SPEC_CONTEXT_MANAGEMENT.md](./SPEC_CONTEXT_MANAGEMENT.md) · [SPEC_SESSION_WORKSPACE.md](./SPEC_SESSION_WORKSPACE.md) · [SPEC_TUI.md](./SPEC_TUI.md)
 
 ---

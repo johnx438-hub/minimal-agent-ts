@@ -1,12 +1,37 @@
 import { isToolArgsJsonValid } from '../tools/tool-args.js';
 import type { ChatMessage, ToolCall } from '../types.js';
+import {
+  getMessageText,
+  materializeVisionMessage,
+  type VisionPolicyConfig,
+} from '../vision.js';
+import { getWorkspaceGrants } from '../workspace.js';
+
+export interface AssembleApiMessagesOptions {
+  cwd?: string;
+  vision?: VisionPolicyConfig | null;
+}
 
 /**
  * Messages marked compacted_at are omitted from LLM requests (OpenCode-style prune).
- * Repairs assistant/tool_call pairs so APIs never see orphan tool messages.
+ * Materializes vision_refs, strips internal fields, repairs tool_call pairs.
  */
-export function assembleApiMessages(messages: ChatMessage[]): ChatMessage[] {
-  const visible = messages.filter((m) => !m.compacted_at).map(stripInternalMetadata);
+export function assembleApiMessages(
+  messages: ChatMessage[],
+  opts?: AssembleApiMessagesOptions,
+): ChatMessage[] {
+  const cwd = opts?.cwd ?? process.cwd();
+  const readableRoots = getWorkspaceGrants().map((g) => g.root);
+  const visible = messages
+    .filter((m) => !m.compacted_at)
+    .map((m) =>
+      materializeVisionMessage(m, {
+        cwd,
+        policy: opts?.vision,
+        readableRoots,
+      }),
+    )
+    .map(stripInternalMetadata);
   return repairToolCallPairs(visible);
 }
 
@@ -33,7 +58,7 @@ export function repairToolCallPairs(messages: ChatMessage[]): ChatMessage[] {
 
     const calls = filterApiSafeToolCalls(msg.tool_calls);
     if (calls.length === 0) {
-      if (msg.content != null && msg.content !== '') {
+      if (hasNonEmptyContent(msg.content)) {
         result.push({ role: 'assistant', content: msg.content });
       }
       let j = i + 1;
@@ -72,7 +97,7 @@ export function repairToolCallPairs(messages: ChatMessage[]): ChatMessage[] {
           });
         }
       }
-    } else if (msg.content != null && msg.content !== '') {
+    } else if (hasNonEmptyContent(msg.content)) {
       result.push({ role: 'assistant', content: msg.content });
     }
 
@@ -80,6 +105,12 @@ export function repairToolCallPairs(messages: ChatMessage[]): ChatMessage[] {
   }
 
   return result;
+}
+
+function hasNonEmptyContent(content: ChatMessage['content']): boolean {
+  if (content == null) return false;
+  if (typeof content === 'string') return content !== '';
+  return content.length > 0;
 }
 
 /** xAI and some providers reject assistant tool_calls whose arguments are not valid JSON. */
@@ -95,7 +126,11 @@ function stripInternalMetadata(msg: ChatMessage): ChatMessage {
     pointerized: _p,
     compacted_at: _c,
     turn: _t,
+    vision_refs: _v,
     ...apiMsg
   } = msg;
   return apiMsg;
 }
+
+/** Text extraction for callers that still assume string content. */
+export { getMessageText };

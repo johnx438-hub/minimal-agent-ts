@@ -122,6 +122,8 @@ export interface ApiProfileConfig {
   fallback_profiles?: string[];
   display_name?: string;
   reasoning_map?: Record<string, Record<string, unknown>>;
+  /** When false, materialize may still attach images only if vision.enabled; used as soft gate. */
+  supports_vision?: boolean;
 }
 
 /** C5: constrain child-agent run_shell (spawnDepth > 0). */
@@ -229,6 +231,15 @@ export interface AgentPluginConfig {
   cwd_switch?: {
     default_capability_policy?: 'strict' | 'inherit_session' | 'inherit_grant_only';
     warn_if_leaving_primary_git_root?: boolean;
+  };
+  /** SPEC_VISION: multimodal user images */
+  vision?: {
+    enabled?: boolean;
+    max_images_per_message?: number;
+    max_bytes_per_image?: number;
+    default_detail?: 'auto' | 'low' | 'high';
+    allow_remote_url?: boolean;
+    materialize_fail?: 'degrade' | 'throw';
   };
 }
 

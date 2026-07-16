@@ -58,7 +58,7 @@ export function protectedIndices(messages: ChatMessage[], currentTurn: number): 
 /** Immune messages are skipped by prune and pointer secondary compact. */
 export function isImmune(msg: ChatMessage): boolean {
   if (msg.role === 'system' || msg.role === 'user') return true;
-  const content = msg.content ?? '';
+  const content = typeof msg.content === 'string' ? msg.content : '';
   if (content.startsWith('error:')) return true;
   if (content.startsWith(NOTICE_PREFIX)) return true;
   if (content.startsWith(TASK_SUMMARY_PREFIX)) return true;

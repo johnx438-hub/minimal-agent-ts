@@ -18,11 +18,16 @@ import type {
 } from '../types.js';
 
 export function hasCompressionNotice(messages: ChatMessage[]): boolean {
-  return messages.some((m) => (m.content ?? '').startsWith(NOTICE_PREFIX));
+  return messages.some(
+    (m) => typeof m.content === 'string' && m.content.startsWith(NOTICE_PREFIX),
+  );
 }
 
 export function hasTaskSummaryBlock(messages: ChatMessage[]): boolean {
-  return messages.some((m) => (m.content ?? '').startsWith(TASK_SUMMARY_PREFIX));
+  return messages.some(
+    (m) =>
+      typeof m.content === 'string' && m.content.startsWith(TASK_SUMMARY_PREFIX),
+  );
 }
 
 export function buildTaskSummaryMessages(tasks: TaskSummaryDoc[]): ChatMessage[] {

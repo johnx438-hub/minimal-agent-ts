@@ -118,7 +118,8 @@ export function materializePriorTurnTools(
       continue;
     }
 
-    const truncated = (msg.content ?? '').includes('...(truncated)');
+    const body = typeof msg.content === 'string' ? msg.content : '';
+    const truncated = body.includes('...(truncated)');
     msg.content = buildPointerCard(block, { truncated, previewPolicy });
     msg.pointerized = true;
     block.pointerized = true;

@@ -9,6 +9,8 @@ import type { RuntimeEvent } from './events.js';
 import { AgentRuntime, printStepEvent } from './runner.js';
 import { formatWorkflowCheckpoint } from './workflow-checkpoint.js';
 import { toolRegistry } from './tools/registry.js';
+import type { VisionRef } from './types.js';
+import { visionRefFromPath, visionRefFromUrl } from './vision.js';
 
 function parseArgs(argv: string[]): {
   prompt: string;
@@ -23,12 +25,38 @@ function parseArgs(argv: string[]): {
   resumeLatest: boolean;
   confirmWorkflow: boolean;
   loadHandoffFrom?: string;
+  /** Local image paths for vision models (SPEC_VISION). */
+  images: string[];
+  /** Remote https image URLs (requires vision.allow_remote_url). */
+  imageUrls: string[];
 } {
   let listTools = false;
   const loadSkills: string[] = [];
   let allowShell = false;
   let allowWeb = false;
   let jsonEvents = false;
+  const images: string[] = [];
+  const imageUrls: string[] = [];
+
+  // Collect --image / --image-url (repeatable) before other parsing mutates argv indices.
+  {
+    const next: string[] = [];
+    for (let i = 0; i < argv.length; i++) {
+      const a = argv[i];
+      if (a === '--image' && argv[i + 1]) {
+        images.push(argv[i + 1]!);
+        i++;
+        continue;
+      }
+      if ((a === '--image-url' || a === '--image_url') && argv[i + 1]) {
+        imageUrls.push(argv[i + 1]!);
+        i++;
+        continue;
+      }
+      next.push(a!);
+    }
+    argv = next;
+  }
 
   const shellIdx = argv.indexOf('--allow-shell');
   if (shellIdx >= 0) {
@@ -126,6 +154,8 @@ function parseArgs(argv: string[]): {
     console.error('  npm start -- --workflow workflows/review-loop.json --confirm-workflow "任务"');
     console.error('  npm start -- --handoff [session_id] "新 session 注入 handoff"');
     console.error('  npm start -- --json-events -- "任务"');
+    console.error('  npm start -- --image ./shot.png "描述这张图"');
+    console.error('  npm start -- --image-url https://example.com/a.png "描述"');
     console.error('');
     console.error('Optional env:');
     console.error('  OPENAI_BASE_URL  (default: Gemini OpenAI-compatible URL)');
@@ -135,6 +165,8 @@ function parseArgs(argv: string[]): {
     console.error('  LOOP_GUARD       inject | terminate | off (default: inject)');
     console.error('  --allow-shell    enable run_shell tool (or ALLOW_SHELL=1)');
     console.error('  --allow-web      enable web_fetch tool (or ALLOW_WEB=1)');
+    console.error('  --image PATH     attach local image (repeatable; vision models)');
+    console.error('  --image-url URL  attach https image URL (needs vision.allow_remote_url)');
     console.error('');
     console.error('Plugins: agent.json (builtin_tools, mcp_servers, skills_dirs, web_fetch_policy)');
     process.exit(1);
@@ -147,6 +179,8 @@ function parseArgs(argv: string[]): {
     listTools,
     loadSkills,
     allowShell,
+    images,
+    imageUrls,
     allowWeb,
     workflowPath,
     jsonEvents,
@@ -274,6 +308,8 @@ async function main(): Promise<void> {
     resumeLatest,
     confirmWorkflow,
     loadHandoffFrom,
+    images,
+    imageUrls,
   } = parseArgs([...rawArgv]);
 
   const runtime = new AgentRuntime({
@@ -355,6 +391,11 @@ async function main(): Promise<void> {
     if (workflowPath) {
       console.log(`workflow: ${workflowPath}`);
     }
+    if (images.length || imageUrls.length) {
+      console.log(
+        `vision: ${images.length} file(s), ${imageUrls.length} url(s)`,
+      );
+    }
     console.log(`task: ${prompt}\n`);
   }
 
@@ -371,9 +412,17 @@ async function main(): Promise<void> {
     void runtime.shutdown().finally(() => process.exit(0));
   });
 
+  const visionRefs: VisionRef[] = [
+    ...images.map((p) => visionRefFromPath(p)),
+    ...imageUrls.map((u) => visionRefFromUrl(u)),
+  ];
+
   let finalText: string;
 
   if (workflowPath) {
+    if (visionRefs.length && !jsonEvents) {
+      console.error('Note: --image is ignored for --workflow (main-agent vision only in V1).');
+    }
     const wfResult = await runtime.runWorkflowTask(prompt, workflowPath);
     finalText = wfResult.text;
     if (!jsonEvents) {
@@ -382,7 +431,9 @@ async function main(): Promise<void> {
       );
     }
   } else {
-    const answer = await runtime.runTask(prompt);
+    const answer = await runtime.runTask(prompt, {
+      visionRefs: visionRefs.length ? visionRefs : undefined,
+    });
     finalText = answer.text;
   }
 

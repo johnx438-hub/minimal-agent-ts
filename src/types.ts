@@ -43,9 +43,35 @@ export interface ToolCall {
   };
 }
 
+/** OpenAI-compatible multimodal content parts (SPEC_VISION). */
+export type TextContentPart = { type: 'text'; text: string };
+
+export type ImageUrlContentPart = {
+  type: 'image_url';
+  image_url: {
+    url: string;
+    detail?: 'auto' | 'low' | 'high';
+  };
+};
+
+export type ContentPart = TextContentPart | ImageUrlContentPart;
+
+/** string for legacy/tool/assistant; ContentPart[] after materialize for API. */
+export type MessageContent = string | ContentPart[] | null;
+
+/** Session-persisted image reference (path preferred over base64). */
+export interface VisionRef {
+  /** Path relative to cwd or absolute under grants. */
+  path?: string;
+  mime?: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
+  detail?: 'auto' | 'low' | 'high';
+  /** Optional https URL when allow_remote_url is enabled. */
+  remote_url?: string;
+}
+
 export interface ChatMessage {
   role: Role;
-  content: string | null;
+  content: MessageContent;
   tool_calls?: ToolCall[];
   tool_call_id?: string;
   /** Phase 2: linkage to ActionStore (not sent to LLM API). */
@@ -53,6 +79,11 @@ export interface ChatMessage {
   pointerized?: boolean;
   compacted_at?: number;
   turn?: number;
+  /**
+   * User-message image refs (SPEC_VISION). Stripped before API;
+   * materializeVisionMessage turns them into image_url parts.
+   */
+  vision_refs?: VisionRef[];
 }
 
 /** Cold-storage unit for one tool invocation (Phase 2). */

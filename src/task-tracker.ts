@@ -183,7 +183,15 @@ export class TaskTracker {
 
     // User intent: first user message
     const userMessages = task.messages.filter(m => m.role === 'user');
-    const userIntent = userMessages[0]?.content ?? '';
+    const userIntent =
+      typeof userMessages[0]?.content === 'string'
+        ? userMessages[0].content
+        : Array.isArray(userMessages[0]?.content)
+          ? userMessages[0]!.content
+              .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+              .map((p) => p.text)
+              .join('\n')
+          : '';
 
     return {
       task_id: task.task_id,
@@ -193,7 +201,18 @@ export class TaskTracker {
       
       // Auto-extracted fields
       user_intent: userIntent as string,
-      user_messages: userMessages.map(m => m.content ?? '').filter(Boolean),
+      user_messages: userMessages
+        .map((m) =>
+          typeof m.content === 'string'
+            ? m.content
+            : Array.isArray(m.content)
+              ? m.content
+                  .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+                  .map((p) => p.text)
+                  .join('\n')
+              : '',
+        )
+        .filter(Boolean),
       files_touched: [...filesTouched],
       tech_concepts: techConcepts,
       tools_used: toolsUsed,

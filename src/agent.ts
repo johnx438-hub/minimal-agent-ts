@@ -49,7 +49,15 @@ import {
   recordSessionSkillInvoked,
 } from './session-skills.js';
 import { TaskTracker, type TaskBlock } from './task-tracker.js';
-import type { AgentConfig, ChatMessage, TaskSummaryDoc, SessionFile, ToolCall } from './types.js';
+import type {
+  AgentConfig,
+  ChatMessage,
+  TaskSummaryDoc,
+  SessionFile,
+  ToolCall,
+  VisionRef,
+} from './types.js';
+import { buildUserTaskMessageWithVision, contentAsString } from './vision.js';
 
 export interface RunAgentOptions {
   prompt: string;
@@ -61,6 +69,8 @@ export interface RunAgentOptions {
   systemPrompt?: string;
   /** Skip session history; only system + this user task (workflow steps). */
   isolated?: boolean;
+  /** SPEC_VISION: local/remote image refs for this user task. */
+  visionRefs?: VisionRef[];
   onStep?: (event: AgentStepEvent) => void;
   onTaskComplete?: (summary: TaskSummaryDoc, taskBlock: TaskBlock) => void;
   signal?: AbortSignal;
@@ -108,23 +118,20 @@ function stripSystemMessages(msgs: ChatMessage[]): ChatMessage[] {
   return msgs.filter((m) => m.role !== 'system');
 }
 
-function buildUserTaskMessage(cwd: string, prompt: string): ChatMessage {
-  return {
-    role: 'user',
-    content: `Working directory: ${cwd}\n\nTask:\n${prompt}`,
-  };
-}
-
 function resolveInitialMessages(opts: RunAgentOptions): {
   messages: ChatMessage[];
   userTask: ChatMessage;
 } {
-  const { prompt, config, session, systemPrompt, isolated } = opts;
+  const { prompt, config, session, systemPrompt, isolated, visionRefs } = opts;
   const system: ChatMessage = {
     role: 'system',
     content: systemPrompt ?? buildSystemPrompt(config),
   };
-  const userTask = buildUserTaskMessage(config.cwd, prompt);
+  const userTask = buildUserTaskMessageWithVision(
+    config.cwd,
+    prompt,
+    visionRefs,
+  );
 
   if (!session || isolated) {
     return { messages: [system, userTask], userTask };
@@ -272,7 +279,10 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
       const { message, finishReason, usage } = await invokeLlmTurnWithFallback({
         turn,
         config: toolConfig,
-        apiMessages: assembleApiMessages(messages),
+        apiMessages: assembleApiMessages(messages, {
+          cwd: config.cwd,
+          vision: config.llmPluginConfig?.vision,
+        }),
         tools: [],
         stream,
         onStep,
@@ -295,7 +305,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         return buildStoppedResult(messages, decision.reason ?? 'forced summary violated', turn, onStep);
       }
 
-      const rawText = (message.content ?? '').trim();
+      const rawText = contentAsString(message.content).trim();
       if (rawText) {
         commitAssistantText(messages, rawText, turn);
         loopGuard.afterTextResponse();
@@ -331,7 +341,10 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
     const { message, finishReason, usage } = await invokeLlmTurnWithFallback({
       turn,
       config: toolConfig,
-      apiMessages: assembleApiMessages(messages),
+      apiMessages: assembleApiMessages(messages, {
+        cwd: config.cwd,
+        vision: config.llmPluginConfig?.vision,
+      }),
       tools: toolDefs,
       stream,
       onStep,
@@ -347,7 +360,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
       if (validToolCalls.length === 0) {
         const assistantText =
-          (message.content ?? '').trim() || '(tool call arguments were invalid JSON)';
+          contentAsString(message.content).trim() ||
+          '(tool call arguments were invalid JSON)';
         commitAssistantText(messages, assistantText, turn);
         messages.push({
           role: 'user',
@@ -550,7 +564,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
       continue;
     }
 
-    const rawText = (message.content ?? '').trim();
+    const rawText = contentAsString(message.content).trim();
     if (rawText) {
       commitAssistantText(messages, rawText, turn);
       loopGuard.afterTextResponse();

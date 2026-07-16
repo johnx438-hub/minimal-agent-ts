@@ -20,7 +20,7 @@ const COMPACTED_STUB_PREFIX = '[compacted';
 /** Drop large in-memory bodies for API-pruned messages; cold storage retains full text. */
 export function releaseCompactedContent(msg: ChatMessage): void {
   if (!msg.compacted_at) return;
-  const content = msg.content ?? '';
+  const content = typeof msg.content === 'string' ? msg.content : '';
   if (content.startsWith(COMPACTED_STUB_PREFIX)) return;
 
   if (msg.role === 'tool' && msg.action_id) {
@@ -38,9 +38,9 @@ export function releaseCompactedContent(msg: ChatMessage): void {
 export function releaseAllCompactedContent(messages: ChatMessage[]): number {
   let count = 0;
   for (const msg of messages) {
-    const before = msg.content ?? '';
+    const before = msg.content;
     releaseCompactedContent(msg);
-    if ((msg.content ?? '') !== before) count++;
+    if (msg.content !== before) count++;
   }
   return count;
 }

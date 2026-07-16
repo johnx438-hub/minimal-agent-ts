@@ -1,4 +1,5 @@
 import type { ChatMessage, SessionFile, TaskSummaryDoc } from '../types.js';
+import { estimateVisionTokens, getMessageText } from '../vision.js';
 
 /** Budget configuration for context window management. */
 export interface BudgetConfig {
@@ -100,7 +101,8 @@ export function estimateTextTokens(text: string): number {
 export function estimateTokens(messages: ChatMessage[]): number {
   let total = 0;
   for (const msg of messages) {
-    total += estimateTextTokens(msg.content ?? '');
+    total += estimateTextTokens(getMessageText(msg.content));
+    total += estimateVisionTokens(msg);
     total += msg.role === 'tool' ? 5 : 2;
     if (msg.tool_calls) {
       total += msg.tool_calls.length * 10;

@@ -73,6 +73,7 @@ function mergeConfig(base: AgentPluginConfig, patch: Partial<AgentPluginConfig>)
     session_store: patch.session_store ?? base.session_store,
     agent_home: patch.agent_home ?? base.agent_home,
     cwd_switch: { ...base.cwd_switch, ...patch.cwd_switch },
+    vision: { ...base.vision, ...patch.vision },
   };
 }
 
