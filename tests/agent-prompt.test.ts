@@ -29,7 +29,7 @@ describe('buildSystemPrompt', () => {
   it('includes the active model in the system prompt', () => {
     const dir = mkdtempSync(join(tmpdir(), 'agent-prompt-'));
     const prompt = buildSystemPrompt(minimalConfig(dir));
-    assert.match(prompt, /Active model: test-model\./);
+    assert.match(prompt, /当前模型: test-model\./);
   });
 
   it('prefers llm.model and displayName when set', () => {
