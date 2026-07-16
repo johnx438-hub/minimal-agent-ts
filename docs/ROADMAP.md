@@ -19,6 +19,7 @@
 | [SPEC_LLM_ROUTER.md](../SPEC_LLM_ROUTER.md) | api_profiles、fallback、reasoning |
 | [SPEC_TOOLS.md](../SPEC_TOOLS.md) | 工具（含 Office ✅） |
 | [SPEC_WORKFLOW.md](../SPEC_WORKFLOW.md) | 多角色编排：profile 共用 spawn、flow/DAG、job 节点（**W1–W3 ✅**） |
+| [SPEC_JOB_SESSION_NOTIFY.md](../SPEC_JOB_SESSION_NOTIFY.md) | Job/workflow 完成 → MessageBridge notice + session 入队续跑（**Draft**） |
 | [SPEC_TUI.md](../SPEC_TUI.md) | TUI 规范 |
 | [agent.mcp.example.json](../agent.mcp.example.json) | MCP 配置示例 |
 
