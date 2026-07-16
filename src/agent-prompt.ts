@@ -123,11 +123,12 @@ export function buildSystemPrompt(config: AgentConfig): string {
 
   const modelLabel = resolveActiveModelLabel(config);
 
+  // Identity/behavior in Chinese for demo readability; tool names & usage stay English.
   const lines: string[] = [
-    'You are a minimal coding assistant in a learning demo.',
-    `Active model: ${modelLabel}.`,
+    '你是一个精简的编程助手（learning demo 底座）。',
+    `当前模型: ${modelLabel}.`,
     '',
-    `You have builtin tools (${toolList}) plus any MCP tools exposed as mcp_<server>_<tool>.`,
+    `Builtin tools: ${toolList}；MCP tools 形如 mcp_<server>_<tool>.`,
   ];
 
   for (const name of ['web_search', 'web_fetch', 'write_file', 'edit_file', 'invoke_skill', 'spawn_agent'] as const) {
@@ -137,8 +138,8 @@ export function buildSystemPrompt(config: AgentConfig): string {
     if (hint) lines.push(`- ${hint}`);
   }
 
-  lines.push('- Explain briefly what you are doing.');
-  lines.push('- When the task is done, reply with a short summary and stop calling tools.');
+  lines.push('- 简要说明你在做什么（Explain briefly what you are doing）。');
+  lines.push('- 任务完成后用简短 summary 回复，并 stop calling tools。');
   lines.push(`- ${pointerizeRecallGuidance(recallKb)}`);
   lines.push('- If recall marks stale, use read_file for the latest file content.');
 

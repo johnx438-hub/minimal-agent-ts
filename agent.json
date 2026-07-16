@@ -7,7 +7,7 @@
       "base_url": "https://api.deepseek.com",
       "api_key_env": "DEEPSEEK_API_KEY",
       "_key_hint": "Any name works: set api_key_env then put that name in .env. Now: DEEPSEEK_API_KEY=... in .env",
-      "default_model": "deepseek-v4-flash",
+      "default_model": "deepseek-v4-pro",
       "models": ["deepseek-v4-flash", "deepseek-v4-pro"],
       "fallback_profiles": ["openrouter-test"],
       "cache": { "mode": "implicit", "telemetry": true },
@@ -35,7 +35,8 @@
       "models": [
         "deepseek/deepseek-v4-flash",
         "deepseek/deepseek-v4-pro",
-        "x-ai/grok-4.5"
+        "x-ai/grok-4.5",
+        "z-ai/glm-5.2"
       ],
       "cache": {
         "mode": "openrouter_sticky",
@@ -94,7 +95,7 @@
   "spawn_presets": [
     {
       "name": "dev-worker",
-      "description": "Full-tools coding worker (read/write/edit/shell/web); no nested spawn — for parallel implement/fix jobs",
+      "description": "全工具 coding worker（读写/shell/web）；禁止嵌套 spawn — 并行实现/修复",
       "prompt_file": "agents/dev-worker.md",
       "tools": [
         "read_file",
@@ -136,14 +137,14 @@
     },
     {
       "name": "web-researcher",
-      "description": "Delegate web lookup and source summaries",
+      "description": "委派网页检索与来源摘要",
       "prompt_file": "agents/web-researcher.md",
       "tools": ["web_fetch", "read_file", "grep_search", "write_file"],
       "max_turns": 50
     },
     {
       "name": "skeleton-reader",
-      "description": "Repo skeleton and entry-point map (full coding tools; prefer read-only)",
+      "description": "仓库骨架与入口地图（优先只读）",
       "prompt_file": "agents/skeleton-reader.md",
       "tools": [
         "read_file",
@@ -162,7 +163,9 @@
         "git_log",
         "lsp_query",
         "web_fetch",
-        "web_search"
+        "web_search",
+        "cli-web-search -p brave",
+        "opencli google search"
       ],
       "max_turns": 50,
       "shell": {
@@ -183,14 +186,14 @@
     },
     {
       "name": "hackernews-digest",
-      "description": "Fetch HN post URLs and return a short digest",
+      "description": "拉取 HN 帖子 URL 并输出短 digest",
       "prompt_file": "agents/hackernews-digest.md",
       "tools": ["web_fetch", "read_file", "write_file"],
       "max_turns": 50
     },
     {
       "name": "code-review-bug",
-      "description": "Fast diff-first bug pass — logic/async/error-handling in changed hunks",
+      "description": "快速 diff-first bug 审查 — logic/async/error-handling",
       "prompt_file": "agents/code-review-bug.md",
       "tools": [
         "read_file",
@@ -222,7 +225,8 @@
           "node ",
           "git ",
           "tsc",
-          "tsx "
+          "tsx ",
+          "opencli hackernews top"
         ],
         "timeout_ms_default": 60000,
         "timeout_ms_cap": 300000
@@ -230,7 +234,7 @@
     },
     {
       "name": "code-review-security",
-      "description": "Review code for security vulnerabilities, secrets, injection risks",
+      "description": "审查 security：漏洞 / secrets / injection",
       "prompt_file": "agents/code-review-security.md",
       "tools": [
         "read_file",
@@ -270,7 +274,7 @@
     },
     {
       "name": "code-review-quality",
-      "description": "Review code for readability, consistency, and best practices",
+      "description": "审查 quality：readability / consistency / best practices",
       "prompt_file": "agents/code-review-quality.md",
       "tools": [
         "read_file",

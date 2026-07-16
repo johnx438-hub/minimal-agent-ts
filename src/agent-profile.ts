@@ -233,7 +233,7 @@ export function resolveSpawnPresetConfig(
   if (!model && meta.model) model = meta.model;
 
   if (!body) {
-    body = `You are spawn preset "${config.name}". Complete the delegated task and reply concisely.`;
+    body = `你是 spawn 预设「${config.name}」子 Agent。Complete the delegated task and reply concisely.`;
   }
 
   const description =
@@ -358,8 +358,8 @@ export function resolveAgentProfile(
   if (!body) {
     body =
       childKind === 'spawn'
-        ? `You are spawn preset "${displayName}". Complete the delegated task and reply concisely.`
-        : `You are the "${displayName}" role in a multi-step workflow. Complete your part and reply clearly.`;
+        ? `你是 spawn 预设「${displayName}」子 Agent。Complete the delegated task and reply concisely.`
+        : `你是多步 workflow 中的「${displayName}」角色。Complete your part and reply clearly.`;
   }
 
   const shellPolicy = shellFromRole

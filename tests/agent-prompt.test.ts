@@ -48,7 +48,7 @@ describe('buildSystemPrompt', () => {
       },
     };
     assert.equal(resolveActiveModelLabel(cfg), 'deepseek-v4-flash (DeepSeek V4)');
-    assert.match(buildSystemPrompt(cfg), /Active model: deepseek-v4-flash \(DeepSeek V4\)\./);
+    assert.match(buildSystemPrompt(cfg), /当前模型: deepseek-v4-flash \(DeepSeek V4\)\./);
   });
 
   it('appends Agent.md when present in cwd', () => {
@@ -56,8 +56,8 @@ describe('buildSystemPrompt', () => {
     writeFileSync(join(dir, 'Agent.md'), '## Rules\nAlways run tests.');
 
     const prompt = buildSystemPrompt(minimalConfig(dir));
-    assert.match(prompt, /minimal coding assistant/);
-    assert.match(prompt, /Active model: test-model\./);
+    assert.match(prompt, /精简的编程助手|learning demo/);
+    assert.match(prompt, /当前模型: test-model\./);
     assert.match(prompt, /Workspace agent instructions/);
     assert.match(prompt, /Always run tests/);
     assert.match(prompt, /Source: Agent\.md/);

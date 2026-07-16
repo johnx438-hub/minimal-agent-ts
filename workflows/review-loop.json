@@ -19,15 +19,15 @@
   "flow": [
     {
       "role": "planner",
-      "input": "## Role: planner\nDownstream worker will implement ONLY your plan. Do not implement.\nNumbered plan + ## Assumptions / ## Open questions if needed.\nPrefer workflow_handoff(kind=plan).\n\n## User task\n{{user_task}}"
+      "input": "## 角色: planner\n下游 worker 只按你的 plan 实现。Do not implement.\nNumbered plan + ## Assumptions / ## Open questions if needed.\nPrefer workflow_handoff(kind=plan).\n\n## User task\n{{user_task}}"
     },
     {
       "role": "worker",
-      "input": "## Role: worker\nPrimary: ## Plan. Do not re-plan from scratch. Prefer workflow_handoff(kind=impl_summary).\n\n## Plan\n{{planner.output}}\n\n## User task\n{{user_task}}"
+      "input": "## 角色: worker\nPrimary: ## Plan. Do not re-plan from scratch. Prefer workflow_handoff(kind=impl_summary).\n\n## Plan\n{{planner.output}}\n\n## User task\n{{user_task}}"
     },
     {
       "role": "reviewer",
-      "input": "## Role: reviewer\nVerify only. Verdict: approved | needs_revision | needs_human.\nPrefer workflow_handoff(kind=review, verdict=...).\n\n## Work\n{{worker.output}}\n\n## User task\n{{user_task}}"
+      "input": "## 角色: reviewer\n只做验收。Verdict: approved | needs_revision | needs_human.\nPrefer workflow_handoff(kind=review, verdict=...).\n\n## Work\n{{worker.output}}\n\n## User task\n{{user_task}}"
     },
     {
       "loop": {
@@ -36,11 +36,11 @@
         "steps": [
           {
             "role": "worker",
-            "input": "## Role: worker (revision)\nApply reviewer feedback. Prefer workflow_handoff(kind=impl_summary).\n\n## Reviewer feedback\n{{reviewer.output}}\n\n## User task\n{{user_task}}"
+            "input": "## 角色: worker（revision）\nApply reviewer feedback. Prefer workflow_handoff(kind=impl_summary).\n\n## Reviewer feedback\n{{reviewer.output}}\n\n## User task\n{{user_task}}"
           },
           {
             "role": "reviewer",
-            "input": "## Role: reviewer (re-review)\nVerdict: approved | needs_revision | needs_human.\n\n## Revised work\n{{worker.output}}\n\n## User task\n{{user_task}}"
+            "input": "## 角色: reviewer（re-review）\nVerdict: approved | needs_revision | needs_human.\n\n## Revised work\n{{worker.output}}\n\n## User task\n{{user_task}}"
           }
         ]
       }

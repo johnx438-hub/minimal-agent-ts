@@ -20,18 +20,18 @@
   "nodes": {
     "plan": {
       "role": "planner",
-      "input": "## Role: planner (workflow step plan)\nUpstream: none. Downstream: worker will implement ONLY your plan.\n\nProduce an executable numbered plan (paths, changes, how to verify).\nInclude ## Assumptions and ## Open questions if the goal is incomplete.\nDo NOT implement, edit files, or claim the task is done.\nPrefer workflow_handoff(kind=plan) then stop tools.\n\n## User task\n{{user_task}}"
+      "input": "## 角色: planner（workflow step plan）\n上游: 无。下游 worker 只会按你的 plan 实现。\n请产出可执行的 numbered plan（paths / changes / how to verify）。\n目标不清时写 ## Assumptions 与 ## Open questions。\nDo NOT implement, edit files, or claim the task is done.\nPrefer workflow_handoff(kind=plan) then finish the step.\n\n## User task\n{{user_task}}"
     },
     "impl": {
       "role": "worker",
       "as": "worker",
-      "input": "## Role: worker (workflow step impl)\nPrimary source of truth: ## Plan below. User task is context only.\nDo NOT re-explore from scratch or rewrite the plan. Implement the plan.\nEnd with Done / paths / how to verify. Prefer workflow_handoff(kind=impl_summary).\n\n## Plan\n{{plan.output}}\n\n## User task\n{{user_task}}",
+      "input": "## 角色: worker（workflow step impl）\n真源是下方 ## Plan；User task 仅作上下文。\nDo NOT re-explore from scratch or rewrite the plan. Implement the plan.\nEnd with Done / paths / how to verify. Prefer workflow_handoff(kind=impl_summary).\n\n## Plan\n{{plan.output}}\n\n## User task\n{{user_task}}",
       "max_visits": 3
     },
     "review": {
       "role": "reviewer",
       "as": "reviewer",
-      "input": "## Role: reviewer (workflow step review)\nVerify the work. Do NOT re-implement.\nEnd with verdict: approved | needs_revision | needs_human (use needs_human when the goal is unclear rather than looping forever).\nPrefer workflow_handoff(kind=review, verdict=...).\n\n## Work\n{{worker.output}}\n\n## Original task\n{{user_task}}",
+      "input": "## 角色: reviewer（workflow step review）\n验收工作产出。Do NOT re-implement.\nEnd with verdict: approved | needs_revision | needs_human（目标不清用 needs_human，避免无限 revision）。\nPrefer workflow_handoff(kind=review, verdict=...).\n\n## Work\n{{worker.output}}\n\n## Original task\n{{user_task}}",
       "max_visits": 3
     }
   },
