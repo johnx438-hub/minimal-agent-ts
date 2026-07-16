@@ -204,6 +204,17 @@ export interface AgentPluginConfig {
   workflows?: Record<string, string>;
   /** Extra directories to scan for `{name}.json` workflows (default includes ./workflows). */
   workflow_dirs?: string[];
+  /**
+   * SPEC_JOB_SESSION_NOTIFY: job/workflow complete → bridge notice + optional auto_run.
+   */
+  session_notify?: {
+    bridge?: boolean;
+    auto_run?: boolean;
+    auto_run_kinds?: string[];
+    merge?: 'per_event' | 'debounce' | 'settle_only';
+    debounce_ms?: number;
+    max_digest_chars?: number;
+  };
 }
 
 export interface SkillDefinition {

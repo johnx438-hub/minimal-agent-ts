@@ -199,6 +199,17 @@ export type RuntimeEvent =
       stale: boolean;
       event_count: number;
       has_result: boolean;
+    }
+  | {
+      /** SPEC_JOB_SESSION_NOTIFY: job/workflow settle push */
+      type: 'system_event';
+      kind: string;
+      session_id: string;
+      event_id: string;
+      job_id?: string;
+      workflow?: string;
+      still_running?: number;
+      summary?: string;
     };
 
 export function formatRunStartLlmSummary(llm: RunStartLlmMeta): string {

@@ -233,6 +233,17 @@ function onRuntimeEvent(event: RuntimeEvent, jsonEvents: boolean): void {
     );
     return;
   }
+  if (event.type === 'system_event') {
+    const extra = event.job_id
+      ? ` job=${event.job_id}`
+      : event.workflow
+        ? ` wf=${event.workflow}`
+        : '';
+    const still =
+      event.still_running !== undefined ? ` still_running=${event.still_running}` : '';
+    console.error(`system_event ▶ ${event.kind}${extra}${still}`);
+    return;
+  }
   if (
     event.type === 'run_start' ||
     event.type === 'run_stopping' ||

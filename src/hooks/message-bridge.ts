@@ -6,7 +6,7 @@
 
 export type SessionMessageRole = 'user' | 'assistant' | 'tool' | 'system_notice';
 
-export type SessionMessageSource = 'main' | 'spawn' | 'job';
+export type SessionMessageSource = 'main' | 'spawn' | 'job' | 'workflow' | 'system';
 
 /** One human-oriented message (IM bubble / multi-UI stream). */
 export interface SessionMessage {

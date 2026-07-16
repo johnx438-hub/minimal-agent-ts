@@ -69,6 +69,7 @@ function mergeConfig(base: AgentPluginConfig, patch: Partial<AgentPluginConfig>)
     api_profiles: patch.api_profiles ?? base.api_profiles,
     workflows: patch.workflows ?? base.workflows,
     workflow_dirs: patch.workflow_dirs ?? base.workflow_dirs,
+    session_notify: { ...base.session_notify, ...patch.session_notify },
   };
 }
 

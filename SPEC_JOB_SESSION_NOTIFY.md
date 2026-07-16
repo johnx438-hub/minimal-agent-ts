@@ -2,9 +2,9 @@
 
 > **定位**: 后台 job（及同步 workflow）结束后，如何 **可观测** 地通知人类通道，并可选 **触发主 Agent 一轮**（验收 / 询问下一步）——与真人用户消息严格区分。  
 > **原则**: MessageBridge **只出站**；触发 ReAct 走 **session 入队**；事件驱动优先于轮询；不抢主 Agent 正在跑的 turn。  
-> **状态**: Draft v0.1（2026-07-16）· 未实现  
-> **代码锚点（现状）**: `src/hooks/message-bridge.ts` · `src/spawn/job-registry.ts` · `src/runner.ts` · `src/workflow/*`  
-> **相关**: [docs/ROADMAP.md](./docs/ROADMAP.md) §6（MessageBridge / Inbound / Schedule）· [SPEC_WORKFLOW.md](./SPEC_WORKFLOW.md) · [SPEC_CONTEXT_MANAGEMENT.md](./SPEC_CONTEXT_MANAGEMENT.md)
+> **状态**: Draft v0.2（2026-07-16）· **J1–J3/J5 落地**（auto_run 默认 false）  
+> **代码锚点**: `src/hooks/system-event.ts` · `session-inbound-queue.ts` · `job-registry.ts` · `runner.ts`  
+> **相关**: [docs/ROADMAP.md](./docs/ROADMAP.md) §6 · [SPEC_WORKFLOW.md](./SPEC_WORKFLOW.md)
 
 ---
 
@@ -331,15 +331,15 @@ notifySystemEvent(ev); // bridge + optional queue + optional RuntimeEvent
 
 | 切片 | 内容 | 依赖 | 预估 |
 |------|------|------|------|
-| **J1** | `SystemEvent` + `formatSystemEventForHumans` + JobRegistry settle → MessageBridge `system_notice` | 现有 bridge | 小 |
-| **J2** | `still_running` 计数 + 多 job 文案；可选 `jobs_all_settled` | J1 | 小 |
-| **J3** | `SessionInboundQueue` + idle drain + 合成 prompt + **默认 auto_run=false** | J1；runner idle 钩子 | 中 |
-| **J4** | debounce / merge 多 job；配置 `session_notify` | J3 | 中 |
-| **J5** | workflow complete/handback → 同一 `notifySystemEvent` | J1；runner | 小～中 |
-| **J6** | RuntimeEvent 对齐 + 单测 + 文档 | J1–J5 | 小 |
-| **J7** | 飞书/IM sink 展示 notice（不自动回帖除非另开 Inbound） | J1 | 后置 |
+| **J1** | `SystemEvent` + format + JobRegistry settle → MessageBridge `system_notice` | ✅ |
+| **J2** | `still_running` + `jobs_all_settled` | ✅ |
+| **J3** | `SessionInboundQueue` + idle drain + 合成 prompt；**auto_run 默认 false** | ✅ |
+| **J4** | debounce（`session_notify.merge` / `debounce_ms`） | ✅ 基础 debounce |
+| **J5** | workflow complete/handback → 同一 hub | ✅ |
+| **J6** | RuntimeEvent `system_event` + 单测 | ✅ |
+| **J7** | 飞书/IM sink | ⏳ 后置 |
 
-**建议开工顺序**: J1 → J2 → J5 → J3 → J4 → J6。
+配置：`agent.json` → `session_notify: { bridge, auto_run, auto_run_kinds, merge, debounce_ms }`。
 
 ---
 
@@ -388,6 +388,7 @@ notifySystemEvent(ev); // bridge + optional queue + optional RuntimeEvent
 
 | 日期 | 版本 | 说明 |
 |------|------|------|
+| 2026-07-16 | v0.2 | J1–J6 实现：hub、job settle、workflow、inbound auto_run |
 | 2026-07-16 | v0.1 | 初稿：双通道、SystemEvent、J1–J7 切片与验收 |
 
 ---

@@ -17,6 +17,7 @@ import { buildJobLlmMeta } from '../llm-profiles.js';
 import { runSpawnJob, type SpawnJobResult } from './job-runner.js';
 import type { ResolvedSpawnPreset } from './types.js';
 import type { AgentConfig } from '../types.js';
+import { notifySystemEvent, type SystemEvent } from '../hooks/system-event.js';
 
 export interface StartSpawnJobOptions {
   preset: ResolvedSpawnPreset;
@@ -81,9 +82,14 @@ class JobRegistry {
       parentConfig: opts.parentConfig,
       abortController,
       spawnSessionId,
-    }).finally(() => {
-      this.handles.delete(jobId);
-    });
+    })
+      .then((result) => {
+        this.emitJobSettled(parentSessionId, jobId, opts.preset.name, result);
+        return result;
+      })
+      .finally(() => {
+        this.handles.delete(jobId);
+      });
 
     const handle: SpawnJobHandle = {
       jobId,
@@ -98,6 +104,95 @@ class JobRegistry {
     void promise;
 
     return handle;
+  }
+
+  /** Count queued/running jobs for a parent session (disk meta + in-memory handles). */
+  countActiveForParent(parentSessionId: string): {
+    count: number;
+    ids: string[];
+  } {
+    const ids: string[] = [];
+    const seen = new Set<string>();
+
+    for (const meta of this.list({ parentSessionId, limit: 100 })) {
+      if (meta.status === 'running' || meta.status === 'queued') {
+        if (!seen.has(meta.job_id)) {
+          seen.add(meta.job_id);
+          ids.push(meta.job_id);
+        }
+      }
+    }
+    // In-process handles may be slightly ahead of disk status
+    for (const [id, handle] of this.handles) {
+      if (seen.has(id)) continue;
+      const meta = readJobMeta(id);
+      if (meta?.parent_session_id === parentSessionId) {
+        if (meta.status === 'running' || meta.status === 'queued') {
+          seen.add(id);
+          ids.push(id);
+        }
+      } else if (!meta) {
+        // handle exists without readable meta — treat as active
+        seen.add(id);
+        ids.push(id);
+      }
+      void handle;
+    }
+
+    return { count: ids.length, ids };
+  }
+
+  private emitJobSettled(
+    parentSessionId: string,
+    jobId: string,
+    preset: string,
+    result: SpawnJobResult,
+  ): void {
+    const status = result.status;
+    const kind =
+      status === 'cancelled'
+        ? 'job_cancelled'
+        : status === 'failed' || !result.ok
+          ? 'job_failed'
+          : 'job_complete';
+
+    const { count, ids } = this.countActiveForParent(parentSessionId);
+    // Exclude self if still listed as active (race): prefer post-settle disk state
+    const stillIds = ids.filter((id) => id !== jobId);
+    const still = stillIds.length;
+
+    const report_path = result.reportPaths?.[0];
+    const ev: SystemEvent = {
+      kind,
+      timestamp: Date.now(),
+      session_id: parentSessionId,
+      event_id: `${jobId}:${status}`,
+      job_id: jobId,
+      preset,
+      status:
+        status === 'cancelled'
+          ? 'cancelled'
+          : status === 'failed' || !result.ok
+            ? 'failed'
+            : 'completed',
+      ok: result.ok,
+      summary_line: result.summaryLine,
+      report_path,
+      still_running: still,
+      still_running_ids: stillIds,
+    };
+    notifySystemEvent(ev);
+
+    if (still === 0) {
+      notifySystemEvent({
+        kind: 'jobs_all_settled',
+        timestamp: Date.now(),
+        session_id: parentSessionId,
+        event_id: `all_settled:${parentSessionId}:${jobId}`,
+        still_running: 0,
+        still_running_ids: [],
+      });
+    }
   }
 
   get(jobId: string): SpawnJobMeta | null {

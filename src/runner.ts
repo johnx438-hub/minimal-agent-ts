@@ -121,7 +121,12 @@ import {
   BridgeStepForwarder,
   buildUserTaskMessage,
   createMessageBridge,
+  createSystemEventHub,
+  setGlobalSystemEventHub,
   type MessageBridge,
+  type SessionNotifyConfig,
+  type SystemEvent,
+  type SystemEventHub,
 } from './hooks/index.js';
 
 export type { SessionLlmOverride };
@@ -249,6 +254,9 @@ export class AgentRuntime {
   private readonly useStream: boolean;
   private readonly messageBridge: MessageBridge;
   private readonly bridgeStepForwarder: BridgeStepForwarder;
+  private readonly systemEventHub: SystemEventHub;
+  private inboundDrainTimer: ReturnType<typeof setTimeout> | null = null;
+  private inboundAutoRunBusy = false;
   readonly permissionGate = new PermissionGate();
   private workflowConfirmFn?: WorkflowConfirmFn;
   private pendingHandoffPrefix: string | null = null;
@@ -277,6 +285,13 @@ export class AgentRuntime {
       () => this.session?.session_id,
       { source: 'main' },
     );
+    this.systemEventHub = createSystemEventHub({
+      bridge: this.messageBridge,
+      config: this.pluginConfig.session_notify as SessionNotifyConfig | undefined,
+      onEvent: (ev) => this.emitSystemEventRuntime(ev),
+      onMaybeAutoRun: (sessionId) => this.scheduleInboundDrain(sessionId),
+    });
+    setGlobalSystemEventHub(this.systemEventHub);
     this.permissionGate.setLifecycle((event) => this.emit(event));
 
     configureActionWriteQueue({
@@ -418,6 +433,11 @@ export class AgentRuntime {
     return this.messageBridge;
   }
 
+  /** SPEC_JOB_SESSION_NOTIFY hub (bridge + inbound queue). */
+  getSystemEventHub(): SystemEventHub {
+    return this.systemEventHub;
+  }
+
   /**
    * Emit user task full text to MessageBridge (H1 payload).
    * Same path as runTask / runWorkflowTask; does not invoke the LLM.
@@ -425,6 +445,87 @@ export class AgentRuntime {
   publishUserTaskToBridge(prompt: string): void {
     const session = this.ensureSession();
     this.messageBridge.emit(buildUserTaskMessage(session.session_id, prompt));
+  }
+
+  private emitSystemEventRuntime(ev: SystemEvent): void {
+    this.emit({
+      type: 'system_event',
+      kind: ev.kind,
+      session_id: ev.session_id,
+      event_id: ev.event_id,
+      job_id: ev.job_id,
+      workflow: ev.workflow,
+      still_running: ev.still_running,
+      summary: ev.summary_line ?? ev.handback_reason ?? ev.digest?.slice(0, 200),
+    });
+  }
+
+  /** Debounced drain of system-event inbound queue → optional auto_run. */
+  private scheduleInboundDrain(sessionId?: string): void {
+    const cfg = this.systemEventHub.getConfig();
+    const ms =
+      cfg.merge === 'per_event'
+        ? 0
+        : Math.max(0, cfg.debounce_ms ?? 800);
+    if (this.inboundDrainTimer) {
+      clearTimeout(this.inboundDrainTimer);
+      this.inboundDrainTimer = null;
+    }
+    this.inboundDrainTimer = setTimeout(() => {
+      this.inboundDrainTimer = null;
+      void this.drainInboundAutoRun(sessionId);
+    }, ms);
+  }
+
+  private async drainInboundAutoRun(sessionIdHint?: string): Promise<void> {
+    if (this.running || this.inboundAutoRunBusy) return;
+    const cfg = this.systemEventHub.getConfig();
+    if (!cfg.auto_run) return;
+
+    const session = this.session;
+    if (!session) return;
+    const sessionId = sessionIdHint ?? session.session_id;
+    if (sessionId !== session.session_id) return;
+
+    const items = this.systemEventHub.inbound.drain(sessionId, {
+      onlyAutoRun: true,
+    });
+    if (items.length === 0) return;
+
+    this.inboundAutoRunBusy = true;
+    this.armedWorkflowPath = null;
+    try {
+      const prompt = this.systemEventHub.formatSyntheticPrompt(items);
+      await this.runSingleTask(prompt);
+    } catch {
+      // Errors already emitted from runSingleTask; do not rethrow into job path.
+    } finally {
+      this.inboundAutoRunBusy = false;
+      // Nested settles while we ran
+      if (this.systemEventHub.inbound.pendingCount(session.session_id) > 0) {
+        this.scheduleInboundDrain(session.session_id);
+      }
+    }
+  }
+
+  private notifyWorkflowSettled(opts: {
+    workflow: string;
+    workflowPath?: string;
+    sessionId: string;
+    digest: string;
+    handbackReason?: string;
+  }): void {
+    const kind = opts.handbackReason ? 'workflow_handback' : 'workflow_complete';
+    this.systemEventHub.notify({
+      kind,
+      timestamp: Date.now(),
+      session_id: opts.sessionId,
+      event_id: `wf:${opts.workflow}:${kind}:${Date.now()}`,
+      workflow: opts.workflow,
+      workflow_path: opts.workflowPath,
+      digest: opts.digest,
+      handback_reason: opts.handbackReason,
+    });
   }
 
   private emit(event: RuntimeEvent): void {
@@ -1107,7 +1208,10 @@ export class AgentRuntime {
 
     this.ensureSession();
 
-    const workflowPath = this.armedWorkflowPath;
+    // System events never arm/use workflow one-shot.
+    const isSystemEvent =
+      prompt.includes('<system_event') && prompt.includes('not_user_message');
+    const workflowPath = isSystemEvent ? null : this.armedWorkflowPath;
     this.armedWorkflowPath = null;
 
     if (workflowPath) {
@@ -1254,6 +1358,14 @@ export class AgentRuntime {
         });
       }
 
+      this.notifyWorkflowSettled({
+        workflow: wfResult.workflow,
+        workflowPath: resolved,
+        sessionId: session.session_id,
+        digest: summary,
+        handbackReason: wfResult.handback?.reason,
+      });
+
       this.emit({ type: 'run_end', reason: 'completed' });
       return { text: summary, messages: session.current_messages };
     } catch (err) {
@@ -1272,6 +1384,7 @@ export class AgentRuntime {
       await flushActionWrites().catch(() => undefined);
       await flushTranscriptWrites().catch(() => undefined);
       this.running = false;
+      this.scheduleInboundDrain(session.session_id);
     }
   }
 
@@ -1346,10 +1459,16 @@ export class AgentRuntime {
       await flushActionWrites().catch(() => undefined);
       await flushTranscriptWrites().catch(() => undefined);
       this.running = false;
+      this.scheduleInboundDrain(session.session_id);
     }
   }
 
   async shutdown(): Promise<void> {
+    if (this.inboundDrainTimer) {
+      clearTimeout(this.inboundDrainTimer);
+      this.inboundDrainTimer = null;
+    }
+    setGlobalSystemEventHub(null);
     this.bridgeStepForwarder.dispose();
     await flushActionWrites().catch(() => undefined);
     await flushTranscriptWrites().catch(() => undefined);

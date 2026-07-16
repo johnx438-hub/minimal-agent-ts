@@ -23,3 +23,25 @@ export {
   type BridgeStepForwarderOptions,
   type ToolResultSummaryInput,
 } from './bridge-step-forwarder.js';
+
+export {
+  SessionInboundQueue,
+  type SessionInboundItem,
+} from './session-inbound-queue.js';
+
+export {
+  DEFAULT_SESSION_NOTIFY,
+  clipDigest,
+  createSystemEventHub,
+  formatSystemEventForHumans,
+  formatSystemEventSyntheticPrompt,
+  getGlobalSystemEventHub,
+  notifySystemEvent,
+  resetSystemEventDedupeForTests,
+  setGlobalSystemEventHub,
+  systemEventToSessionMessage,
+  type SessionNotifyConfig,
+  type SystemEvent,
+  type SystemEventHub,
+  type SystemEventKind,
+} from './system-event.js';
