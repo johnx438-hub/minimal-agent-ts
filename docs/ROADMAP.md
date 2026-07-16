@@ -21,6 +21,7 @@
 | [SPEC_WORKFLOW.md](../SPEC_WORKFLOW.md) | 多角色编排：profile 共用 spawn、flow/DAG、job 节点（**W1–W3 ✅**） |
 | [SPEC_JOB_SESSION_NOTIFY.md](../SPEC_JOB_SESSION_NOTIFY.md) | Job/workflow 完成 → MessageBridge notice + session 入队续跑（**Draft**） |
 | [SPEC_SESSION_AUTO_RUN.md](../SPEC_SESSION_AUTO_RUN.md) | auto_run / SystemEventHub **二次开发占位**（定时/Inbound 扩展约定） |
+| [SPEC_SESSION_WORKSPACE.md](../SPEC_SESSION_WORKSPACE.md) | Session 分桶 / 同会话切目录 / 路径授权与权限继承（**设计**） |
 | [SPEC_TUI.md](../SPEC_TUI.md) | TUI 规范 |
 | [agent.mcp.example.json](../agent.mcp.example.json) | MCP 配置示例 |
 
@@ -508,6 +509,7 @@ croner → onTick(scheduleId) → ScheduleFire(def)
 
 | 日期 | 说明 |
 |------|------|
+| 2026-07-17 | 链到 SPEC_SESSION_AUTO_RUN（auto_run 公共模块二次开发占位） |
 | 2026-07-16 | 链到 SPEC_JOB_SESSION_NOTIFY（job/workflow 完成 notice + session 入队） |
 | 2026-07-14 | §6 扩展：InboundAdapter + Dispatch + Schedule（cron 并列 producer；job/session 双 target；croner；与飞书叠法）；§2.2 P2 底座行 |
 | 2026-07-12 | L2-6 统一 compression step 事件；`runTurnEndCompression`；删 `applyTurnEndCompression` |
