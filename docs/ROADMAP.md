@@ -22,6 +22,7 @@
 | [SPEC_JOB_SESSION_NOTIFY.md](../SPEC_JOB_SESSION_NOTIFY.md) | Job/workflow 完成 → MessageBridge notice + session 入队续跑（**Draft**） |
 | [SPEC_SESSION_AUTO_RUN.md](../SPEC_SESSION_AUTO_RUN.md) | auto_run / SystemEventHub **二次开发占位**（定时/Inbound 扩展约定） |
 | [SPEC_SESSION_WORKSPACE.md](../SPEC_SESSION_WORKSPACE.md) | Session 分桶 / 同会话切目录 / 路径授权与权限继承（**设计**） |
+| [SPEC_VISION.md](../SPEC_VISION.md) | Vision / 多模态 user 图片消息管线（**设计**） |
 | [SPEC_TUI.md](../SPEC_TUI.md) | TUI 规范 |
 | [agent.mcp.example.json](../agent.mcp.example.json) | MCP 配置示例 |
 
