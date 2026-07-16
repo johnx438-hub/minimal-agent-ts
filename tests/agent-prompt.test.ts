@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 import {
+  buildFrameworkWorkspaceHints,
   buildSystemPrompt,
   loadWorkspacePromptBundle,
   resolveActiveModelLabel,
@@ -30,6 +31,18 @@ describe('buildSystemPrompt', () => {
     const dir = mkdtempSync(join(tmpdir(), 'agent-prompt-'));
     const prompt = buildSystemPrompt(minimalConfig(dir));
     assert.match(prompt, /当前模型: test-model\./);
+  });
+
+  it('always injects framework workspace hints without Agent.md', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agent-prompt-'));
+    const prompt = buildSystemPrompt(minimalConfig(dir));
+    assert.match(prompt, /Framework workspace conventions/);
+    assert.match(prompt, /invoke_skill/);
+    assert.match(prompt, /\.agent\/memory\//);
+    assert.match(prompt, /\.agent\/plan\.md/);
+    assert.doesNotMatch(prompt, /Workspace agent instructions/);
+    // Hints helper stays stable for docs / reuse
+    assert.match(buildFrameworkWorkspaceHints(), /Built-in/);
   });
 
   it('prefers llm.model and displayName when set', () => {

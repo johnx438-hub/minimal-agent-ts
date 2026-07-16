@@ -107,6 +107,38 @@ export function resolveActiveModelLabel(config: AgentConfig): string {
   return profile ? `${model} (${profile})` : model;
 }
 
+/**
+ * Framework-bound conventions formerly duplicated in Agent.md.example.
+ * Always injected so Agent.md can stay project-specific within its char budget.
+ * Keep protocol/tool names English (see docs/PLAN_PROMPT_ZH.md).
+ */
+export function buildFrameworkWorkspaceHints(): string {
+  return [
+    '',
+    '## Framework workspace conventions',
+    '(Built-in — do not repeat in Agent.md; use Agent.md for project-only rules.)',
+    '',
+    '### Skills',
+    '- Use `invoke_skill` for full playbooks instead of pasting long checklists into Agent.md.',
+    '- Call with skill name + optional focus query when a specialized procedure is needed.',
+    '',
+    '### Cross-session memory',
+    '- User notes: `.agent/memory/` (`profile.md` / `requirements.md` may be injected every run).',
+    '- `archives.md` is an index only — use `grep_search` / `read_file` to open details.',
+    '- TUI: `/memory` status | init | show | paths.',
+    '',
+    '### Optional artifacts',
+    '- `.agent/plan.md` — multi-file or long tasks: goal / steps / risks (agent-maintained).',
+    '- `specs/` — feature specs with acceptance criteria when doing spec-first work.',
+    '',
+    '### Default work style (override in Agent.md if needed)',
+    '- Multi-file or >10-turn work: prefer writing `.agent/plan.md` before large edits.',
+    '- Vague/large tasks: ask 3–5 clarifying questions before destructive tools ("grill" style).',
+    '- Small 1–2 file fixes: proceed directly.',
+    '- Large HTML/JSON / quote-heavy payloads: `write_file` `content_b64` or `edit_file` `*_b64` (see tool hints).',
+  ].join('\n');
+}
+
 /** Default system prompt; tool names and hints come from the live tool registry. */
 export function buildSystemPrompt(config: AgentConfig): string {
   const recallKb = Math.round((config.recallAutoFullMaxChars ?? 24_000) / 1000);
@@ -143,11 +175,11 @@ export function buildSystemPrompt(config: AgentConfig): string {
   lines.push(`- ${pointerizeRecallGuidance(recallKb)}`);
   lines.push('- If recall marks stale, use read_file for the latest file content.');
 
-  const base = lines.join('\n');
+  const base = lines.join('\n') + buildFrameworkWorkspaceHints();
   const bundle = config.workspacePrompt ?? loadWorkspacePromptBundle(config.cwd);
   const agentMdBlock = bundle.agentMd ? formatWorkspaceAgentMdBlock(bundle.agentMd) : '';
   const memoryBlock = bundle.memory ? formatWorkspaceMemoryBlock(bundle.memory) : '';
 
-  // Order: base < Agent.md < memory < loaded_skills (agent.json) < summary JSON extension
+  // Order: base+framework < Agent.md (project) < memory < loaded_skills < summary extension
   return base + agentMdBlock + memoryBlock + skillExt + getSummaryPromptExtension();
 }

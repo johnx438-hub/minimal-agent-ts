@@ -1,43 +1,33 @@
 # Workspace agent instructions
 
-Copy to `Agent.md` (or `AGENTS.md`) in your project root. Loaded into the system prompt on **every task run**.
+Copy to `Agent.md` (or `AGENTS.md`) in your project root.
+Loaded every task run into the system prompt (**default max 8000 chars**).
 
-## Paradigm
+**Framework-bound conventions are built-in** (skills / memory paths / plan+specs
+artifacts / default work style / b64 tool tips). Do **not** re-copy those here —
+keep this file for **project-only** rules so you use the budget for custom content.
 
-- **Plan-with-files**: multi-file or >10-turn work → write `.agent/plan.md` (goal / steps / risks) before editing source.
-- **Spec-first**: new features → `specs/<feature>.md` with acceptance criteria; align implementation to spec.
-- **Grill mode**: vague or large tasks → ask 3–5 clarifying questions **before** destructive tools; continue after user replies.
-- **Large HTML/JSON**: `write_file` **content_b64** or `edit_file` **old_string_b64** / **new_string_b64** — avoids broken JSON tool args from unescaped quotes.
-
-## Triggers
-
-| Condition | Action |
-|-----------|--------|
-| Touches >3 files or unclear scope | Ask clarifying questions; optional `.agent/plan.md` |
-| New feature / API change | `specs/<name>.md` then implement |
-| Small fix (1–2 files) | Proceed directly |
-| User says "grill me" | Questions only this turn; no write/edit/shell until answered |
-
-## Artifacts
-
-```
-.agent/plan.md       # current task plan (agent-maintained)
-specs/               # feature specs (optional)
-```
-
-## Skills (on demand)
-
-Use `invoke_skill` for full playbooks instead of duplicating them here:
-
-- `invoke_skill` with skill name + optional query when a trigger matches and you need the full checklist.
-
-## Cross-session memory
-
-User-level notes live in `.agent/memory/` (see `/memory` in TUI):
-
-- `profile.md` / `requirements.md` — injected every run
-- `archives.md` — task index only (use `grep_search` / `read_file`)
+---
 
 ## Project notes
 
-<!-- Add stack, conventions, test commands, paths to avoid, etc. -->
+<!-- Stack, conventions, test commands, paths to avoid, domain vocabulary, etc. -->
+
+- Language / runtime:
+- Test command:
+- Paths to prefer / avoid:
+- Review or deploy notes:
+
+## Team workflow (optional)
+
+<!-- Your process only. Example: -->
+
+1. Align on goal and acceptance before large edits.
+2. Prefer small diffs; open a short plan for multi-file work (see built-in `.agent/plan.md`).
+3. …
+
+## Do not put here
+
+- Long skill playbooks → `invoke_skill("…")` instead  
+- Full tool manuals → already in tool schemas + framework hints  
+- Memory layout (`.agent/memory/`) → built-in  

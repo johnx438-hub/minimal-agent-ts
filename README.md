@@ -143,19 +143,22 @@ Agent 框架的性能瓶颈不在 CPU，在 LLM API 延迟。主循环快 10 倍
 
 ### Agent.md — 项目级系统提示词
 
-在项目根目录放一个 `Agent.md`（或 `AGENTS.md`），框架启动时会自动读取并拼接到系统提示词中。这是我的（也就是本仓库根目录的 `Agent.md`）：
+在项目根目录放一个 `Agent.md`（或 `AGENTS.md`），框架会读入并拼进系统提示词。  
+**Skills / memory 路径 / plan+specs 约定 / 默认工作风格** 已内置在框架（`buildFrameworkWorkspaceHints`），**不要**再写进 `Agent.md`，把 8000 字符预算留给项目规则。
+
+模板：`Agent.md.example`（仅 Project notes）。本仓库示例：
 
 ```markdown
 # Workspace agent instructions
-1. **规划对齐**：讨论需求、目标，最短代码实现方式……
-2. **创建目标**：讨论完成后在任务项目文件夹中创建spec文档和测试脚本
-3. **阶段分支**：任务启动前预判代码长度，按功能块分批完成……
+1. **规划对齐**：……
+2. **创建目标**：……
+3. **阶段分支**：……
 ```
 
-- **优先级**：`Agent.md` → `AGENTS.md`（二选一，先找到的生效）
-- **预算上限**：默认 8000 字符，超过按行截断
-- **加载时机**：每轮 turn 构建系统提示词时，顺序为：`base → Agent.md → memory → loaded_skills → summary extension`
-- **源码**：`src/workspace-agent-md.ts`
+- **优先级**：`Agent.md` → `AGENTS.md`（二选一）
+- **预算上限**：默认 8000 字符（可用 `AGENT_MD_MAX_CHARS` 覆盖）
+- **拼接顺序**：`base + framework hints → Agent.md → memory → loaded_skills → summary extension`
+- **源码**：`src/workspace-agent-md.ts` · `src/agent-prompt.ts`
 
 ### 自定义子 Agent 预设
 
