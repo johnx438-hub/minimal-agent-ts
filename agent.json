@@ -348,5 +348,17 @@
     "allow": ["*"],
     "deny": []
   },
-  "mcp_servers": []
+  "mcp_servers": [],
+  "session_notify": {
+    "bridge": true,
+    "auto_run": true,
+    "auto_run_kinds": [
+      "workflow_complete",
+      "workflow_handback",
+      "jobs_all_settled"
+    ],
+    "merge": "debounce",
+    "debounce_ms": 800,
+    "max_digest_chars": 4000
+  }
 }
