@@ -4,7 +4,8 @@
 > **原则**: MessageBridge **只出站**；触发 ReAct 走 **session 入队**；事件驱动优先于轮询；不抢主 Agent 正在跑的 turn。  
 > **状态**: Draft v0.2（2026-07-16）· **J1–J3/J5 落地**（auto_run 默认 false）  
 > **代码锚点**: `src/hooks/system-event.ts` · `session-inbound-queue.ts` · `job-registry.ts` · `runner.ts`  
-> **相关**: [docs/ROADMAP.md](./docs/ROADMAP.md) §6 · [SPEC_WORKFLOW.md](./SPEC_WORKFLOW.md)
+> **相关**: [docs/ROADMAP.md](./docs/ROADMAP.md) §6 · [SPEC_WORKFLOW.md](./SPEC_WORKFLOW.md) ·  
+> **扩展/二次开发**: [SPEC_SESSION_AUTO_RUN.md](./SPEC_SESSION_AUTO_RUN.md)（定时、其它 producer、反模式）
 
 ---
 

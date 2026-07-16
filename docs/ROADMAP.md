@@ -20,6 +20,7 @@
 | [SPEC_TOOLS.md](../SPEC_TOOLS.md) | 工具（含 Office ✅） |
 | [SPEC_WORKFLOW.md](../SPEC_WORKFLOW.md) | 多角色编排：profile 共用 spawn、flow/DAG、job 节点（**W1–W3 ✅**） |
 | [SPEC_JOB_SESSION_NOTIFY.md](../SPEC_JOB_SESSION_NOTIFY.md) | Job/workflow 完成 → MessageBridge notice + session 入队续跑（**Draft**） |
+| [SPEC_SESSION_AUTO_RUN.md](../SPEC_SESSION_AUTO_RUN.md) | auto_run / SystemEventHub **二次开发占位**（定时/Inbound 扩展约定） |
 | [SPEC_TUI.md](../SPEC_TUI.md) | TUI 规范 |
 | [agent.mcp.example.json](../agent.mcp.example.json) | MCP 配置示例 |
 
@@ -275,6 +276,7 @@ ACTION_IO_METRICS=1 npm start -- --json-events --allow-shell --cwd /path/to/sand
 - 入站（IM / cron / CLI）只实现 **producer → Dispatch**，不直接 `import agent` 内环
 - 与 `RuntimeEvent` / `--json-events` **并存**：events 偏结构化遥测；bridge 偏**人类可读会话流**
 - 定时默认走 **后台 job**（与主会话分离）；可选投递 **近期活跃 session**（可玩性 / 续聊）
+- **Job/workflow 完成通知**（推送 notice + 可选踢主 Agent）：见 [SPEC_JOB_SESSION_NOTIFY](../SPEC_JOB_SESSION_NOTIFY.md)（Bridge 出站 ⊕ SessionInboundQueue，禁止在 sink 内 `runTask`）
 
 ### 6.2 出站：消息类型与 Bridge（现状）
 
@@ -506,6 +508,7 @@ croner → onTick(scheduleId) → ScheduleFire(def)
 
 | 日期 | 说明 |
 |------|------|
+| 2026-07-16 | 链到 SPEC_JOB_SESSION_NOTIFY（job/workflow 完成 notice + session 入队） |
 | 2026-07-14 | §6 扩展：InboundAdapter + Dispatch + Schedule（cron 并列 producer；job/session 双 target；croner；与飞书叠法）；§2.2 P2 底座行 |
 | 2026-07-12 | L2-6 统一 compression step 事件；`runTurnEndCompression`；删 `applyTurnEndCompression` |
 | 2026-07-12 | L2-5 `estimate.ts` + `heavy-compression.ts`；`context-policy` 纯 re-export wrapper |
