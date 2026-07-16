@@ -98,7 +98,26 @@ import {
 } from './action-write-queue.js';
 import { formatTurnIoSummary, isActionIoMetricsEnabled } from './action-io-metrics.js';
 import type { TaskBlock } from './task-tracker.js';
-import { setWorkspaceRoot } from './workspace.js';
+import {
+  addWorkspaceGrant,
+  applySessionWorkspaceState,
+  buildSessionWorkspaceState,
+  configureSessionStore,
+  findGrantForPath,
+  formatWorkspaceGrantLine,
+  getCwdCapabilityPolicy,
+  getPrimaryRoot,
+  getProjectId,
+  getSessionStoreMode,
+  getWorkspaceGrants,
+  getWorkspaceRoot,
+  projectDisplayName,
+  resolveMaybeRelative,
+  revokeWorkspaceGrant,
+  setWorkspaceRoot,
+  type WorkspaceGrant,
+  type WorkspaceGrantMode,
+} from './workspace.js';
 import {
   loadWorkspacePromptBundle,
   workspacePromptRunStartMeta,
@@ -266,8 +285,7 @@ export class AgentRuntime {
   private modelListGeneration = 0;
 
   constructor(opts: AgentRuntimeOptions) {
-    setWorkspaceRoot(opts.cwd);
-
+    // Load plugin first so session_store / agent_home apply before sessionsDir().
     const built = buildAgentConfig({
       cwd: opts.cwd,
       loadSkills: opts.loadSkills,
@@ -276,8 +294,16 @@ export class AgentRuntime {
         : (opts.allowShell ?? false) || env('ALLOW_SHELL') === '1',
       allowWeb: (opts.allowWeb ?? false) || env('ALLOW_WEB') === '1',
     });
-    this.config = built.config;
     this.pluginConfig = built.pluginConfig;
+    configureSessionStore({
+      mode: this.pluginConfig.session_store ?? 'project_local',
+      agentHome: this.pluginConfig.agent_home,
+      capabilityPolicy:
+        this.pluginConfig.cwd_switch?.default_capability_policy ?? 'strict',
+      cwd: opts.cwd,
+    });
+    this.config = built.config;
+    this.config.workspaceGrants = getWorkspaceGrants();
     this.jsonEvents = opts.jsonEvents ?? false;
     this.useStream = env('STREAM', '1') !== '0';
     this.messageBridge = opts.messageBridge ?? createMessageBridge();
@@ -378,6 +404,16 @@ export class AgentRuntime {
     this.session = session;
     this.sessionDirty = dirty;
     this.restoreSessionLlmOverrideFromSession(session);
+    if (session.workspace) {
+      applySessionWorkspaceState(session.workspace);
+      this.config.cwd = getWorkspaceRoot();
+      this.config.workspaceGrants = getWorkspaceGrants();
+    } else {
+      // Legacy session: stamp workspace snapshot without moving primary if project_local
+      session.workspace = buildSessionWorkspaceState();
+      this.config.workspaceGrants = getWorkspaceGrants();
+      this.sessionDirty = true;
+    }
   }
 
   private normalizeSessionLlmOverride(
@@ -848,6 +884,7 @@ export class AgentRuntime {
       workspacePrompt: this.runWorkspacePrompt ?? undefined,
       webSearchTaskState: this.webSearchTaskState,
       messageBridge: this.messageBridge,
+      workspaceGrants: getWorkspaceGrants(),
       // Nested spawn steps → RuntimeEvent only (MB-4 bridge tags spawn/job separately).
       nestedStepSink: this.emitStepEvent,
     };
@@ -1034,12 +1071,143 @@ export class AgentRuntime {
     return [...(this.pluginConfig.loaded_skills ?? [])];
   }
 
-  async setCwd(path: string): Promise<void> {
-    const resolved = resolve(path);
+  /**
+   * Change active tool cwd. Session identity stays; storage bucket depends on session_store.
+   * Path must be under an existing grant, or pass `grantIfMissing` to add a session grant.
+   */
+  async setCwd(
+    path: string,
+    opts?: {
+      grantIfMissing?: boolean;
+      grantMode?: WorkspaceGrantMode;
+      grantShell?: boolean;
+      grantWeb?: boolean;
+    },
+  ): Promise<void> {
+    const resolved = resolveMaybeRelative(this.config.cwd, path);
+    let existing = findGrantForPath(resolved);
+
+    if (!existing) {
+      if (!opts?.grantIfMissing) {
+        throw new Error(
+          `path not in workspace grants: ${resolved}. Use /cwd allow <path> first.`,
+        );
+      }
+      addWorkspaceGrant({
+        root: resolved,
+        mode: opts.grantMode ?? 'read_write',
+        scope: 'session',
+        shell: opts.grantShell,
+        web: opts.grantWeb,
+        granted_at: Date.now(),
+      });
+      existing = findGrantForPath(resolved);
+    }
+    void existing;
+
+    const prevCwd = this.config.cwd;
     setWorkspaceRoot(resolved);
-    this.config.cwd = resolved;
+    this.config.cwd = getWorkspaceRoot();
+    this.config.workspaceGrants = getWorkspaceGrants();
+
+    // Reload project config from new active cwd (Agent.md / agent.json overlay)
     this.pluginConfig = loadAgentPluginConfig(resolved);
+    // Re-apply session store so agent_home mode is not wiped by project agent.json omission
+    configureSessionStore({
+      mode: this.pluginConfig.session_store ?? getSessionStoreMode(),
+      agentHome: this.pluginConfig.agent_home,
+      capabilityPolicy:
+        this.pluginConfig.cwd_switch?.default_capability_policy ??
+        getCwdCapabilityPolicy(),
+    });
     await reinitializeToolRegistry(resolved, this.pluginConfig);
+
+    if (this.session) {
+      if (!this.session.workspace) {
+        this.session.workspace = buildSessionWorkspaceState();
+      } else {
+        this.session.workspace = {
+          ...this.session.workspace,
+          active_cwd: getWorkspaceRoot(),
+          workspace_grants: getWorkspaceGrants(),
+        };
+      }
+      this.sessionDirty = true;
+      this.saveIfDirty(true);
+    }
+
+    // Capability policy on switch
+    const policy = getCwdCapabilityPolicy();
+    const grant = findGrantForPath(resolved);
+    if (policy === 'strict' || policy === 'inherit_grant_only') {
+      if (policy === 'inherit_grant_only' || grant) {
+        if (grant && !grant.shell) {
+          // leave allowShell as-is only if inherit_session — strict drops session shell for safety on foreign roots
+        }
+      }
+      if (policy === 'strict' && grant && resolve(grant.root) !== resolve(getPrimaryRoot())) {
+        // Foreign root: do not auto-enable shell/web; user must re-approve or grant.shell
+        if (!grant.shell) this.config.allowShell = this.permissionGate.hasAlwaysGrant('shell');
+        if (!grant.web) this.config.allowWeb = this.permissionGate.hasAlwaysGrant('web');
+      }
+    }
+    void prevCwd;
+  }
+
+  allowWorkspacePath(opts: {
+    path: string;
+    mode?: WorkspaceGrantMode;
+    scope?: 'once' | 'session' | 'sticky';
+    shell?: boolean;
+    web?: boolean;
+    label?: string;
+  }): WorkspaceGrant {
+    const root = resolveMaybeRelative(this.config.cwd, opts.path);
+    const grant = addWorkspaceGrant({
+      root,
+      mode: opts.mode ?? 'read_write',
+      scope: opts.scope ?? 'session',
+      shell: opts.shell,
+      web: opts.web,
+      granted_at: Date.now(),
+      label: opts.label,
+    });
+    this.config.workspaceGrants = getWorkspaceGrants();
+    if (this.session?.workspace) {
+      this.session.workspace.workspace_grants = getWorkspaceGrants();
+      this.sessionDirty = true;
+      this.saveIfDirty(true);
+    }
+    return grant;
+  }
+
+  listWorkspaceGrants(): WorkspaceGrant[] {
+    return getWorkspaceGrants();
+  }
+
+  revokeWorkspacePath(path: string): boolean {
+    const root = resolveMaybeRelative(this.config.cwd, path);
+    const ok = revokeWorkspaceGrant(root);
+    this.config.workspaceGrants = getWorkspaceGrants();
+    if (this.session?.workspace) {
+      this.session.workspace.workspace_grants = getWorkspaceGrants();
+      this.sessionDirty = true;
+      this.saveIfDirty(true);
+    }
+    return ok;
+  }
+
+  describeWorkspace(): string {
+    const lines = [
+      `session_store: ${getSessionStoreMode()}`,
+      `project: ${projectDisplayName()} (${getProjectId()})`,
+      `primary: ${getPrimaryRoot()}`,
+      `active_cwd: ${getWorkspaceRoot()}`,
+      `capability_policy: ${getCwdCapabilityPolicy()}`,
+      'grants:',
+      ...getWorkspaceGrants().map((g) => `  - ${formatWorkspaceGrantLine(g)}`),
+    ];
+    return lines.join('\n');
   }
 
   armWorkflow(path: string | null): void {

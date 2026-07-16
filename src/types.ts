@@ -120,6 +120,11 @@ export interface AgentConfig {
   previewPolicy?: PreviewPolicy;
   /** When set, only these builtin/MCP tool names are exposed to the API. */
   toolAllowlist?: string[];
+  /**
+   * Path grants for multi-root tools (SPEC_SESSION_WORKSPACE).
+   * When set, readable/writable resolution consults these in addition to cwd.
+   */
+  workspaceGrants?: import('./workspace.js').WorkspaceGrant[];
   /** When aborted, LLM fetch and long-running tools should stop. */
   abortSignal?: AbortSignal;
   /** Nested spawn_agent depth (0 = main agent). */
@@ -240,6 +245,11 @@ export interface SessionFile {
    * Upsert by name; used in compression notice for recall pointers.
    */
   skills_invoked?: SessionSkillInvoked[];
+  /**
+   * SPEC_SESSION_WORKSPACE: project bucket + active_cwd + path grants.
+   * Optional for legacy session files.
+   */
+  workspace?: import('./workspace.js').SessionWorkspaceState;
 }
 
 /** Session metadata for quick lookup. */

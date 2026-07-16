@@ -10,7 +10,12 @@ import { resolve } from 'node:path';
 
 import { releaseAllCompactedContent } from './context/prune.js';
 import type { SessionFile, SessionMeta, SessionOverview } from './types.js';
-import { ensureSessionsDir, sessionPath, sessionsDir } from './workspace.js';
+import {
+  buildSessionWorkspaceState,
+  ensureSessionsDir,
+  sessionPath,
+  sessionsDir,
+} from './workspace.js';
 
 const DEFAULT_SAVE_MIN_INTERVAL_MS = 30_000;
 const lastSaveAtBySession = new Map<string, number>();
@@ -78,6 +83,7 @@ export function createSession(userId: string = 'user_default'): SessionFile {
     updated_at: now,
     tasks: [],
     current_messages: [],
+    workspace: buildSessionWorkspaceState(),
   };
 
   ensureSessionsDir();
@@ -112,6 +118,18 @@ export function loadSession(sessionId: string): SessionFile | null {
 export function saveSession(session: SessionFile): void {
   releaseAllCompactedContent(session.current_messages);
   session.updated_at = Date.now();
+  // Keep workspace snapshot in sync with process grants/cwd when present.
+  if (session.workspace) {
+    const snap = buildSessionWorkspaceState(
+      session.workspace.inherit_capabilities_on_cwd_switch,
+    );
+    session.workspace = {
+      ...snap,
+      // Preserve project identity for agent_home buckets
+      project_id: session.workspace.project_id || snap.project_id,
+      primary_root: session.workspace.primary_root || snap.primary_root,
+    };
+  }
   ensureSessionsDir();
   const path = sessionPath(session.session_id);
   writeFileSync(path, JSON.stringify(session, null, 2), 'utf8');

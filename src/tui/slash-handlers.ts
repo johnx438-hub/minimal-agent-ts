@@ -536,6 +536,60 @@ export async function handlePiSlash(
     return;
   }
 
+  if (result.message === '__cwd_list__') {
+    say(runtime.describeWorkspace());
+    resumeEditor();
+    return;
+  }
+
+  if (result.message === '__cwd_primary__') {
+    try {
+      const primary = runtime.listWorkspaceGrants().find((g) => g.label === 'primary');
+      const target = primary?.root ?? runtime.config.cwd;
+      await runtime.setCwd(target, { grantIfMissing: true });
+      say(`cwd → ${runtime.config.cwd} (primary)`);
+    } catch (err) {
+      say(err instanceof Error ? err.message : String(err));
+    }
+    resumeEditor();
+    return;
+  }
+
+  if (result.message?.startsWith('__cwd_allow__:')) {
+    const raw = result.message.slice('__cwd_allow__:'.length).trim();
+    const tokens = raw.split(/\s+/).filter(Boolean);
+    const flags = new Set(tokens.filter((t) => t.startsWith('--')).map((t) => t.toLowerCase()));
+    const pathTok = tokens.find((t) => !t.startsWith('--'));
+    if (!pathTok) {
+      say('Usage: /cwd allow <path> [--ro|--rw] [--shell] [--web]');
+      resumeEditor();
+      return;
+    }
+    const mode = flags.has('--ro') || flags.has('--read-only') ? 'read_only' : 'read_write';
+    try {
+      const g = runtime.allowWorkspacePath({
+        path: pathTok,
+        mode,
+        scope: 'session',
+        shell: flags.has('--shell'),
+        web: flags.has('--web'),
+      });
+      say(`granted: ${g.root} (${g.mode}${g.shell ? ', shell' : ''}${g.web ? ', web' : ''})`);
+    } catch (err) {
+      say(err instanceof Error ? err.message : String(err));
+    }
+    resumeEditor();
+    return;
+  }
+
+  if (result.message?.startsWith('__cwd_revoke__:')) {
+    const path = result.message.slice('__cwd_revoke__:'.length);
+    const ok = runtime.revokeWorkspacePath(path);
+    say(ok ? `revoked grant for ${path}` : `no grant for ${path}`);
+    resumeEditor();
+    return;
+  }
+
   if (result.message?.startsWith('__cwd__:')) {
     const path = result.message.slice('__cwd__:'.length);
     const target = resolve(path);
@@ -547,8 +601,13 @@ export async function handlePiSlash(
         return;
       }
     }
-    await runtime.setCwd(target);
-    say(`cwd → ${runtime.config.cwd}`);
+    try {
+      // grantIfMissing: user confirmed tree leave → session rw grant + switch
+      await runtime.setCwd(target, { grantIfMissing: true, grantMode: 'read_write' });
+      say(`cwd → ${runtime.config.cwd}`);
+    } catch (err) {
+      say(err instanceof Error ? err.message : String(err));
+    }
     resumeEditor();
     return;
   }

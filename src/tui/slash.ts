@@ -234,8 +234,32 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
   },
   {
     command: '/cwd <path>',
-    hintZh: '切换工作目录',
-    hintEn: 'Change working directory',
+    hintZh: '切换工作目录（需已授权路径）',
+    hintEn: 'Switch working directory (must be granted)',
+  },
+  {
+    command: '/cwd list',
+    autocomplete: false,
+    hintZh: '列出 active_cwd 与路径授权',
+    hintEn: 'List active_cwd and path grants',
+  },
+  {
+    command: '/cwd allow <path> [--ro|--rw]',
+    autocomplete: false,
+    hintZh: '授权路径（session 级）',
+    hintEn: 'Grant path access (session scope)',
+  },
+  {
+    command: '/cwd revoke <path>',
+    autocomplete: false,
+    hintZh: '撤销路径授权',
+    hintEn: 'Revoke path grant',
+  },
+  {
+    command: '/cwd primary',
+    autocomplete: false,
+    hintZh: '回到 session 主项目目录',
+    hintEn: 'Return to session primary root',
   },
   {
     command: '/stop',
@@ -610,8 +634,33 @@ export function parseSlashLine(line: string): SlashResult | null {
       return parseJobsSlash(parts);
 
     case '/cwd': {
+      const sub = parts[1]?.toLowerCase();
+      if (!sub) {
+        return {
+          handled: true,
+          message:
+            'Usage: /cwd <path> | /cwd list | /cwd allow <path> [--ro|--rw] | /cwd revoke <path> | /cwd primary',
+        };
+      }
+      if (sub === 'list' || sub === 'status') {
+        return { handled: true, message: '__cwd_list__' };
+      }
+      if (sub === 'primary' || sub === 'home') {
+        return { handled: true, message: '__cwd_primary__' };
+      }
+      if (sub === 'allow') {
+        const rest = parts.slice(2);
+        if (rest.length === 0) {
+          return { handled: true, message: 'Usage: /cwd allow <path> [--ro|--rw] [--shell] [--web]' };
+        }
+        return { handled: true, message: `__cwd_allow__:${rest.join(' ')}` };
+      }
+      if (sub === 'revoke') {
+        const path = parts.slice(2).join(' ');
+        if (!path) return { handled: true, message: 'Usage: /cwd revoke <path>' };
+        return { handled: true, message: `__cwd_revoke__:${path}` };
+      }
       const path = parts.slice(1).join(' ');
-      if (!path) return { handled: true, message: 'Usage: /cwd <path>' };
       return { handled: true, message: `__cwd__:${path}` };
     }
 

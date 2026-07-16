@@ -70,6 +70,9 @@ function mergeConfig(base: AgentPluginConfig, patch: Partial<AgentPluginConfig>)
     workflows: patch.workflows ?? base.workflows,
     workflow_dirs: patch.workflow_dirs ?? base.workflow_dirs,
     session_notify: { ...base.session_notify, ...patch.session_notify },
+    session_store: patch.session_store ?? base.session_store,
+    agent_home: patch.agent_home ?? base.agent_home,
+    cwd_switch: { ...base.cwd_switch, ...patch.cwd_switch },
   };
 }
 

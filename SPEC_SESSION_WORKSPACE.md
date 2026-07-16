@@ -1,8 +1,8 @@
 # Session 存储、项目分桶与同会话切目录 Spec（设计）
 
 > **定位**: 全局安装后多目录使用时，如何 **按项目分类会话**，又允许用户在 **同一 session 内** 切换工作目录，并对指定路径做 **手动授权 + 可选权限继承**。  
-> **状态**: Design draft v0.1（2026-07-17）· **未实现**  
-> **现状锚点**: `src/workspace.ts`（`.sessions` 在 cwd 下）· `SessionFile` 无 cwd 字段 · `PermissionGate`（shell/web/path_escape JIT）· `/cwd`  
+> **状态**: Design draft v0.2（2026-07-17）· **SW-1～SW-4 初版已落地**（默认仍 `project_local`）  
+> **代码锚点**: `src/workspace.ts` · `path-utils.ts` · `runner.setCwd` / `allowWorkspacePath` · `/cwd allow|list|revoke|primary`  
 > **相关**: [SPEC_SESSION_AUTO_RUN.md](./SPEC_SESSION_AUTO_RUN.md) · [docs/ROADMAP.md](./docs/ROADMAP.md) §6  
 
 ---
@@ -288,12 +288,19 @@ $ minimal-agent                    # 全局 bin，cwd=/work/app
 
 | ID | 内容 |
 |----|------|
-| **SW-1** | `AGENT_HOME` + `sessions/by-project/<id>/` + project_id 派生 |
-| **SW-2** | SessionFile.workspace 字段；创建/resume 恢复 active_cwd |
-| **SW-3** | 多根 resolveReadable/Writable |
-| **SW-4** | `/cwd allow|list|revoke` + 切换确认 UX |
-| **SW-5** | capability 策略 strict / inherit_* |
-| **SW-6** | 从 project_local `.sessions` 导入 |
+| **SW-1** | `AGENT_HOME` + `sessions/by-project/<id>/` + project_id 派生 | ✅ `session_store` / `agent_home` |
+| **SW-2** | SessionFile.workspace；create/resume 恢复 | ✅ |
+| **SW-3** | 多根 resolveReadable/Writable via grants | ✅ |
+| **SW-4** | `/cwd allow|list|revoke|primary` + setCwd grantIfMissing | ✅ 基础 |
+| **SW-5** | capability 策略 strict 初值（切外国 root 时收紧 shell/web） | 部分 |
+| **SW-6** | 从 project_local `.sessions` 导入 | ⏳ |
+
+启用 agent_home（`agent.json`）:
+
+```json
+"session_store": "agent_home",
+"agent_home": "~/.minimal-agent"
+```
 
 ---
 

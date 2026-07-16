@@ -218,6 +218,18 @@ export interface AgentPluginConfig {
     debounce_ms?: number;
     max_digest_chars?: number;
   };
+  /**
+   * SPEC_SESSION_WORKSPACE: where session files live.
+   * project_local = `<cwd>/.sessions` (default); agent_home = `~/.minimal-agent/sessions/by-project/<id>/`
+   */
+  session_store?: 'project_local' | 'agent_home';
+  /** Override agent home (default ~/.minimal-agent or MINIMAL_AGENT_HOME). */
+  agent_home?: string;
+  /** Capability policy when switching active_cwd (default strict). */
+  cwd_switch?: {
+    default_capability_policy?: 'strict' | 'inherit_session' | 'inherit_grant_only';
+    warn_if_leaving_primary_git_root?: boolean;
+  };
 }
 
 export interface SkillDefinition {
