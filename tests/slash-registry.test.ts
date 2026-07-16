@@ -39,6 +39,11 @@ describe('slash registry', () => {
   it('resolves aliases to primary commands', () => {
     assert.equal(parseSlashLine('/r last')?.message, '__resume_last__');
     assert.equal(parseSlashLine('/wf')?.message, '__workflow_list__');
+    assert.equal(parseSlashLine('/sessions import')?.message, '__sessions_import__');
+    assert.equal(
+      parseSlashLine('/sessions import --overwrite')?.message,
+      '__sessions_import__:overwrite',
+    );
     assert.equal(parseSlashLine('/workflow off')?.armWorkflow, null);
     assert.equal(parseSlashLine('/wf disarm')?.armWorkflow, null);
     assert.equal(parseSlashLine('/workflow clear')?.armWorkflow, null);

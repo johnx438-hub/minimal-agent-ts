@@ -293,7 +293,7 @@ $ minimal-agent                    # 全局 bin，cwd=/work/app
 | **SW-3** | 多根 resolveReadable/Writable via grants | ✅ |
 | **SW-4** | `/cwd allow|list|revoke|primary` + setCwd grantIfMissing | ✅ 基础 |
 | **SW-5** | capability 策略 strict 初值（切外国 root 时收紧 shell/web） | 部分 |
-| **SW-6** | 从 project_local `.sessions` 导入 | ⏳ |
+| **SW-6** | 从 project_local `.sessions` 导入 | ✅ `/sessions import` · `importProjectLocalSessions` |
 
 启用 agent_home（`agent.json`）:
 

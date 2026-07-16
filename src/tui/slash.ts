@@ -65,6 +65,12 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
     hintEn: 'Session list (summary · n note · d delete · i detail)',
   },
   {
+    command: '/sessions import',
+    autocomplete: false,
+    hintZh: '导入项目 .sessions → agent_home 分桶',
+    hintEn: 'Import project .sessions into agent_home buckets',
+  },
+  {
     command: '/resume [id|last]',
     aliases: ['/r'],
     hintZh: '恢复会话；省略 id 或 last = 最近活跃',
@@ -447,8 +453,17 @@ export function parseSlashLine(line: string): SlashResult | null {
       return { handled: true, message: '__lang_usage__' };
     }
 
-    case '/sessions':
+    case '/sessions': {
+      const sub = parts[1]?.toLowerCase();
+      if (sub === 'import') {
+        const overwrite = parts.some((p) => p === '--overwrite' || p === '-f');
+        return {
+          handled: true,
+          message: overwrite ? '__sessions_import__:overwrite' : '__sessions_import__',
+        };
+      }
       return { handled: true, message: '__sessions__' };
+    }
 
     case '/new': {
       const sub = parts[1]?.toLowerCase();

@@ -99,6 +99,11 @@ import {
 import { formatTurnIoSummary, isActionIoMetricsEnabled } from './action-io-metrics.js';
 import type { TaskBlock } from './task-tracker.js';
 import {
+  formatImportResult,
+  importProjectLocalSessions as importProjectLocalSessionsFromDisk,
+  type ImportProjectLocalSessionsResult,
+} from './session-import.js';
+import {
   addWorkspaceGrant,
   applySessionWorkspaceState,
   buildSessionWorkspaceState,
@@ -1183,6 +1188,20 @@ export class AgentRuntime {
 
   listWorkspaceGrants(): WorkspaceGrant[] {
     return getWorkspaceGrants();
+  }
+
+  /**
+   * SW-6: copy `<projectRoot>/.sessions` session files into agent_home by-project bucket.
+   * Does not switch session_store; set agent.json session_store=agent_home to use dest.
+   */
+  importProjectLocalSessions(opts?: {
+    projectRoot?: string;
+    overwrite?: boolean;
+  }): ImportProjectLocalSessionsResult {
+    return importProjectLocalSessionsFromDisk({
+      projectRoot: opts?.projectRoot ?? getPrimaryRoot(),
+      overwrite: opts?.overwrite,
+    });
   }
 
   revokeWorkspacePath(path: string): boolean {

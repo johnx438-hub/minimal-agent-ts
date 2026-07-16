@@ -4,6 +4,7 @@ import type { TUI } from '@earendil-works/pi-tui';
 
 import type { CompressionFatigueTracker } from '../compression-fatigue.js';
 import type { AgentRuntime } from '../runner.js';
+import { formatImportResult } from '../session-import.js';
 import { cwdChangeNeedsConfirm } from '../tools/path-utils.js';
 import { executeMemorySlash } from '../workspace-memory.js';
 import {
@@ -224,6 +225,21 @@ export async function handlePiSlash(
       );
     } else {
       await showHistoryBrowser(tui, session);
+    }
+    resumeEditor();
+    return;
+  }
+
+  if (
+    result.message === '__sessions_import__' ||
+    result.message === '__sessions_import__:overwrite'
+  ) {
+    const overwrite = result.message.endsWith(':overwrite');
+    try {
+      const r = runtime.importProjectLocalSessions({ overwrite });
+      say(formatImportResult(r));
+    } catch (err) {
+      say(err instanceof Error ? err.message : String(err));
     }
     resumeEditor();
     return;
