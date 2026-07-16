@@ -283,10 +283,10 @@ function materializeVisionMessage(msg: ChatMessage, opts: {
 
 | ID | 内容 | 依赖 |
 |----|------|------|
-| **VI-0** | 类型 + `materializeVisionMessage` + 单测（fixture 小 png） | — |
-| **VI-1** | assemble/llm 接线；纯文本回归 | VI-0 |
-| **VI-2** | CLI `--image` / `--image-url` | VI-1 |
-| **VI-3** | TUI `@path` 或 `/image` + chat 占位展示 | VI-1 |
+| **VI-0** | 类型 + `materializeVisionMessage` + 单测 | ✅ |
+| **VI-1** | assemble/llm 接线；纯文本回归 | ✅ |
+| **VI-2** | CLI `--image` / `--image-url` | ✅ |
+| **VI-3** | TUI `@path` 或 `/image` + chat 占位展示 | ⏳ |
 | **VI-4** | session `vision_refs` 持久化 + 资产目录 | VI-2/3 |
 | **VI-5** | 预算/上限/profile `supports_vision` | VI-1 |
 | **VI-6** | 粘贴剪贴板（可选） | VI-3 |
