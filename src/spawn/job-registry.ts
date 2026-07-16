@@ -139,21 +139,17 @@ class JobRegistry {
         }
       }
     }
-    // In-process handles may be slightly ahead of disk status
-    for (const [id, handle] of this.handles) {
+    // In-process handles may be slightly ahead of disk status.
+    // Only count when meta is readable and parent matches (avoid cross-session pollution).
+    for (const id of this.handles.keys()) {
       if (seen.has(id)) continue;
       const meta = readJobMeta(id);
-      if (meta?.parent_session_id === parentSessionId) {
-        if (meta.status === 'running' || meta.status === 'queued') {
-          seen.add(id);
-          ids.push(id);
-        }
-      } else if (!meta) {
-        // handle exists without readable meta — treat as active
+      if (!meta) continue;
+      if (meta.parent_session_id !== parentSessionId) continue;
+      if (meta.status === 'running' || meta.status === 'queued') {
         seen.add(id);
         ids.push(id);
       }
-      void handle;
     }
 
     return { count: ids.length, ids };

@@ -1,5 +1,5 @@
-import { existsSync, readdirSync } from 'node:fs';
-import { basename, isAbsolute, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import { loadAgentPluginConfig } from './plugins/config-loader.js';
 import { discoverSkills } from './plugins/skills.js';
@@ -99,10 +99,12 @@ import {
 import { formatTurnIoSummary, isActionIoMetricsEnabled } from './action-io-metrics.js';
 import type { TaskBlock } from './task-tracker.js';
 import {
-  formatImportResult,
   importProjectLocalSessions as importProjectLocalSessionsFromDisk,
   type ImportProjectLocalSessionsResult,
 } from './session-import.js';
+import {
+  DEFAULT_SESSION_NOTIFY,
+} from './hooks/system-event.js';
 import {
   addWorkspaceGrant,
   applySessionWorkspaceState,
@@ -116,6 +118,7 @@ import {
   getSessionStoreMode,
   getWorkspaceGrants,
   getWorkspaceRoot,
+  isPathUnderRoot,
   projectDisplayName,
   resolveMaybeRelative,
   revokeWorkspaceGrant,
@@ -508,7 +511,7 @@ export class AgentRuntime {
     const ms =
       cfg.merge === 'per_event'
         ? 0
-        : Math.max(0, cfg.debounce_ms ?? 800);
+        : Math.max(0, cfg.debounce_ms ?? DEFAULT_SESSION_NOTIFY.debounce_ms);
     if (this.inboundDrainTimer) {
       clearTimeout(this.inboundDrainTimer);
       this.inboundDrainTimer = null;
@@ -1090,15 +1093,17 @@ export class AgentRuntime {
     },
   ): Promise<void> {
     const resolved = resolveMaybeRelative(this.config.cwd, path);
-    let existing = findGrantForPath(resolved);
+    /** Capture before setWorkspaceRoot (project_local rebinds primary). */
+    const prevPrimary = getPrimaryRoot();
 
-    if (!existing) {
+    let grant = findGrantForPath(resolved);
+    if (!grant) {
       if (!opts?.grantIfMissing) {
         throw new Error(
           `path not in workspace grants: ${resolved}. Use /cwd allow <path> first.`,
         );
       }
-      addWorkspaceGrant({
+      grant = addWorkspaceGrant({
         root: resolved,
         mode: opts.grantMode ?? 'read_write',
         scope: 'session',
@@ -1106,12 +1111,18 @@ export class AgentRuntime {
         web: opts.grantWeb,
         granted_at: Date.now(),
       });
-      existing = findGrantForPath(resolved);
     }
-    void existing;
 
-    const prevCwd = this.config.cwd;
     setWorkspaceRoot(resolved);
+    // Re-apply mode/shell/web from the grant we just used (setWorkspaceRoot must not demote).
+    const after = findGrantForPath(resolved);
+    if (after && grant) {
+      after.mode = grant.mode;
+      after.shell = grant.shell;
+      after.web = grant.web;
+      if (grant.label) after.label = grant.label;
+    }
+
     this.config.cwd = getWorkspaceRoot();
     this.config.workspaceGrants = getWorkspaceGrants();
 
@@ -1141,22 +1152,34 @@ export class AgentRuntime {
       this.saveIfDirty(true);
     }
 
-    // Capability policy on switch
+    this.applyCapabilityPolicyOnCwdSwitch(resolved, prevPrimary);
+  }
+
+  /**
+   * strict / inherit_grant_only: leaving the previous primary tree without
+   * grant.shell|web drops session shell/web (always-grants still apply).
+   */
+  private applyCapabilityPolicyOnCwdSwitch(
+    resolved: string,
+    prevPrimary: string,
+  ): void {
     const policy = getCwdCapabilityPolicy();
+    if (policy === 'inherit_session') return;
+
+    const leavingPrimaryTree = !isPathUnderRoot(prevPrimary, resolved);
     const grant = findGrantForPath(resolved);
+    if (!leavingPrimaryTree && policy === 'strict') return;
+
     if (policy === 'strict' || policy === 'inherit_grant_only') {
-      if (policy === 'inherit_grant_only' || grant) {
-        if (grant && !grant.shell) {
-          // leave allowShell as-is only if inherit_session — strict drops session shell for safety on foreign roots
-        }
+      const shellOk = Boolean(grant?.shell);
+      const webOk = Boolean(grant?.web);
+      if (!shellOk) {
+        this.config.allowShell = this.permissionGate.hasAlwaysGrant('shell');
       }
-      if (policy === 'strict' && grant && resolve(grant.root) !== resolve(getPrimaryRoot())) {
-        // Foreign root: do not auto-enable shell/web; user must re-approve or grant.shell
-        if (!grant.shell) this.config.allowShell = this.permissionGate.hasAlwaysGrant('shell');
-        if (!grant.web) this.config.allowWeb = this.permissionGate.hasAlwaysGrant('web');
+      if (!webOk) {
+        this.config.allowWeb = this.permissionGate.hasAlwaysGrant('web');
       }
     }
-    void prevCwd;
   }
 
   allowWorkspacePath(opts: {

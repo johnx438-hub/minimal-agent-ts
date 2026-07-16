@@ -86,11 +86,17 @@ export const SYSTEM_EVENT_AUTO_RUN_INSTRUCTIONS = [
   'Prefer not to fan out many new background jobs without confirmation.',
 ].join('\n');
 
+/**
+ * Detect harness-generated auto_run prompts.
+ * Prefer `runTask(..., { skipArmedWorkflow: true })` for trusted paths;
+ * string detection is a fallback and requires open marker at start + close + instruction line.
+ */
 export function isSyntheticSystemEventPrompt(prompt: string): boolean {
   const t = prompt.trimStart();
-  return (
-    t.startsWith(SYSTEM_EVENT_PROMPT_OPEN) && t.includes(SYSTEM_EVENT_PROMPT_CLOSE)
-  );
+  if (!t.startsWith(SYSTEM_EVENT_PROMPT_OPEN)) return false;
+  if (!t.includes(SYSTEM_EVENT_PROMPT_CLOSE)) return false;
+  // Require our instruction block so casual user paste is less likely to match
+  return t.includes('This is NOT a human user message');
 }
 
 export function clipDigest(text: string, maxChars: number): string {

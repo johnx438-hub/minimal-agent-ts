@@ -4,18 +4,13 @@ import type { AgentConfig } from '../types.js';
 import {
   findGrantForPath,
   getWorkspaceGrants,
-  isPathReadableByGrants,
+  isPathUnderRoot,
   isPathWritableByGrants,
 } from '../workspace.js';
 
 export function pathWouldEscape(cwd: string, input: string): boolean {
   const target = isAbsolute(input) ? input : resolve(cwd, input);
-  const root = resolve(cwd);
-  return !(target === root || target.startsWith(root + sep));
-}
-
-function isUnderRoot(root: string, target: string): boolean {
-  return target === root || target.startsWith(root + sep);
+  return !isPathUnderRoot(cwd, target);
 }
 
 function effectiveGrants(config: AgentConfig) {
@@ -26,8 +21,7 @@ function effectiveGrants(config: AgentConfig) {
 
 export function resolveSafePath(cwd: string, input: string): string {
   const target = isAbsolute(input) ? input : resolve(cwd, input);
-  const root = resolve(cwd);
-  if (!isUnderRoot(root, target)) {
+  if (!isPathUnderRoot(cwd, target)) {
     throw new Error(`path escapes working directory: ${input}`);
   }
   return target;
@@ -46,20 +40,15 @@ export async function resolveReadablePath(
   reason: string,
 ): Promise<string> {
   const target = isAbsolute(input) ? input : resolve(config.cwd, input);
-  const root = resolve(config.cwd);
-  if (isUnderRoot(root, target)) {
+  if (isPathUnderRoot(config.cwd, target)) {
     return target;
   }
 
-  // Multi-root grants (SPEC_SESSION_WORKSPACE)
   const grants = effectiveGrants(config);
-  if (grants.length > 0) {
-    const hit = grants.find(
-      (g) => target === resolve(g.root) || target.startsWith(resolve(g.root) + sep),
-    );
-    if (hit) return target;
-  } else if (isPathReadableByGrants(target)) {
-    return target;
+  for (const g of grants) {
+    if (isPathUnderRoot(g.root, target)) {
+      return target;
+    }
   }
 
   const gate = config.permissionGate;
@@ -74,18 +63,30 @@ export async function resolveReadablePath(
 
 /**
  * Write/edit paths: under cwd or under a read_write grant.
- * No JIT write escape.
+ * Prefer passing full config (same as readable) for grant resolution.
  */
-export function resolveWritablePath(cwd: string, input: string): string {
+export function resolveWritablePath(
+  cwdOrConfig: string | AgentConfig,
+  input: string,
+): string {
+  const cwd = typeof cwdOrConfig === 'string' ? cwdOrConfig : cwdOrConfig.cwd;
+  const grants =
+    typeof cwdOrConfig === 'string'
+      ? getWorkspaceGrants()
+      : effectiveGrants(cwdOrConfig);
+
   const target = isAbsolute(input) ? input : resolve(cwd, input);
-  const root = resolve(cwd);
-  if (isUnderRoot(root, target)) {
+  if (isPathUnderRoot(cwd, target)) {
     return target;
+  }
+  for (const g of grants) {
+    if (g.mode === 'read_write' && isPathUnderRoot(g.root, target)) {
+      return target;
+    }
   }
   if (isPathWritableByGrants(target)) {
     return target;
   }
-  // Also check findGrant in case process grants updated
   const g = findGrantForPath(target);
   if (g?.mode === 'read_write') {
     return target;

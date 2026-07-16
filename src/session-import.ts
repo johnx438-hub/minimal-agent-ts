@@ -13,7 +13,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
 import type { SessionFile } from './types.js';
 import {
@@ -81,7 +81,7 @@ function stampWorkspace(
 
 function copyIfExists(src: string, dest: string): boolean {
   if (!existsSync(src)) return false;
-  ensureDir(resolve(dest, '..'));
+  ensureDir(dirname(dest));
   const st = statSync(src);
   if (st.isDirectory()) {
     cpSync(src, dest, { recursive: true, force: true });

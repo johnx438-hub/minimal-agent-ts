@@ -69,7 +69,8 @@ export function defaultPrimaryGrant(root: string): WorkspaceGrant {
   };
 }
 
-function isUnderRoot(root: string, target: string): boolean {
+/** Shared path containment check (also used by path-utils). */
+export function isPathUnderRoot(root: string, target: string): boolean {
   const r = resolve(root);
   const t = resolve(target);
   return t === r || t.startsWith(r + sep);
@@ -156,23 +157,27 @@ export function resetWorkspaceForTests(cwd?: string): void {
 }
 
 /**
- * Set active tool cwd. In project_local mode this also moves the session store
- * root (legacy). In agent_home mode, session bucket stays on primaryRoot/projectId.
+ * Set active tool cwd.
+ * - project_local: also moves session store root (legacy) to the new path.
+ * - agent_home: session bucket stays on primaryRoot/projectId.
+ * Never wipes non-primary grants; preserves mode/shell/web on an existing
+ * grant for the new root (so grantIfMissing --ro is not clobbered to rw).
  */
 export function setWorkspaceRoot(cwd: string): void {
   activeCwd = resolve(cwd);
   if (sessionStoreMode === 'project_local') {
     primaryRoot = activeCwd;
     projectId = projectIdFromRoot(primaryRoot);
-    grants = [defaultPrimaryGrant(primaryRoot)];
-  } else {
-    // agent_home: keep primary/projectId; ensure primary still granted
-    ensurePrimaryGrant();
+  }
+  // agent_home: keep primaryRoot/projectId; still ensure primary is grantable
+  upsertRootGrant(primaryRoot, { asPrimaryLabel: true });
+  if (resolve(activeCwd) !== resolve(primaryRoot)) {
+    upsertRootGrant(activeCwd, { asPrimaryLabel: false });
   }
   ensureSessionsDir();
 }
 
-/** Rebind project bucket (new session or explicit rebind). */
+/** Rebind project bucket (new session or explicit rebind). Clears foreign grants. */
 export function setPrimaryRoot(root: string): void {
   primaryRoot = resolve(root);
   projectId = projectIdFromRoot(primaryRoot);
@@ -181,11 +186,30 @@ export function setPrimaryRoot(root: string): void {
   ensureSessionsDir();
 }
 
-function ensurePrimaryGrant(): void {
-  const p = resolve(primaryRoot);
-  if (!grants.some((g) => resolve(g.root) === p)) {
-    grants = [defaultPrimaryGrant(p), ...grants];
+/**
+ * Ensure a grant exists for root. Does not demote existing mode/shell/web.
+ */
+function upsertRootGrant(
+  root: string,
+  opts: { asPrimaryLabel: boolean },
+): void {
+  const p = resolve(root);
+  const idx = grants.findIndex((g) => resolve(g.root) === p);
+  if (idx >= 0) {
+    const g = grants[idx]!;
+    if (opts.asPrimaryLabel && !g.label) g.label = 'primary';
+    if (opts.asPrimaryLabel) g.label = 'primary';
+    return;
   }
+  const grant = defaultPrimaryGrant(p);
+  if (!opts.asPrimaryLabel) {
+    grant.label = undefined;
+  }
+  grants = opts.asPrimaryLabel ? [grant, ...grants] : [...grants, grant];
+}
+
+function ensurePrimaryGrant(): void {
+  upsertRootGrant(primaryRoot, { asPrimaryLabel: true });
 }
 
 /** Replace grants (e.g. restore from SessionFile). */
@@ -208,24 +232,29 @@ export function addWorkspaceGrant(grant: WorkspaceGrant): WorkspaceGrant {
   return normalized;
 }
 
+/**
+ * Remove grant for root. Returns true if a grant for that path was present
+ * (even if primary is immediately re-added in agent_home mode).
+ */
 export function revokeWorkspaceGrant(root: string): boolean {
   const r = resolve(root);
-  const before = grants.length;
+  const had = grants.some((g) => resolve(g.root) === r);
+  if (!had) return false;
   grants = grants.filter((g) => resolve(g.root) !== r);
-  // Never drop primary silently in agent_home
+  // Never leave agent_home without a primary grant
   if (sessionStoreMode === 'agent_home') {
     ensurePrimaryGrant();
   } else if (grants.length === 0) {
     grants = [defaultPrimaryGrant(activeCwd)];
   }
-  return grants.length < before;
+  return true;
 }
 
 export function findGrantForPath(targetAbs: string): WorkspaceGrant | undefined {
   const t = resolve(targetAbs);
   // Prefer longest matching root
   const matches = grants
-    .filter((g) => isUnderRoot(g.root, t))
+    .filter((g) => isPathUnderRoot(g.root, t))
     .sort((a, b) => b.root.length - a.root.length);
   return matches[0];
 }

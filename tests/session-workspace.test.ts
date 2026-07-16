@@ -13,11 +13,14 @@ import type { AgentConfig } from '../src/types.js';
 import {
   addWorkspaceGrant,
   configureSessionStore,
+  findGrantForPath,
   getProjectId,
   getSessionStoreMode,
+  getWorkspaceGrants,
   getWorkspaceRoot,
   projectIdFromRoot,
   resetWorkspaceForTests,
+  revokeWorkspaceGrant,
   sessionsDir,
   sessionPath,
   setWorkspaceRoot,
@@ -170,5 +173,33 @@ describe('path grants', () => {
     const cfg = minimalConfig(cwd);
     const abs = await resolveReadablePath(cfg, join(lab, 'a.txt'), 'test');
     assert.equal(abs, join(lab, 'a.txt'));
+  });
+
+  it('setWorkspaceRoot preserves grant mode (no hard reset to rw)', () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'sw-cwd4-'));
+    const lab = mkdtempSync(join(tmpdir(), 'sw-lab4-'));
+    configureSessionStore({ mode: 'project_local', cwd });
+    addWorkspaceGrant({
+      root: lab,
+      mode: 'read_only',
+      scope: 'session',
+      shell: true,
+      granted_at: Date.now(),
+      label: 'lab',
+    });
+    setWorkspaceRoot(lab);
+    const hit = findGrantForPath(lab);
+    assert.ok(hit);
+    assert.equal(hit!.mode, 'read_only');
+    assert.equal(hit!.shell, true);
+  });
+
+  it('revokeWorkspaceGrant returns true even when primary is re-added', () => {
+    const project = mkdtempSync(join(tmpdir(), 'sw-rev-'));
+    const home = mkdtempSync(join(tmpdir(), 'sw-revh-'));
+    configureSessionStore({ mode: 'agent_home', agentHome: home, cwd: project });
+    assert.equal(revokeWorkspaceGrant(project), true);
+    // primary re-added; still a grant at project
+    assert.ok(findGrantForPath(project));
   });
 });
