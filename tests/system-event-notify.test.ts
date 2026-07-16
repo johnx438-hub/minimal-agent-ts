@@ -6,7 +6,7 @@ import {
   createSystemEventHub,
   formatSystemEventForHumans,
   formatSystemEventSyntheticPrompt,
-  resetSystemEventDedupeForTests,
+  isSyntheticSystemEventPrompt,
   type SessionMessage,
   type SystemEvent,
 } from '../src/hooks/index.js';
@@ -54,8 +54,7 @@ describe('formatSystemEventForHumans', () => {
 });
 
 describe('system event hub', () => {
-  it('emits bridge system_notice and dedupes event_id', () => {
-    resetSystemEventDedupeForTests();
+  it('emits bridge system_notice and dedupes event_id per hub', () => {
     const bag: SessionMessage[] = [];
     const bridge = createMessageBridge();
     bridge.addSink({
@@ -73,10 +72,16 @@ describe('system event hub', () => {
     assert.equal(bag[0]?.source, 'job');
     assert.equal(bag[0]?.source_id, 'job_a');
     assert.match(String(bag[0]?.content), /not a user message/i);
+
+    // Separate hub does not share dedupe set
+    const hub2 = createSystemEventHub({ config: { bridge: false } });
+    assert.equal(
+      hub2.notify(baseJob({ kind: 'job_complete', event_id: 'dup1' })),
+      true,
+    );
   });
 
   it('enqueues auto_run only for configured kinds when auto_run true', () => {
-    resetSystemEventDedupeForTests();
     const inbound = new SessionInboundQueue();
     let maybe = 0;
     const hub = createSystemEventHub({
@@ -112,12 +117,17 @@ describe('system event hub', () => {
     assert.equal(drained[0]?.event.kind, 'jobs_all_settled');
   });
 
-  it('synthetic prompt is wrapped as system_event', () => {
+  it('synthetic prompt is wrapped as system_event and detected', () => {
     const p = formatSystemEventSyntheticPrompt([
       baseJob({ kind: 'job_complete', event_id: 'x' }),
     ]);
     assert.match(p, /<system_event not_user_message="true">/);
     assert.match(p, /NOT a human user message/i);
+    assert.equal(isSyntheticSystemEventPrompt(p), true);
+    assert.equal(
+      isSyntheticSystemEventPrompt('please use <system_event in docs'),
+      false,
+    );
   });
 });
 

@@ -210,7 +210,10 @@ export interface AgentPluginConfig {
   session_notify?: {
     bridge?: boolean;
     auto_run?: boolean;
-    auto_run_kinds?: string[];
+    /** Prefer SystemEventKind values; string kept for JSON forward-compat. */
+    auto_run_kinds?: Array<
+      import('../hooks/system-event.js').SystemEventKind | string
+    >;
     merge?: 'per_event' | 'debounce' | 'settle_only';
     debounce_ms?: number;
     max_digest_chars?: number;

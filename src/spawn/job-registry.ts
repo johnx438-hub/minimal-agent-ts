@@ -17,7 +17,24 @@ import { buildJobLlmMeta } from '../llm-profiles.js';
 import { runSpawnJob, type SpawnJobResult } from './job-runner.js';
 import type { ResolvedSpawnPreset } from './types.js';
 import type { AgentConfig } from '../types.js';
-import { notifySystemEvent, type SystemEvent } from '../hooks/system-event.js';
+import {
+  notifySystemEvent,
+  type SystemEvent,
+  type SystemEventKind,
+} from '../hooks/system-event.js';
+
+function mapSpawnResultToJobEvent(result: SpawnJobResult): {
+  kind: SystemEventKind;
+  status: 'completed' | 'failed' | 'cancelled';
+} {
+  if (result.status === 'cancelled') {
+    return { kind: 'job_cancelled', status: 'cancelled' };
+  }
+  if (result.status === 'failed' || !result.ok) {
+    return { kind: 'job_failed', status: 'failed' };
+  }
+  return { kind: 'job_complete', status: 'completed' };
+}
 
 export interface StartSpawnJobOptions {
   preset: ResolvedSpawnPreset;
@@ -148,15 +165,8 @@ class JobRegistry {
     preset: string,
     result: SpawnJobResult,
   ): void {
-    const status = result.status;
-    const kind =
-      status === 'cancelled'
-        ? 'job_cancelled'
-        : status === 'failed' || !result.ok
-          ? 'job_failed'
-          : 'job_complete';
-
-    const { count, ids } = this.countActiveForParent(parentSessionId);
+    const { kind, status } = mapSpawnResultToJobEvent(result);
+    const { ids } = this.countActiveForParent(parentSessionId);
     // Exclude self if still listed as active (race): prefer post-settle disk state
     const stillIds = ids.filter((id) => id !== jobId);
     const still = stillIds.length;
@@ -169,12 +179,7 @@ class JobRegistry {
       event_id: `${jobId}:${status}`,
       job_id: jobId,
       preset,
-      status:
-        status === 'cancelled'
-          ? 'cancelled'
-          : status === 'failed' || !result.ok
-            ? 'failed'
-            : 'completed',
+      status,
       ok: result.ok,
       summary_line: result.summaryLine,
       report_path,

@@ -203,7 +203,7 @@ export type RuntimeEvent =
   | {
       /** SPEC_JOB_SESSION_NOTIFY: job/workflow settle push */
       type: 'system_event';
-      kind: string;
+      kind: import('./hooks/system-event.js').SystemEventKind | string;
       session_id: string;
       event_id: string;
       job_id?: string;

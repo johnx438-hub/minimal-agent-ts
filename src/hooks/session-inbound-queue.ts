@@ -4,24 +4,30 @@
 
 import type { SystemEvent } from './system-event.js';
 
+export const UNKNOWN_SESSION_ID = 'unknown';
+
 export interface SessionInboundItem {
   event: SystemEvent;
   enqueued_at: number;
   auto_run: boolean;
 }
 
+function normalizeSessionId(sessionId: string): string {
+  return sessionId.trim() || UNKNOWN_SESSION_ID;
+}
+
 export class SessionInboundQueue {
   private readonly bySession = new Map<string, SessionInboundItem[]>();
 
   enqueue(sessionId: string, item: SessionInboundItem): void {
-    const id = sessionId.trim() || 'unknown';
+    const id = normalizeSessionId(sessionId);
     const list = this.bySession.get(id) ?? [];
     list.push(item);
     this.bySession.set(id, list);
   }
 
   pendingCount(sessionId: string): number {
-    return this.bySession.get(sessionId.trim() || 'unknown')?.length ?? 0;
+    return this.bySession.get(normalizeSessionId(sessionId))?.length ?? 0;
   }
 
   /**
@@ -32,7 +38,7 @@ export class SessionInboundQueue {
     sessionId: string,
     opts?: { max?: number; onlyAutoRun?: boolean },
   ): SessionInboundItem[] {
-    const id = sessionId.trim() || 'unknown';
+    const id = normalizeSessionId(sessionId);
     const list = this.bySession.get(id) ?? [];
     if (list.length === 0) return [];
 
@@ -60,6 +66,6 @@ export class SessionInboundQueue {
       this.bySession.clear();
       return;
     }
-    this.bySession.delete(sessionId.trim() || 'unknown');
+    this.bySession.delete(normalizeSessionId(sessionId));
   }
 }

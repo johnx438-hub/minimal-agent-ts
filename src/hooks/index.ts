@@ -31,11 +31,15 @@ export {
 
 export {
   DEFAULT_SESSION_NOTIFY,
+  SYSTEM_EVENT_AUTO_RUN_INSTRUCTIONS,
+  SYSTEM_EVENT_PROMPT_CLOSE,
+  SYSTEM_EVENT_PROMPT_OPEN,
   clipDigest,
   createSystemEventHub,
   formatSystemEventForHumans,
   formatSystemEventSyntheticPrompt,
   getGlobalSystemEventHub,
+  isSyntheticSystemEventPrompt,
   notifySystemEvent,
   resetSystemEventDedupeForTests,
   setGlobalSystemEventHub,
@@ -45,3 +49,5 @@ export {
   type SystemEventHub,
   type SystemEventKind,
 } from './system-event.js';
+
+export { UNKNOWN_SESSION_ID } from './session-inbound-queue.js';

@@ -69,10 +69,28 @@ export const DEFAULT_SESSION_NOTIFY: Required<
   max_digest_chars: 4000,
 };
 
-const seenEventIds = new Set<string>();
+/** Open/close markers for synthetic auto_run prompts (detect without false positives). */
+export const SYSTEM_EVENT_PROMPT_OPEN = '<system_event not_user_message="true">';
+export const SYSTEM_EVENT_PROMPT_CLOSE = '</system_event>';
 
-export function resetSystemEventDedupeForTests(): void {
-  seenEventIds.clear();
+const SUMMARY_LINE_CLIP = 500;
+const STILL_RUNNING_IDS_LIST_MAX = 12;
+const DEDUPE_SET_SOFT_CAP = 5000;
+const DEDUPE_SET_TRIM_TO = 2000;
+
+/** Instructions appended after system_event body for main-agent auto_run. */
+export const SYSTEM_EVENT_AUTO_RUN_INSTRUCTIONS = [
+  'You are the main agent. This is NOT a human user message.',
+  'Review the job/workflow result: accept, suggest follow-ups, or ask the user what to do next.',
+  'Do not re-arm a workflow unless the user already asked.',
+  'Prefer not to fan out many new background jobs without confirmation.',
+].join('\n');
+
+export function isSyntheticSystemEventPrompt(prompt: string): boolean {
+  const t = prompt.trimStart();
+  return (
+    t.startsWith(SYSTEM_EVENT_PROMPT_OPEN) && t.includes(SYSTEM_EVENT_PROMPT_CLOSE)
+  );
 }
 
 export function clipDigest(text: string, maxChars: number): string {
@@ -100,17 +118,19 @@ export function formatSystemEventForHumans(
       );
     }
     if (ev.summary_line) {
-      lines.push(`summary: ${clipDigest(ev.summary_line, 500)}`);
+      lines.push(`summary: ${clipDigest(ev.summary_line, SUMMARY_LINE_CLIP)}`);
     }
     if (ev.report_path) lines.push(`report: ${ev.report_path}`);
     if (ev.still_running !== undefined) {
       lines.push(`still_running: ${ev.still_running}`);
       if (ev.still_running_ids?.length) {
-        for (const id of ev.still_running_ids.slice(0, 12)) {
+        for (const id of ev.still_running_ids.slice(0, STILL_RUNNING_IDS_LIST_MAX)) {
           lines.push(`  - ${id}`);
         }
-        if (ev.still_running_ids.length > 12) {
-          lines.push(`  - … +${ev.still_running_ids.length - 12} more`);
+        if (ev.still_running_ids.length > STILL_RUNNING_IDS_LIST_MAX) {
+          lines.push(
+            `  - … +${ev.still_running_ids.length - STILL_RUNNING_IDS_LIST_MAX} more`,
+          );
         }
       }
     }
@@ -139,20 +159,19 @@ export function formatSystemEventSyntheticPrompt(
 ): string {
   const bodies = events.map((ev) => formatSystemEventForHumans(ev, maxDigestChars));
   return [
-    '<system_event not_user_message="true">',
+    SYSTEM_EVENT_PROMPT_OPEN,
     bodies.join('\n\n---\n\n'),
-    '</system_event>',
+    SYSTEM_EVENT_PROMPT_CLOSE,
     '',
-    'You are the main agent. This is NOT a human user message.',
-    'Review the job/workflow result: accept, suggest follow-ups, or ask the user what to do next.',
-    'Do not re-arm a workflow unless the user already asked.',
-    'Prefer not to fan out many new background jobs without confirmation.',
+    SYSTEM_EVENT_AUTO_RUN_INSTRUCTIONS,
   ].join('\n');
 }
 
 export function systemEventToSessionMessage(ev: SystemEvent): SessionMessage {
-  const source: SessionMessageSource =
-    ev.kind.startsWith('job') ? 'job' : ev.kind.startsWith('workflow') ? 'workflow' : 'system';
+  let source: SessionMessageSource = 'system';
+  if (ev.kind.startsWith('job')) source = 'job';
+  else if (ev.kind.startsWith('workflow')) source = 'workflow';
+
   const source_id =
     ev.job_id ??
     (ev.workflow ? `workflow:${ev.workflow}` : undefined);
@@ -180,9 +199,11 @@ export interface SystemEventHubOptions {
 
 /**
  * Central notify: dedupe → bridge → inbound queue → callbacks.
+ * Dedupe set is **per hub** (not process-global) so multi-runtime tests do not clash.
  */
 export function createSystemEventHub(opts: SystemEventHubOptions = {}) {
   const inbound = opts.inboundQueue ?? new SessionInboundQueue();
+  const seenEventIds = new Set<string>();
   let config: SessionNotifyConfig = {
     ...DEFAULT_SESSION_NOTIFY,
     ...opts.config,
@@ -206,15 +227,14 @@ export function createSystemEventHub(opts: SystemEventHubOptions = {}) {
       );
     }
     const kinds = c.auto_run_kinds ?? DEFAULT_SESSION_NOTIFY.auto_run_kinds;
-    return kinds.includes(kind);
+    return (kinds as SystemEventKind[]).includes(kind);
   }
 
   function notify(ev: SystemEvent): boolean {
     if (seenEventIds.has(ev.event_id)) return false;
     seenEventIds.add(ev.event_id);
-    // Bound memory for long-running processes
-    if (seenEventIds.size > 5000) {
-      const drop = [...seenEventIds].slice(0, 2000);
+    if (seenEventIds.size > DEDUPE_SET_SOFT_CAP) {
+      const drop = [...seenEventIds].slice(0, DEDUPE_SET_TRIM_TO);
       for (const id of drop) seenEventIds.delete(id);
     }
 
@@ -225,18 +245,14 @@ export function createSystemEventHub(opts: SystemEventHubOptions = {}) {
 
     onEvent?.(ev);
 
-    const auto = shouldAutoRun(ev.kind);
-    if (auto || c.auto_run) {
-      // Always enqueue when auto_run master switch is on and kind matches;
-      // settle_only filtered in shouldAutoRun.
-      if (auto) {
-        inbound.enqueue(ev.session_id, {
-          event: ev,
-          enqueued_at: Date.now(),
-          auto_run: true,
-        });
-        onMaybeAutoRun?.(ev.session_id);
-      }
+    // Enqueue only when this kind should auto_run (master switch + kind/merge policy).
+    if (shouldAutoRun(ev.kind)) {
+      inbound.enqueue(ev.session_id, {
+        event: ev,
+        enqueued_at: Date.now(),
+        auto_run: true,
+      });
+      onMaybeAutoRun?.(ev.session_id);
     }
 
     return true;
@@ -245,6 +261,9 @@ export function createSystemEventHub(opts: SystemEventHubOptions = {}) {
   return {
     notify,
     inbound,
+    clearDedupeForTests(): void {
+      seenEventIds.clear();
+    },
     setBridge(b: MessageBridge | undefined): void {
       bridge = b;
     },
@@ -285,4 +304,9 @@ export function getGlobalSystemEventHub(): SystemEventHub | null {
 
 export function notifySystemEvent(ev: SystemEvent): boolean {
   return globalHub?.notify(ev) ?? false;
+}
+
+/** Test helper: clear dedupe on the global hub only. */
+export function resetSystemEventDedupeForTests(): void {
+  globalHub?.clearDedupeForTests();
 }

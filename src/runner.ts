@@ -122,6 +122,7 @@ import {
   buildUserTaskMessage,
   createMessageBridge,
   createSystemEventHub,
+  isSyntheticSystemEventPrompt,
   setGlobalSystemEventHub,
   type MessageBridge,
   type SessionNotifyConfig,
@@ -492,8 +493,9 @@ export class AgentRuntime {
     });
     if (items.length === 0) return;
 
+    // runSingleTask does not read armedWorkflowPath — leave arm intact for the
+    // user's next real message (do not silently discard one-shot arm).
     this.inboundAutoRunBusy = true;
-    this.armedWorkflowPath = null;
     try {
       const prompt = this.systemEventHub.formatSyntheticPrompt(items);
       await this.runSingleTask(prompt);
@@ -1201,17 +1203,30 @@ export class AgentRuntime {
     this.sessionDirty = false;
   }
 
-  async runTask(prompt: string): Promise<AgentResult> {
+  /**
+   * @param opts.skipArmedWorkflow — system auto_run: do not consume one-shot arm
+   *   (also auto-detected for synthetic system_event prompts).
+   */
+  async runTask(
+    prompt: string,
+    opts?: { skipArmedWorkflow?: boolean },
+  ): Promise<AgentResult> {
     if (this.running) {
       throw new Error('Agent is already running');
     }
 
     this.ensureSession();
 
-    // System events never arm/use workflow one-shot.
-    const isSystemEvent =
-      prompt.includes('<system_event') && prompt.includes('not_user_message');
-    const workflowPath = isSystemEvent ? null : this.armedWorkflowPath;
+    // System / auto_run paths must not consume the user's armed workflow.
+    const skipArm =
+      opts?.skipArmedWorkflow === true || isSyntheticSystemEventPrompt(prompt);
+
+    if (skipArm) {
+      return this.runSingleTask(prompt);
+    }
+
+    // One-shot arm: consume for this user task only.
+    const workflowPath = this.armedWorkflowPath;
     this.armedWorkflowPath = null;
 
     if (workflowPath) {
