@@ -149,22 +149,10 @@ export class PiEventPresenter {
         this.appendStyled(`workflow ▶ ${event.phase} / ${event.role}${round}`, piSemantic.metaLine);
         break;
       }
-      case 'system_event': {
-        const who = event.job_id
-          ? `job ${event.job_id}`
-          : event.workflow
-            ? `workflow ${event.workflow}`
-            : event.kind;
-        const still =
-          event.still_running !== undefined
-            ? ` · still_running=${event.still_running}`
-            : '';
-        this.appendStyled(
-          `system_event ▶ ${event.kind} · ${who}${still} (not a user message)`,
-          piSemantic.metaLine,
-        );
+      // system_event body is shown via MessageBridge TUI sink (createTuiBridgeSink);
+      // skip short duplicate line here.
+      case 'system_event':
         break;
-      }
       case 'workflow_handback': {
         const round = event.round !== undefined ? ` round ${event.round}` : '';
         const role = event.role ? `  role: ${event.role}${round}\n` : '';

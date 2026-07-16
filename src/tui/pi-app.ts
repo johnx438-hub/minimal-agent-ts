@@ -33,6 +33,7 @@ import {
 import { handlePiSlash, type PiSlashUiState } from './slash-handlers.js';
 import type { TuiAppOptions } from './types.js';
 import { buildBannerMetaLines, renderLogoLines } from './pi/banner.js';
+import { createTuiBridgeSink } from './pi/bridge-sink.js';
 import { PiChatLog } from './pi/chat-log.js';
 import { PiEventPresenter } from './pi/event-presenter.js';
 import { isOverlayOpen } from './pi/overlay-stack.js';
@@ -245,6 +246,17 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     },
   });
 
+  // Job/workflow settle notices (MessageBridge system_notice) → chat scrollback.
+  const unsubBridgeSink = runtime.getMessageBridge().addSink(
+    createTuiBridgeSink({
+      chat,
+      onAfterAppend: () => {
+        printStatus();
+        tui.requestRender();
+      },
+    }),
+  );
+
   runtime.permissionGate.setPrompter(
     createPiPermissionPrompter(tui, (kind) => {
       if (kind === 'shell') {
@@ -441,6 +453,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
       forceStop();
       return;
     }
+    unsubBridgeSink();
     runtime.saveIfDirty();
     tui.stop();
     void runtime.shutdown().finally(() => process.exit(0));

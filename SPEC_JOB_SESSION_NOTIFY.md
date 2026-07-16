@@ -337,6 +337,7 @@ notifySystemEvent(ev); // bridge + optional queue + optional RuntimeEvent
 | **J4** | debounce（`session_notify.merge` / `debounce_ms`） | ✅ 基础 debounce |
 | **J5** | workflow complete/handback → 同一 hub | ✅ |
 | **J6** | RuntimeEvent `system_event` + 单测 | ✅ |
+| **J7a** | TUI MessageBridge sink（system_notice → chat） | ✅ |
 | **J7** | 飞书/IM sink | ⏳ 后置 |
 
 配置：`agent.json` → `session_notify: { bridge, auto_run, auto_run_kinds, merge, debounce_ms }`。
