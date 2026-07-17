@@ -3,11 +3,21 @@
 Copy to `Agent.md` (or `AGENTS.md`) in your project root.
 Loaded every task run into the system prompt (**default max 8000 chars**).
 
-**Framework-bound conventions are built-in** (skills / memory paths / plan+specs
-artifacts / default work style / b64 tool tips). Do **not** re-copy those here —
-keep this file for **project-only** rules so you use the budget for custom content.
+**Framework-bound (do not re-copy):** skills via `invoke_skill`, memory paths
+(`.agent/memory/`), optional artifact paths (`.agent/plan.md`, `specs/`),
+pointerize/`recall_query`, spawn_background completion notify, tool schema tips
+(b64, spill). Keep this file for **project rules + work style**.
 
 ---
+
+## Default work style (optional — project choice)
+
+<!-- Formerly framework-built-in; pick what you want for this repo. -->
+
+- Multi-file or >10-turn work: prefer writing `.agent/plan.md` before large edits.
+- Vague/large tasks: ask 3–5 clarifying questions before destructive tools ("grill" style).
+- Small 1–2 file fixes: proceed directly.
+- Large HTML/JSON / quote-heavy payloads: `write_file` `content_b64` or `edit_file` `*_b64` (see tool schemas).
 
 ## Project notes
 
@@ -20,14 +30,12 @@ keep this file for **project-only** rules so you use the budget for custom conte
 
 ## Team workflow (optional)
 
-<!-- Your process only. Example: -->
-
 1. Align on goal and acceptance before large edits.
-2. Prefer small diffs; open a short plan for multi-file work (see built-in `.agent/plan.md`).
+2. Prefer small diffs; open a short plan for multi-file work (`.agent/plan.md` when useful).
 3. …
 
 ## Do not put here
 
 - Long skill playbooks → `invoke_skill("…")` instead  
-- Full tool manuals → already in tool schemas + framework hints  
+- Full tool manuals → tool schemas + short framework protocol hints  
 - Memory layout (`.agent/memory/`) → built-in  

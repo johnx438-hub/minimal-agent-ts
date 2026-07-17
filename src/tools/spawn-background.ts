@@ -19,7 +19,12 @@ export function buildSpawnBackgroundDefinitions(
       function: {
         name: 'spawn_background',
         description:
-          `Start a preset sub-agent in the background (non-blocking). Returns job_id and disk paths for progress. Presets: ${listing}`,
+          `Start a preset sub-agent in the background (non-blocking by default). ` +
+          `Returns job_id + disk paths (meta/events/report). ` +
+          `When the job finishes, the runtime notifies this main session (system notice; may auto-run a short synthetic turn if session_notify.auto_run is on) — ` +
+          `do NOT busy-poll status or re-spawn to "check progress" unless the user asks or the job failed. ` +
+          `Use wait=true only when you must block until completion in this turn. ` +
+          `Presets: ${listing}`,
         parameters: {
           type: 'object',
           properties: {
@@ -39,7 +44,7 @@ export function buildSpawnBackgroundDefinitions(
             wait: {
               type: 'boolean',
               description:
-                'When true, block until the job finishes and return result summary (default false).',
+                'When true, block until the job finishes and return result summary (default false). Prefer false: completion is pushed to the main session.',
             },
           },
           required: ['preset', 'task'],
@@ -70,7 +75,8 @@ export function formatSpawnBackgroundStarted(
     `spawn_background: started ${jobId} (${presetName})`,
     `status: ${relMeta}`,
     `events: ${relEvents}`,
-    `Check: npm run spawn:status -- ${jobId}`,
+    `notify: main session will receive a system notice when this job settles — continue other work; do not poll in a loop`,
+    `Check (only if needed): npm run spawn:status -- ${jobId}`,
     `Kill:  npm run spawn:kill -- ${jobId}`,
   ].join('\n');
 }

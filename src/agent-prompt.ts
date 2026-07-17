@@ -88,6 +88,11 @@ function toolGuidanceLine(name: string, description: string): string | null {
         `${firstSentence(description)} ` +
         'Commands with quotes/backslashes: use command_b64 (UTF-8 base64).'
       );
+    case 'spawn_background':
+      return (
+        'spawn_background is fire-and-forget by default: job completion is pushed to this session ' +
+        '(system notice / optional auto_run). Do not busy-poll or re-check the same job every turn.'
+      );
     case 'invoke_skill':
     case 'spawn_agent':
       return description;
@@ -130,12 +135,7 @@ export function buildFrameworkWorkspaceHints(): string {
     '### Optional artifacts',
     '- `.agent/plan.md` — multi-file or long tasks: goal / steps / risks (agent-maintained).',
     '- `specs/` — feature specs with acceptance criteria when doing spec-first work.',
-    '',
-    '### Default work style (override in Agent.md if needed)',
-    '- Multi-file or >10-turn work: prefer writing `.agent/plan.md` before large edits.',
-    '- Vague/large tasks: ask 3–5 clarifying questions before destructive tools ("grill" style).',
-    '- Small 1–2 file fixes: proceed directly.',
-    '- Large HTML/JSON / quote-heavy payloads: `write_file` `content_b64` or `edit_file` `*_b64` (see tool hints).',
+    // Work style (plan-first / grill / small-fix) lives in Agent.md — not framework.
   ].join('\n');
 }
 
@@ -163,7 +163,16 @@ export function buildSystemPrompt(config: AgentConfig): string {
     `Builtin tools: ${toolList}；MCP tools 形如 mcp_<server>_<tool>.`,
   ];
 
-  for (const name of ['web_search', 'web_fetch', 'write_file', 'edit_file', 'invoke_skill', 'spawn_agent'] as const) {
+  // Protocol/tool mechanics only — style belongs in Agent.md.
+  for (const name of [
+    'web_search',
+    'web_fetch',
+    'write_file',
+    'edit_file',
+    'invoke_skill',
+    'spawn_agent',
+    'spawn_background',
+  ] as const) {
     const def = findDefinition(defs, name);
     if (!def) continue;
     const hint = toolGuidanceLine(name, def.function.description);
@@ -174,6 +183,12 @@ export function buildSystemPrompt(config: AgentConfig): string {
   lines.push('- 任务完成后用简短 summary 回复，并 stop calling tools。');
   lines.push(`- ${pointerizeRecallGuidance(recallKb)}`);
   lines.push('- If recall marks stale, use read_file for the latest file content.');
+  if (findDefinition(defs, 'spawn_background')) {
+    lines.push(
+      '- Background jobs: after spawn_background (wait=false), continue other work; ' +
+        'completion is delivered to this session — do not poll job status in a loop.',
+    );
+  }
 
   const base = lines.join('\n') + buildFrameworkWorkspaceHints();
   const bundle = config.workspacePrompt ?? loadWorkspacePromptBundle(config.cwd);
