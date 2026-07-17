@@ -1,4 +1,5 @@
 import type { ChatOptions } from './llm.js';
+import { projectReasoningForApi } from './llm-reasoning-content.js';
 import { buildSessionReasoningExtraBody } from './llm-reasoning.js';
 import type { ResolvedLlmBinding } from './llm-profiles.js';
 import type { CachePolicyConfig } from './plugins/types.js';
@@ -180,6 +181,14 @@ export function buildLlmTurnRequestForBinding(
   const adapted = applyCacheAdapter(apiMessages, cache, {
     sessionId: config.sessionId,
   });
+  // Re-project reasoning per binding (main may preserve CoT; fallback xAI-like APIs reject it).
+  const preserveReasoning =
+    binding != null
+      ? Boolean(binding.preserveReasoning)
+      : Boolean(config.llm?.preserveReasoning);
+  const messagesForBinding = adapted.messages.map((m) =>
+    projectReasoningForApi(m, preserveReasoning),
+  );
   const reasoningExtra = binding
     ? buildSessionReasoningExtraBody(binding, config.sessionReasoningLevel)
     : buildSessionReasoningExtraBody(
@@ -205,7 +214,7 @@ export function buildLlmTurnRequestForBinding(
   }
 
   return {
-    apiMessages: adapted.messages,
+    apiMessages: messagesForBinding,
     chatOpts: {
       apiKey,
       baseUrl,

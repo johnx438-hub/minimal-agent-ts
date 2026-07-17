@@ -229,6 +229,15 @@ export class PiEventPresenter {
     return comp;
   }
 
+  /** Drop in-flight stream UI so retries / spawn children do not concatenate. */
+  private clearStreamDraft(): void {
+    if (this.streamMd) {
+      this.chat.remove(this.streamMd);
+      this.streamMd = null;
+    }
+    this.streamBuffer = '';
+  }
+
   setStopping(): void {
     this.loader?.setMessage('Stopping… (waiting for current step)');
     this.tui.requestRender();
@@ -311,15 +320,19 @@ export class PiEventPresenter {
         }
         break;
       case 'llm_retry':
+        // Drop partial stream so the next attempt does not concatenate drafts.
+        this.clearStreamDraft();
         this.appendRunMeta(formatLlmRetrySummary(event), piSemantic.accent);
         break;
       case 'llm_fallback':
+        this.clearStreamDraft();
         this.appendRunMeta(formatLlmFallbackSummary(event), piSemantic.accent);
         break;
       case 'compression':
         this.appendRunMeta(formatCompressionSummary(event), piSemantic.accent);
         break;
       case 'draft_discarded':
+        this.clearStreamDraft();
         this.appendRunMeta(`⊗ draft discarded (${event.chars} chars)`, piSemantic.toolErr);
         break;
       case 'loop_guard':
@@ -351,6 +364,10 @@ export class PiEventPresenter {
         }
         break;
       case 'tool_call':
+        // Nested spawn streams tokens via the same sink — clear parent draft first.
+        if (event.name === 'spawn_agent' || event.name === 'spawn_background') {
+          this.clearStreamDraft();
+        }
         if (!this.toolPresenter.handleToolCall(event.call_id, event.name, event.args)) {
           // Generic tools stay silent in compact mode; failures surface on tool_result.
         }

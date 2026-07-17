@@ -339,15 +339,47 @@ function materializeOneRef(
     throw new Error(`unsupported image type: ${rel}`);
   }
 
-  const buf = readFileSync(abs);
-  const b64 = buf.toString('base64');
+  const dataUrl = readLocalImageAsDataUrl(abs, mime, policy.max_bytes_per_image);
   return {
     type: 'image_url',
     image_url: {
-      url: `data:${mime};base64,${b64}`,
+      url: dataUrl,
       detail,
     },
   };
+}
+
+/** path+mtime+size → data URL; avoids re-encoding the same screenshot every LLM turn. */
+const localImageDataUrlCache = new Map<string, string>();
+const LOCAL_IMAGE_CACHE_MAX = 32;
+
+function readLocalImageAsDataUrl(
+  abs: string,
+  mime: NonNullable<VisionRef['mime']>,
+  maxBytes: number,
+): string {
+  const st = statSync(abs);
+  if (st.size > maxBytes) {
+    throw new Error(`image too large (${st.size} > ${maxBytes} bytes)`);
+  }
+  const cacheKey = `${abs}\0${st.mtimeMs}\0${st.size}\0${mime}`;
+  const hit = localImageDataUrlCache.get(cacheKey);
+  if (hit) return hit;
+
+  const buf = readFileSync(abs);
+  const dataUrl = `data:${mime};base64,${buf.toString('base64')}`;
+
+  if (localImageDataUrlCache.size >= LOCAL_IMAGE_CACHE_MAX) {
+    const first = localImageDataUrlCache.keys().next().value;
+    if (first !== undefined) localImageDataUrlCache.delete(first);
+  }
+  localImageDataUrlCache.set(cacheKey, dataUrl);
+  return dataUrl;
+}
+
+/** Test hook: drop materialize cache between cases. */
+export function clearLocalImageDataUrlCache(): void {
+  localImageDataUrlCache.clear();
 }
 
 /** Build a user task message with optional vision refs (caption keeps path hints). */

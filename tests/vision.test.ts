@@ -7,6 +7,7 @@ import { describe, it } from 'node:test';
 import { assembleApiMessages } from '../src/context/assemble.js';
 import type { ChatMessage } from '../src/types.js';
 import {
+  clearLocalImageDataUrlCache,
   getMessageText,
   materializeVisionMessage,
   visionRefFromPath,
@@ -105,5 +106,26 @@ describe('vision materialize', () => {
       ]),
       'a\nb',
     );
+  });
+
+  it('caches local image data URLs across materialize calls', () => {
+    resetWorkspaceForTests();
+    clearLocalImageDataUrlCache();
+    const dir = mkdtempSync(join(tmpdir(), 'vis-cache-'));
+    configureSessionStore({ mode: 'project_local', cwd: dir });
+    const img = join(dir, 'dot.png');
+    writeFileSync(img, TINY_PNG);
+
+    const msg: ChatMessage = {
+      role: 'user',
+      content: 'see',
+      vision_refs: [visionRefFromPath(img)],
+    };
+    const a = materializeVisionMessage(msg, { cwd: dir });
+    const b = materializeVisionMessage(msg, { cwd: dir });
+    const urlA = (a.content as { image_url?: { url: string } }[])[1]?.image_url?.url;
+    const urlB = (b.content as { image_url?: { url: string } }[])[1]?.image_url?.url;
+    assert.ok(urlA?.startsWith('data:image/png;base64,'));
+    assert.equal(urlA, urlB);
   });
 });

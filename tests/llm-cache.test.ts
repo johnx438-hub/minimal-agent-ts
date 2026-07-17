@@ -128,6 +128,66 @@ describe('applyCacheAdapter', () => {
 });
 
 describe('buildLlmTurnRequest', () => {
+  it('strips reasoning_content when binding.preserveReasoning is false', () => {
+    const config: AgentConfig = {
+      apiKey: 'k',
+      baseUrl: 'https://a.example',
+      model: 'm',
+      maxTurns: 0,
+      cwd: '/tmp',
+      allowShell: false,
+      allowWeb: false,
+      llm: {
+        profileName: 'kimi-main',
+        baseUrl: 'https://a.example',
+        apiKey: 'k',
+        model: 'm',
+        wire: 'openai_chat',
+        available: true,
+        preserveReasoning: true,
+      },
+    };
+    const withCoT = [
+      {
+        role: 'assistant' as const,
+        content: 'ok',
+        reasoning_content: 'secret think',
+      },
+    ];
+    const keep = buildLlmTurnRequestForBinding(
+      config,
+      {
+        profileName: 'kimi-main',
+        baseUrl: 'https://a.example',
+        apiKey: 'k',
+        model: 'm',
+        wire: 'openai_chat',
+        available: true,
+        preserveReasoning: true,
+      },
+      withCoT,
+      { stream: false },
+    );
+    assert.equal(keep.apiMessages[0]?.reasoning_content, 'secret think');
+
+    const strip = buildLlmTurnRequestForBinding(
+      config,
+      {
+        profileName: 'xai-test',
+        baseUrl: 'https://b.example',
+        apiKey: 'x',
+        model: 'g',
+        wire: 'openai_chat',
+        available: true,
+        preserveReasoning: false,
+      },
+      withCoT,
+      { stream: false },
+    );
+    assert.equal(strip.apiMessages[0]?.reasoning_content, undefined);
+    assert.equal(strip.apiMessages[0]?.content, 'ok');
+  });
+
   it('does not mix binding baseUrl with leftover config.apiKey', () => {
     const config: AgentConfig = {
       apiKey: 'sk-deepseek-LEFTOVER',
