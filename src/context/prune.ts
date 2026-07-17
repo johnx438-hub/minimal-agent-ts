@@ -1,12 +1,9 @@
-import { estimatePruneSavings, isImmune, protectedIndices } from './estimate.js';
+import {
+  canPrune,
+  estimatePruneSavings,
+  protectedIndices,
+} from './estimate.js';
 import type { ChatMessage } from '../types.js';
-
-function canPrune(msg: ChatMessage): boolean {
-  if (msg.compacted_at) return false;
-  if (msg.pointerized) return false;
-  if (isImmune(msg)) return false;
-  return msg.role === 'tool' || msg.role === 'assistant';
-}
 
 /**
  * Min estimated savings before prune (Phase 2c).

@@ -65,7 +65,8 @@ export function isImmune(msg: ChatMessage): boolean {
   return false;
 }
 
-function canPrune(msg: ChatMessage): boolean {
+/** Eligible for lightweight prune / savings estimate (shared by prune.ts). */
+export function canPrune(msg: ChatMessage): boolean {
   if (msg.compacted_at) return false;
   if (msg.pointerized) return false;
   if (isImmune(msg)) return false;
