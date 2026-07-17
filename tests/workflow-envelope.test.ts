@@ -14,7 +14,10 @@ import {
   runWorkflowHandoffTool,
   type WorkflowRoleRuntime,
 } from '../src/workflow/handoff-tool.js';
-import { extractWorkflowVerdict } from '../src/workflow/verdict.js';
+import {
+  extractWorkflowVerdict,
+  normalizeWorkflowVerdict,
+} from '../src/workflow/verdict.js';
 
 describe('workflow envelope (W4 isolation)', () => {
   it('injects handoff duty with negative feedback, no self-contradiction', () => {
@@ -117,5 +120,23 @@ describe('workflow verdict needs_human', () => {
       'needs_human',
     );
     assert.equal(extractWorkflowVerdict('{"verdict":"approved"}'), 'approved');
+  });
+});
+
+describe('workflow verdict normalize + pass/approve synonyms', () => {
+  it('maps pass/approve synonyms to approved', () => {
+    assert.equal(normalizeWorkflowVerdict('pass'), 'approved');
+    assert.equal(normalizeWorkflowVerdict('passed'), 'approved');
+    assert.equal(normalizeWorkflowVerdict('Approve'), 'approved');
+    assert.equal(normalizeWorkflowVerdict('lgtm'), 'approved');
+    assert.equal(normalizeWorkflowVerdict('approved'), 'approved');
+    assert.equal(normalizeWorkflowVerdict('needs_revision'), 'needs_revision');
+  });
+
+  it('extracts pass from text and JSON (protocol risk fix)', () => {
+    assert.equal(extractWorkflowVerdict('verdict: pass'), 'approved');
+    assert.equal(extractWorkflowVerdict('{"verdict":"pass"}'), 'approved');
+    assert.equal(extractWorkflowVerdict('{"verdict":"Approve"}'), 'approved');
+    assert.equal(extractWorkflowVerdict('LGTM overall'), 'approved');
   });
 });

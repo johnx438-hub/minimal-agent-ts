@@ -33,7 +33,10 @@ import {
   formatHandoffPayloadAsOutput,
   type WorkflowRoleRuntime,
 } from './handoff-tool.js';
-import { extractWorkflowVerdict } from './verdict.js';
+import {
+  extractWorkflowVerdict,
+  normalizeWorkflowVerdict,
+} from './verdict.js';
 import {
   buildHandbackWorkflowResult,
   classifyAgentStopReason,
@@ -389,8 +392,11 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
     const output = structured
       ? formatHandoffPayloadAsOutput(structured)
       : result.text;
+    // Structured handoff and free text both go through normalize (pass/approve → approved).
     const verdict =
-      structured?.verdict?.trim().toLowerCase() ||
+      (structured?.verdict
+        ? normalizeWorkflowVerdict(structured.verdict)
+        : undefined) ||
       extractWorkflowVerdict(output) ||
       extractWorkflowVerdict(result.text);
     writeContextResult(ctx, slots, output, verdict);
