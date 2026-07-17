@@ -229,11 +229,26 @@ export class PiEventPresenter {
     return comp;
   }
 
-  /** Drop in-flight stream UI so retries / spawn children do not concatenate. */
+  /** Drop in-flight stream UI so retries / fallback do not concatenate failed drafts. */
   private clearStreamDraft(): void {
     if (this.streamMd) {
       this.chat.remove(this.streamMd);
       this.streamMd = null;
+    }
+    this.streamBuffer = '';
+  }
+
+  /**
+   * Keep streamed assistant text in the chat, but detach from the live buffer
+   * so the next phase (tools / spawn child / next turn) starts a new stream block.
+   * Used when text is valid — not for draft_discarded.
+   */
+  private commitStreamDraft(): void {
+    if (this.streamMd) {
+      // Leave the Markdown component in the chat tree; only release the live pointer.
+      this.streamMd = null;
+    } else if (this.streamBuffer.trim()) {
+      this.chat.appendMarkdown(this.streamBuffer);
     }
     this.streamBuffer = '';
   }
@@ -315,7 +330,10 @@ export class PiEventPresenter {
         break;
       }
       case 'llm_done':
-        if (event.finishReason !== 'tool_calls') {
+        // tool_calls: keep streamed preamble visible while tools/spawn run.
+        if (event.finishReason === 'tool_calls') {
+          this.commitStreamDraft();
+        } else {
           this.appendRunFooter(`finish=${event.finishReason ?? 'null'}`);
         }
         break;
@@ -364,9 +382,10 @@ export class PiEventPresenter {
         }
         break;
       case 'tool_call':
-        // Nested spawn streams tokens via the same sink — clear parent draft first.
-        if (event.name === 'spawn_agent' || event.name === 'spawn_background') {
-          this.clearStreamDraft();
+        // Foreground spawn may stream child tokens on the same sink — start a fresh
+        // stream block without deleting the parent preamble (already committed on llm_done).
+        if (event.name === 'spawn_agent') {
+          this.commitStreamDraft();
         }
         if (!this.toolPresenter.handleToolCall(event.call_id, event.name, event.args)) {
           // Generic tools stay silent in compact mode; failures surface on tool_result.
