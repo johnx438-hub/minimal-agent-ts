@@ -191,26 +191,53 @@ Skill 同理——在 `skills/<name>/SKILL.md` 写一份 Markdown，Agent 通过
 
 ### 多角色工作流（Workflow）
 
-工作流以 JSON 文件定义在 `workflows/` 目录，编排多个角色的协作。内置示例 `workflows/review-loop.json`：
+工作流以 JSON 文件定义在 `workflows/` 目录，编排多个角色的协作。角色有两种定义方式：复用子 Agent 预设（`"preset": "dev-worker"`，来自 `agents/*.md`），或自定义角色文件（`"prompt_file": "roles/planner.md"`）。节点输入支持模板插值——`{{user_task}}` 注入用户任务，`{{slot.output}}` 注入上游产出。两种编排格式二选一：
+
+**线性流（flow）**：内置示例 `workflows/review-loop.json`——按顺序执行，嵌套 `loop` 块表达修订循环：
 
 ```json
 {
   "name": "review-loop",
+  "share_session": false,
   "roles": {
-    "planner": { "prompt_file": "roles/planner.md", "tools": ["read_file","grep_search","list_files","recall_query"], "max_turns": 50 },
-    "worker":   { "prompt_file": "roles/worker.md",   "max_turns": 50 },
-    "reviewer": { "prompt_file": "roles/reviewer.md", "max_turns": 50 }
+    "planner":     { "prompt_file": "roles/planner.md", "tools": ["read_file","grep_search","list_files","recall_query"], "max_turns": 50 },
+    "implementer": { "preset": "dev-worker" },
+    "reviewer":    { "prompt_file": "roles/reviewer.md", "max_turns": 50 }
   },
   "flow": [
-    { "role": "planner",   "handoff": "worker" },
-    { "role": "worker",    "handoff": "reviewer" },
-    { "role": "reviewer",  "handoff": "worker", "on_approve": "done" }
-  ],
-  "max_cycles": 3
+    { "role": "planner", "input": "Plan the work in 3-6 steps. Do NOT implement.\n\nTask:\n{{user_task}}", "slot": "plan" },
+    {
+      "loop": { "slot": "revision", "max_rounds": 3 },
+      "steps": [
+        { "role": "implementer", "input": "Implement the plan:\n{{plan.output}}", "slot": "impl" },
+        { "role": "reviewer", "input": "Review. Reply verdict: pass OR needs_revision.\n{{impl.output}}", "slot": "review" }
+      ]
+    }
+  ]
 }
 ```
 
-角色文件（`roles/*.md`）定义每个角色的系统提示词。执行时框架自动按 `flow` 顺序切换角色上下文，通过 `handoff` 传递中间结果，最多循环 `max_cycles` 次。加载逻辑在 `src/workflow/runner.ts`，自定义工作流只需放一个 JSON 到 `workflows/` 目录即可。
+**显式 DAG（nodes + edges + entry）**：内置示例 `workflows/dag-review.json`——条件边驱动动态拓扑，同层无依赖节点自动并行：
+
+```json
+{
+  "entry": "plan",
+  "nodes": {
+    "plan":   { "role": "planner", "input": "...", "slot": "plan" },
+    "impl":   { "role": "worker",  "input": "...", "slot": "impl", "max_visits": 3 },
+    "review": { "role": "reviewer", "input": "...", "slot": "review" },
+    "final":  { "role": "summarizer", "input": "...", "slot": "final" }
+  },
+  "edges": [
+    { "from": "plan", "to": "impl" },
+    { "from": "impl", "to": "review" },
+    { "from": "review", "to": "final" },
+    { "from": "review", "to": "impl", "when": { "path": "reviewer.verdict", "eq": "needs_revision" } }
+  ]
+}
+```
+
+条件边（`when`）按上游输出字段匹配决定走向——reviewer 的 `verdict` 关键词即控制流协议（`approved` / `needs_revision` / `needs_human`，`pass`/`lgtm` 等同义词自动归一）。`max_visits` 限制节点最大执行次数：允许修订循环，防止死循环。加载与校验逻辑在 `src/workflow/`，自定义工作流只需放一个 JSON 到 `workflows/` 目录即可。
 
 ---
 
