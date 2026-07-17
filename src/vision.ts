@@ -117,6 +117,104 @@ export function visionRefFromPath(
   };
 }
 
+/** True when path extension looks like a supported image type. */
+export function isImagePath(path: string): boolean {
+  return guessMimeFromPath(path) !== undefined;
+}
+
+/**
+ * Tool → next-turn vision bridge.
+ * Tool results stay text for pointerize/transcript; agent loop parses this
+ * marker and injects a user message with vision_refs for materialize.
+ */
+export const VISION_ATTACH_MARKER = '[vision_attach]';
+
+export function formatVisionAttachToolResult(
+  ref: VisionRef,
+  note: string,
+): string {
+  const payload = JSON.stringify({
+    path: ref.path,
+    mime: ref.mime,
+    detail: ref.detail ?? 'auto',
+  });
+  return `${VISION_ATTACH_MARKER}${payload}\n${note}`;
+}
+
+/** Parse first vision_attach marker in a tool result (or null). */
+export function parseVisionAttachFromToolOutput(
+  output: string,
+): VisionRef | null {
+  const idx = output.indexOf(VISION_ATTACH_MARKER);
+  if (idx < 0) return null;
+  const rest = output.slice(idx + VISION_ATTACH_MARKER.length);
+  const line = rest.split('\n', 1)[0]?.trim() ?? '';
+  if (!line) return null;
+  try {
+    const obj = JSON.parse(line) as {
+      path?: string;
+      mime?: VisionRef['mime'];
+      detail?: VisionRef['detail'];
+    };
+    if (!obj.path?.trim()) return null;
+    return visionRefFromPath(obj.path.trim(), {
+      mime: obj.mime,
+      detail: obj.detail,
+    });
+  } catch {
+    return null;
+  }
+}
+
+export function collectVisionAttachesFromToolOutputs(
+  outputs: string[],
+): VisionRef[] {
+  const refs: VisionRef[] = [];
+  const seen = new Set<string>();
+  for (const out of outputs) {
+    const ref = parseVisionAttachFromToolOutput(out);
+    if (!ref?.path) continue;
+    if (seen.has(ref.path)) continue;
+    seen.add(ref.path);
+    refs.push(ref);
+  }
+  return refs;
+}
+
+/** User message injected after tools so the next LLM turn can see pixels. */
+export function buildVisionAttachUserMessage(refs: VisionRef[]): ChatMessage {
+  const lines = refs.map((r) => `- ${r.path ?? r.remote_url ?? '?'}`);
+  return {
+    role: 'user',
+    content:
+      'Attached image(s) for vision (from tools — inspect the image pixels in this message):\n' +
+      lines.join('\n'),
+    vision_refs: refs,
+  };
+}
+
+export function visionCapabilityHint(opts: {
+  profileName?: string;
+  supportsVision?: boolean;
+  visionEnabled?: boolean;
+}): string {
+  if (opts.visionEnabled === false) {
+    return (
+      'error: vision is disabled (agent.json vision.enabled=false). ' +
+      'Enable vision or attach images manually in TUI with @path.png'
+    );
+  }
+  if (!opts.supportsVision) {
+    const p = opts.profileName ?? 'current profile';
+    return (
+      `error: profile "${p}" has no vision (supports_vision≠true). ` +
+      'Switch to a vision profile (e.g. /profile kimi-main) then read_file the image path again, ' +
+      'or attach manually with @path.png / /image path'
+    );
+  }
+  return 'error: vision not available';
+}
+
 export function visionRefFromUrl(
   url: string,
   opts?: { detail?: VisionRef['detail'] },

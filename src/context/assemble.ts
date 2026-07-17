@@ -1,3 +1,4 @@
+import { projectReasoningForApi } from '../llm-reasoning-content.js';
 import { isToolArgsJsonValid } from '../tools/tool-args.js';
 import type { ChatMessage, ToolCall } from '../types.js';
 import {
@@ -10,6 +11,11 @@ import { getWorkspaceGrants } from '../workspace.js';
 export interface AssembleApiMessagesOptions {
   cwd?: string;
   vision?: VisionPolicyConfig | null;
+  /**
+   * When true, keep assistant.reasoning_content on the wire (Kimi/DeepSeek thinking).
+   * Default false — unknown fields can break other OpenAI-compatible providers.
+   */
+  preserveReasoning?: boolean;
 }
 
 /**
@@ -22,6 +28,7 @@ export function assembleApiMessages(
 ): ChatMessage[] {
   const cwd = opts?.cwd ?? process.cwd();
   const readableRoots = getWorkspaceGrants().map((g) => g.root);
+  const preserveReasoning = Boolean(opts?.preserveReasoning);
   const visible = messages
     .filter((m) => !m.compacted_at)
     .map((m) =>
@@ -31,7 +38,8 @@ export function assembleApiMessages(
         readableRoots,
       }),
     )
-    .map(stripInternalMetadata);
+    .map(stripInternalMetadata)
+    .map((m) => projectReasoningForApi(m, preserveReasoning));
   return repairToolCallPairs(visible);
 }
 
@@ -59,7 +67,7 @@ export function repairToolCallPairs(messages: ChatMessage[]): ChatMessage[] {
     const calls = filterApiSafeToolCalls(msg.tool_calls);
     if (calls.length === 0) {
       if (hasNonEmptyContent(msg.content)) {
-        result.push({ role: 'assistant', content: msg.content });
+        result.push(assistantApiSlice(msg));
       }
       let j = i + 1;
       while (j < messages.length && messages[j].role === 'tool') {
@@ -83,8 +91,7 @@ export function repairToolCallPairs(messages: ChatMessage[]): ChatMessage[] {
     const validCalls = calls.filter((c) => toolsById.has(c.id));
     if (validCalls.length > 0) {
       result.push({
-        role: 'assistant',
-        content: msg.content,
+        ...assistantApiSlice(msg),
         tool_calls: validCalls,
       });
       for (const call of validCalls) {
@@ -98,7 +105,7 @@ export function repairToolCallPairs(messages: ChatMessage[]): ChatMessage[] {
         }
       }
     } else if (hasNonEmptyContent(msg.content)) {
-      result.push({ role: 'assistant', content: msg.content });
+      result.push(assistantApiSlice(msg));
     }
 
     i = j;
@@ -111,6 +118,16 @@ function hasNonEmptyContent(content: ChatMessage['content']): boolean {
   if (content == null) return false;
   if (typeof content === 'string') return content !== '';
   return content.length > 0;
+}
+
+/** Keep wire-relevant assistant fields (content + optional reasoning_content). */
+function assistantApiSlice(msg: ChatMessage): ChatMessage {
+  const reasoning = msg.reasoning_content?.trim();
+  return {
+    role: 'assistant',
+    content: msg.content,
+    ...(reasoning ? { reasoning_content: reasoning } : {}),
+  };
 }
 
 /** xAI and some providers reject assistant tool_calls whose arguments are not valid JSON. */

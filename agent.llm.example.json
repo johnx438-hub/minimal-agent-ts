@@ -81,6 +81,30 @@
       "api_key_env": "ZAI_API_KEY",
       "default_model": "glm-4.7-flash",
       "models": ["glm-4.7-flash"]
+    },
+    "kimi-main": {
+      "_note": "CN keys (platform.moonshot.cn) → https://api.moonshot.cn/v1. International keys (platform.kimi.ai / moonshot.ai) → https://api.moonshot.ai/v1. Keys are NOT interchangeable (mixed endpoint = 401). preserve_reasoning + prompt_cache_key for agent tool loops.",
+      "display_name": "Kimi (Moonshot CN)",
+      "base_url": "https://api.moonshot.cn/v1",
+      "api_key_env": "MOONSHOT_API_KEY",
+      "default_model": "kimi-k2.6",
+      "models": ["kimi-k2.6", "kimi-k3", "kimi-k2.7-code", "kimi-k2.7-code-highspeed"],
+      "supports_vision": true,
+      "preserve_reasoning": true,
+      "cache": {
+        "mode": "prompt_cache_key",
+        "session_id_from": "session_id",
+        "telemetry": true
+      },
+      "reasoning_map": {
+        "low": {
+          "thinking": { "type": "enabled", "keep": "all" }
+        },
+        "high": {
+          "thinking": { "type": "enabled", "keep": "all" },
+          "reasoning_effort": "max"
+        }
+      }
     }
   },
   "_spawn_preset_llm_overrides": [

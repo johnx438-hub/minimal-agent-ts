@@ -57,7 +57,12 @@ import type {
   ToolCall,
   VisionRef,
 } from './types.js';
-import { buildUserTaskMessageWithVision, contentAsString } from './vision.js';
+import {
+  buildUserTaskMessageWithVision,
+  buildVisionAttachUserMessage,
+  collectVisionAttachesFromToolOutputs,
+  contentAsString,
+} from './vision.js';
 
 export interface RunAgentOptions {
   prompt: string;
@@ -282,6 +287,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         apiMessages: assembleApiMessages(messages, {
           cwd: config.cwd,
           vision: config.llmPluginConfig?.vision,
+          preserveReasoning: config.llm?.preserveReasoning,
         }),
         tools: [],
         stream,
@@ -296,6 +302,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
           content: message.content,
           tool_calls: message.tool_calls,
           turn,
+          ...(message.reasoning_content
+            ? { reasoning_content: message.reasoning_content }
+            : {}),
         };
         if (tracker) {
           tracker.onAssistantMessage(violationMsg, turn);
@@ -307,12 +316,16 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
       const rawText = contentAsString(message.content).trim();
       if (rawText) {
-        commitAssistantText(messages, rawText, turn);
+        commitAssistantText(messages, rawText, turn, {
+          reasoning_content: message.reasoning_content,
+        });
         loopGuard.afterTextResponse();
         return finalizeSuccess(messages, rawText, turn, tracker, onStep, onTaskComplete);
       }
 
-      commitAssistantText(messages, '', turn);
+      commitAssistantText(messages, '', turn, {
+        reasoning_content: message.reasoning_content,
+      });
       const emptyDecision = loopGuard.afterEmptyResponse();
       if (emptyDecision.action === 'terminate') {
         return buildStoppedResult(messages, emptyDecision.reason ?? 'empty during summary', turn, onStep);
@@ -344,6 +357,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
       apiMessages: assembleApiMessages(messages, {
         cwd: config.cwd,
         vision: config.llmPluginConfig?.vision,
+        preserveReasoning: config.llm?.preserveReasoning,
       }),
       tools: toolDefs,
       stream,
@@ -362,7 +376,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         const assistantText =
           contentAsString(message.content).trim() ||
           '(tool call arguments were invalid JSON)';
-        commitAssistantText(messages, assistantText, turn);
+        commitAssistantText(messages, assistantText, turn, {
+          reasoning_content: message.reasoning_content,
+        });
         messages.push({
           role: 'user',
           content: buildMalformedToolCallNudge(invalidToolCalls),
@@ -377,6 +393,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         content: message.content,
         tool_calls: validToolCalls,
         turn,
+        ...(message.reasoning_content
+          ? { reasoning_content: message.reasoning_content }
+          : {}),
       };
 
       if (tracker) {
@@ -535,6 +554,17 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         messages.push(toolMsg);
       }
 
+      // Tool-attached images (read_file on png/jpg/…) → user message with vision_refs
+      // so the next LLM turn materializes pixels (OpenAI image_url only on user role).
+      const visionRefs = collectVisionAttachesFromToolOutputs(
+        validToolCalls
+          .map((c) => resultById.get(c.id)?.output)
+          .filter((o): o is string => typeof o === 'string'),
+      );
+      if (visionRefs.length > 0) {
+        messages.push(buildVisionAttachUserMessage(visionRefs));
+      }
+
       if (invalidToolCalls.length > 0) {
         messages.push({
           role: 'user',
@@ -566,12 +596,16 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
 
     const rawText = contentAsString(message.content).trim();
     if (rawText) {
-      commitAssistantText(messages, rawText, turn);
+      commitAssistantText(messages, rawText, turn, {
+        reasoning_content: message.reasoning_content,
+      });
       loopGuard.afterTextResponse();
       return finalizeSuccess(messages, rawText, turn, tracker, onStep, onTaskComplete);
     }
 
-    commitAssistantText(messages, '', turn);
+    commitAssistantText(messages, '', turn, {
+      reasoning_content: message.reasoning_content,
+    });
     const emptyDecision = loopGuard.afterEmptyResponse();
     if (emptyDecision.action === 'terminate') {
       return buildStoppedResult(messages, emptyDecision.reason ?? 'empty responses', turn, onStep);

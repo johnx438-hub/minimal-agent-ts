@@ -90,4 +90,18 @@ describe('agent.llm.example.json', () => {
     assert.equal(binding.cache?.mode, 'openrouter_sticky');
     assert.equal(binding.cache?.session_id_from, 'session_id');
   });
+
+  it('kimi-main uses prompt_cache_key sticky and preserve_reasoning', () => {
+    const example = loadExample();
+    const binding = resolveLlmBinding(example, {
+      profileName: 'kimi-main',
+      env: { MOONSHOT_API_KEY: 'ms-test' },
+    });
+
+    assert.equal(binding.profileName, 'kimi-main');
+    assert.equal(binding.cache?.mode, 'prompt_cache_key');
+    assert.equal(binding.preserveReasoning, true);
+    assert.equal(binding.available, true);
+    assert.match(binding.baseUrl, /moonshot/);
+  });
 });

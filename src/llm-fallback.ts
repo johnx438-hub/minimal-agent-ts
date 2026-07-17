@@ -75,6 +75,9 @@ export function resolveLlmTurnBindings(config: AgentConfig): ResolvedLlmBinding[
       displayName: config.llm.displayName,
       fallbackProfiles: config.llm.fallbackProfiles,
       reasoningMap: config.llm.reasoningMap,
+      preserveReasoning: config.llm.preserveReasoning,
+      apiKeyEnv: config.llm.apiKeyEnv,
+      supportsVision: config.llm.supportsVision,
       available: config.llm.available,
       unavailableReason: config.llm.unavailableReason,
     };

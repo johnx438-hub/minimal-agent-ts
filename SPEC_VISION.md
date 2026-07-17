@@ -2,8 +2,8 @@
 
 > **定位**: 为多模态（vision）模型接入 **用户图片输入 → session → LLM API** 的端到端管线，兼容现有纯文本路径。  
 > **原则**: content parts 扩展、落盘优先不撑爆 session JSON、发送时再 materialize、路径受 workspace grants 约束。  
-> **状态**: Design draft v0.2（2026-07-17）· **VI-0～VI-2 / 部分 VI-4～5 已落地**（TUI 粘贴仍待）  
-> **代码锚点**: `src/vision.ts` · `types.ChatMessage.vision_refs` · `assembleApiMessages` · CLI `--image`  
+> **状态**: Design draft v0.3（2026-07-17）· **VI-0～VI-3 / 部分 VI-4～5 已落地**（TUI 剪贴板粘贴 VI-6 仍待）  
+> **代码锚点**: `src/vision.ts` · `types.ChatMessage.vision_refs` · `assembleApiMessages` · CLI `--image` · TUI `src/tui/vision-input.ts` · `/image`  
 > **相关**: [SPEC_LLM_ROUTER.md](./SPEC_LLM_ROUTER.md) · [SPEC_CONTEXT_MANAGEMENT.md](./SPEC_CONTEXT_MANAGEMENT.md) · [SPEC_SESSION_WORKSPACE.md](./SPEC_SESSION_WORKSPACE.md) · [SPEC_TUI.md](./SPEC_TUI.md)
 
 ---
@@ -286,7 +286,8 @@ function materializeVisionMessage(msg: ChatMessage, opts: {
 | **VI-0** | 类型 + `materializeVisionMessage` + 单测 | ✅ |
 | **VI-1** | assemble/llm 接线；纯文本回归 | ✅ |
 | **VI-2** | CLI `--image` / `--image-url` | ✅ |
-| **VI-3** | TUI `@path` 或 `/image` + chat 占位展示 | ⏳ |
+| **VI-3** | TUI `@path` 或 `/image` + chat 占位展示 | ✅ `src/tui/vision-input.ts` · `/image` · `pi-app` `visionRefs` |
+| **VI-3b** | `read_file` 图片路径 → tool 附加 vision（浏览器截图连贯） | ✅ 无 vision 时返回 profile 切换提示 |
 | **VI-4** | session `vision_refs` 持久化 + 资产目录 | VI-2/3 |
 | **VI-5** | 预算/上限/profile `supports_vision` | VI-1 |
 | **VI-6** | 粘贴剪贴板（可选） | VI-3 |

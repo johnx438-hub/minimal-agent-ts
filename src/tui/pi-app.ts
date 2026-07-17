@@ -32,6 +32,11 @@ import {
 } from './slash.js';
 import { handlePiSlash, type PiSlashUiState } from './slash-handlers.js';
 import type { TuiAppOptions } from './types.js';
+import type { VisionRef } from '../types.js';
+import {
+  composeVisionSubmit,
+  PendingVisionBuffer,
+} from './vision-input.js';
 import { buildBannerMetaLines, renderLogoLines } from './pi/banner.js';
 import { createTuiBridgeSink } from './pi/bridge-sink.js';
 import { PiChatLog } from './pi/chat-log.js';
@@ -344,11 +349,25 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     }
   });
 
-  const runTask = async (task: string, workflowPath?: string): Promise<void> => {
+  const pendingVision = new PendingVisionBuffer();
+
+  const runTask = async (
+    task: string,
+    workflowPath?: string,
+    opts?: { visionRefs?: VisionRef[]; displayText?: string },
+  ): Promise<void> => {
     if (runtime.hasPendingHandoff()) {
       say('(injecting brief context)', true);
     }
-    chat.appendUserMessage(task);
+    const visionRefs = opts?.visionRefs;
+    const display =
+      opts?.displayText ??
+      (visionRefs?.length
+        ? `${task}${task ? '\n' : ''}${visionRefs
+            .map((r) => `[image: ${r.path ?? r.remote_url ?? '?'}]`)
+            .join(' ')}`
+        : task);
+    chat.appendUserMessage(display);
     // One-shot arm: clear UI + runtime before the run so the next line is normal chat.
     const hadWorkflow = Boolean(workflowPath) || Boolean(runtime.getArmedWorkflow());
     uiState.armedWorkflow = null;
@@ -356,12 +375,17 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     printStatus();
     try {
       if (workflowPath) {
+        if (visionRefs?.length) {
+          say('Note: images ignored for workflow (main-agent vision only in V1).', true);
+        }
         await runtime.runWorkflowTask(task, workflowPath);
         if (hadWorkflow) {
           say('Workflow finished — disarmed (normal chat). /workflow to arm again.', true);
         }
       } else {
-        await runtime.runTask(task);
+        await runtime.runTask(task, {
+          visionRefs: visionRefs?.length ? visionRefs : undefined,
+        });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -385,6 +409,7 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     applyAlwaysFromPrefs,
     confirmCwdChange,
     onLocaleChange: refreshLocaleChrome,
+    pendingVision,
   };
 
   const handleSlash = (result: ReturnType<typeof parseSlashLine>): void => {
@@ -425,7 +450,28 @@ export async function runPiTuiApp(opts: TuiAppOptions): Promise<void> {
     const workflowPath = uiState.armedWorkflow
       ? runtime.resolveWorkflowPath(uiState.armedWorkflow) ?? undefined
       : undefined;
-    void runTask(trimmed, workflowPath);
+
+    // Workflow V1 ignores vision — keep pending buffer for a later main-agent turn.
+    if (workflowPath) {
+      void runTask(trimmed, workflowPath);
+      return;
+    }
+
+    const pending = pendingVision.take();
+    const composed = composeVisionSubmit(trimmed, pending);
+    // Empty text with only images still runs (caption may be empty).
+    if (!composed.text && !composed.refs.length) {
+      resumeEditor();
+      return;
+    }
+    const taskText =
+      composed.text ||
+      (composed.refs.length ? '(see attached image)' : trimmed);
+
+    void runTask(taskText, undefined, {
+      visionRefs: composed.refs.length ? composed.refs : undefined,
+      displayText: composed.display || taskText,
+    });
   };
 
   tui.start();

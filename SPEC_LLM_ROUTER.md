@@ -445,6 +445,7 @@ export interface LlmCacheStats {
 | `off` | 原样返回 messages |
 | `implicit` | 原样返回；仅事后 `parseCacheUsage` |
 | `openrouter_sticky` | `extra_body.session_id = session_id`（绑定主 session） |
+| `prompt_cache_key` | `extra_body.prompt_cache_key = session_id`（Moonshot/Kimi 调度 sticky） |
 | `anthropic_breakpoints` | G5：system/tools 内容块加 `cache_control`（**最后实现**） |
 
 ### 8.3 开箱默认

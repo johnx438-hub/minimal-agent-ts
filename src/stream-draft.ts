@@ -27,8 +27,15 @@ export function commitAssistantText(
   messages: ChatMessage[],
   content: string,
   turn: number,
+  opts?: { reasoning_content?: string },
 ): void {
-  messages.push({ role: 'assistant', content, turn });
+  const reasoning = opts?.reasoning_content?.trim();
+  messages.push({
+    role: 'assistant',
+    content,
+    turn,
+    ...(reasoning ? { reasoning_content: reasoning } : {}),
+  });
 }
 
 export function commitAssistantToolCalls(
@@ -36,11 +43,13 @@ export function commitAssistantToolCalls(
   message: ChatMessage,
   turn: number,
 ): void {
+  const reasoning = message.reasoning_content?.trim();
   messages.push({
     role: 'assistant',
     content: message.content,
     tool_calls: message.tool_calls,
     turn,
+    ...(reasoning ? { reasoning_content: reasoning } : {}),
   });
 }
 

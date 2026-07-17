@@ -67,6 +67,11 @@ describe('slash registry', () => {
       jobId: 'job_abc',
     });
     assert.deepEqual(parseSlashLine('/spawns')?.spawnsAction, { kind: 'list' });
+    assert.deepEqual(parseSlashLine('/image a.png')?.imageAction, {
+      kind: 'add',
+      path: 'a.png',
+    });
+    assert.deepEqual(parseSlashLine('/img list')?.imageAction, { kind: 'list' });
   });
 
   it('exposes autocomplete items with locale-specific descriptions', () => {

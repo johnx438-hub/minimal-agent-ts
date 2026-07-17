@@ -5,6 +5,7 @@ import type { TUI } from '@earendil-works/pi-tui';
 import type { CompressionFatigueTracker } from '../compression-fatigue.js';
 import type { AgentRuntime } from '../runner.js';
 import { formatImportResult } from '../session-import.js';
+import type { VisionRef } from '../types.js';
 import { cwdChangeNeedsConfirm } from '../tools/path-utils.js';
 import { executeMemorySlash } from '../workspace-memory.js';
 import {
@@ -30,6 +31,8 @@ import {
 } from './prefs.js';
 import type { SlashResult } from './slash.js';
 import { formatSlashHelpLines } from './slash.js';
+import type { PendingVisionBuffer } from './vision-input.js';
+import { formatImagePlaceholders } from './vision-input.js';
 
 export interface PiSlashUiState {
   prefs: TuiPrefs;
@@ -50,11 +53,17 @@ export interface PiSlashHandlerDeps {
   resumeEditor: () => void;
   requestStop: () => void;
   printStatus: () => void;
-  runTask: (task: string, workflowPath?: string) => Promise<void>;
+  runTask: (
+    task: string,
+    workflowPath?: string,
+    opts?: { visionRefs?: VisionRef[]; displayText?: string },
+  ) => Promise<void>;
   applyAlwaysFromPrefs: (p: TuiPrefs) => void;
   confirmCwdChange: (from: string, to: string) => Promise<boolean>;
   /** Refresh autocomplete + footer hint after /lang. */
   onLocaleChange?: () => void;
+  /** Pending /image attach buffer (SPEC_VISION VI-3). */
+  pendingVision?: PendingVisionBuffer;
 }
 
 export async function handlePiSlash(
@@ -77,9 +86,46 @@ export async function handlePiSlash(
     applyAlwaysFromPrefs,
     confirmCwdChange,
     onLocaleChange,
+    pendingVision,
   } = deps;
 
   const locale = () => prefsLocale(uiState.prefs);
+
+  if (result.imageAction) {
+    if (!pendingVision) {
+      say('Image attach unavailable');
+      resumeEditor();
+      return;
+    }
+    const act = result.imageAction;
+    if (act.kind === 'list') {
+      say(pendingVision.formatStatus(), true);
+      resumeEditor();
+      return;
+    }
+    if (act.kind === 'clear') {
+      const n = pendingVision.length;
+      pendingVision.clear();
+      say(n ? `Cleared ${n} pending image(s)` : '(no pending images)');
+      resumeEditor();
+      return;
+    }
+    if (act.kind === 'add') {
+      const err = pendingVision.add(act.path);
+      if (err) {
+        say(err);
+      } else {
+        const last = pendingVision.list().at(-1);
+        const label = last ? formatImagePlaceholders([last]) : act.path;
+        say(
+          `Queued ${label} (${pendingVision.length}/${pendingVision.max}) — next message will attach`,
+          true,
+        );
+      }
+      resumeEditor();
+      return;
+    }
+  }
 
   if (result.stop) {
     if (runtime.isRunning()) {

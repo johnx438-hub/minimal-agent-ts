@@ -1,5 +1,5 @@
 {
-  "_llm_comment": "LLM: secrets ONLY in .env (see .env.example). This file uses api_key_env as the ENV VAR NAME (not the key). Names are NOT hardcoded — change api_key_env and add the same name in .env. Default deepseek-main → DEEPSEEK_API_KEY; fallback openrouter-test → OPENROUTER_API_KEY. Custom OpenAI-compatible API: add a profile { base_url, api_key_env, default_model, models }, set default_api_profile, put KEY=... in .env. Templates: agent.llm.2key.example.json | agent.llm.example.json. Virtual __env__ (OPENAI_API_KEY/BASE_URL/MODEL) only if no named profiles.",
+  "_llm_comment": "LLM: secrets ONLY in .env (see .env.example). This file uses api_key_env as the ENV VAR NAME (not the key). Default deepseek-main → DEEPSEEK_API_KEY; fallback openrouter-test → OPENROUTER_API_KEY; kimi-main → MOONSHOT_API_KEY (vision + preserve_reasoning). Switch: default_api_profile or TUI /profile. Templates: agent.llm.example.json.",
   "default_api_profile": "deepseek-main",
   "api_profiles": {
     "deepseek-main": {
@@ -46,6 +46,31 @@
         "provider": {
           "order": ["DeepSeek"],
           "allow_fallbacks": true
+        }
+      }
+    },
+    "kimi-main": {
+      "_note": "国内 platform.moonshot.cn 申请的 key 必须用 api.moonshot.cn；国际 platform.kimi.ai / platform.moonshot.ai 的 key 用 api.moonshot.ai（key 与 endpoint 不可混用，混用必 401）。.env: MOONSHOT_API_KEY=... 切换: /profile kimi-main。cache=prompt_cache_key + preserve_reasoning。",
+      "display_name": "Kimi（Moonshot 国内）",
+      "base_url": "https://api.moonshot.cn/v1",
+      "api_key_env": "MOONSHOT_API_KEY",
+      "_key_hint": "MOONSHOT_API_KEY from platform.moonshot.cn → base_url api.moonshot.cn；国际站 key → 改 base_url 为 https://api.moonshot.ai/v1",
+      "default_model": "kimi-k2.6",
+      "models": ["kimi-k2.6", "kimi-k3", "kimi-k2.7-code", "kimi-k2.7-code-highspeed"],
+      "supports_vision": true,
+      "preserve_reasoning": true,
+      "cache": {
+        "mode": "prompt_cache_key",
+        "session_id_from": "session_id",
+        "telemetry": true
+      },
+      "reasoning_map": {
+        "low": {
+          "thinking": { "type": "enabled", "keep": "all" }
+        },
+        "high": {
+          "thinking": { "type": "enabled", "keep": "all" },
+          "reasoning_effort": "max"
         }
       }
     }
@@ -141,6 +166,15 @@
       "prompt_file": "agents/web-researcher.md",
       "tools": ["web_fetch", "read_file", "grep_search", "write_file"],
       "max_turns": 50
+    },
+    {
+      "name": "vision-buddy",
+      "description": "看图子 Agent（Kimi 视觉）：截图/UI 分析，read_file 挂图 + write_file 写报告",
+      "prompt_file": "agents/vision-buddy.md",
+      "tools": ["read_file", "write_file"],
+      "api_profile": "kimi-main",
+      "model": "kimi-k2.6",
+      "max_turns": 30
     },
     {
       "name": "skeleton-reader",

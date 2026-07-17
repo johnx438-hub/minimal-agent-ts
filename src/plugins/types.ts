@@ -101,6 +101,8 @@ export type CacheMode =
   | 'off'
   | 'implicit'
   | 'openrouter_sticky'
+  /** Sticky scheduling via body.prompt_cache_key (Moonshot/Kimi). */
+  | 'prompt_cache_key'
   | 'anthropic_breakpoints';
 
 export interface CachePolicyConfig {
@@ -122,6 +124,11 @@ export interface ApiProfileConfig {
   fallback_profiles?: string[];
   display_name?: string;
   reasoning_map?: Record<string, Record<string, unknown>>;
+  /**
+   * When true, re-send stored assistant `reasoning_content` on subsequent
+   * turns (Kimi Preserved Thinking / prefix cache). Default false.
+   */
+  preserve_reasoning?: boolean;
   /** When false, materialize may still attach images only if vision.enabled; used as soft gate. */
   supports_vision?: boolean;
 }

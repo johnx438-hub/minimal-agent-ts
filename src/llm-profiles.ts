@@ -24,6 +24,7 @@ const VALID_CACHE_MODES = new Set<CacheMode>([
   'off',
   'implicit',
   'openrouter_sticky',
+  'prompt_cache_key',
   'anthropic_breakpoints',
 ]);
 
@@ -42,6 +43,12 @@ export interface ResolvedLlmBinding {
   displayName?: string;
   fallbackProfiles?: string[];
   reasoningMap?: Record<string, Record<string, unknown>>;
+  /** Re-send assistant reasoning_content (Kimi / optional DeepSeek). */
+  preserveReasoning?: boolean;
+  /** Env var name used for apiKey (diagnostics / profile-switch UX). */
+  apiKeyEnv?: string;
+  /** Profile accepts multimodal image_url (read_file image attach). */
+  supportsVision?: boolean;
   available: boolean;
   unavailableReason?: string;
 }
@@ -146,6 +153,13 @@ function resolveModel(
   throw new LlmProfileError('LLM model could not be resolved (set model or default_model)');
 }
 
+/** Last 4 chars of a secret for UX (never log full keys). */
+export function apiKeyFingerprint(apiKey: string | undefined): string {
+  const k = apiKey?.trim() ?? '';
+  if (k.length < 4) return '(none)';
+  return `…${k.slice(-4)}`;
+}
+
 function buildEnvBinding(opts: ResolveLlmBindingOptions): ResolvedLlmBinding {
   const apiKey = getEnvApiKey(opts.env);
   const { baseUrl, model } = getEnvLlmDefaults(opts.env);
@@ -198,6 +212,9 @@ function buildNamedBinding(
     displayName: profile.display_name ?? profileName,
     fallbackProfiles: profile.fallback_profiles,
     reasoningMap: profile.reasoning_map,
+    preserveReasoning: profile.preserve_reasoning === true,
+    apiKeyEnv: profile.api_key_env,
+    supportsVision: profile.supports_vision === true,
     available,
     unavailableReason: available
       ? undefined
@@ -348,6 +365,9 @@ export function toLlmProfile(binding: ResolvedLlmBinding): LlmProfile {
     displayName: binding.displayName,
     fallbackProfiles: binding.fallbackProfiles,
     reasoningMap: binding.reasoningMap,
+    preserveReasoning: binding.preserveReasoning,
+    apiKeyEnv: binding.apiKeyEnv,
+    supportsVision: binding.supportsVision,
     available: binding.available,
     unavailableReason: binding.unavailableReason,
   };

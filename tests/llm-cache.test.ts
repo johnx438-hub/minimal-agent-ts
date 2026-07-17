@@ -5,6 +5,7 @@ import {
   applyCacheAdapter,
   buildLlmDoneStepEvent,
   buildLlmTurnRequest,
+  buildLlmTurnRequestForBinding,
   parseCacheUsage,
 } from '../src/llm-cache.js';
 import { buildChatBody } from '../src/llm.js';
@@ -49,6 +50,29 @@ describe('parseCacheUsage', () => {
     });
   });
 
+  it('maps Moonshot/Kimi top-level usage.cached_tokens', () => {
+    const stats = parseCacheUsage(
+      {
+        prompt_tokens: 19,
+        completion_tokens: 21,
+        total_tokens: 40,
+        cached_tokens: 10,
+      },
+      'kimi-main',
+    );
+    assert.equal(stats?.cached_tokens, 10);
+    assert.equal(stats?.prompt_tokens, 19);
+    assert.equal(stats?.provider, 'kimi-main');
+  });
+
+  it('prefers prompt_tokens_details.cached_tokens over root', () => {
+    const stats = parseCacheUsage({
+      cached_tokens: 1,
+      prompt_tokens_details: { cached_tokens: 99 },
+    });
+    assert.equal(stats?.cached_tokens, 99);
+  });
+
   it('returns undefined when no cache signals', () => {
     assert.equal(parseCacheUsage({ prompt_tokens: 100 }), undefined);
     assert.equal(parseCacheUsage(null), undefined);
@@ -91,9 +115,90 @@ describe('applyCacheAdapter', () => {
 
     assert.deepEqual(result.extraBody, { session_id: 'my-fixed-session' });
   });
+
+  it('injects prompt_cache_key for Moonshot sticky mode', () => {
+    const result = applyCacheAdapter(
+      messages,
+      { mode: 'prompt_cache_key', session_id_from: 'session_id' },
+      { sessionId: 'sess-kimi' },
+    );
+    assert.deepEqual(result.extraBody, { prompt_cache_key: 'sess-kimi' });
+    assert.equal(result.messages, messages);
+  });
 });
 
 describe('buildLlmTurnRequest', () => {
+  it('does not mix binding baseUrl with leftover config.apiKey', () => {
+    const config: AgentConfig = {
+      apiKey: 'sk-deepseek-LEFTOVER',
+      baseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-v4-flash',
+      maxTurns: 0,
+      cwd: '/tmp',
+      allowShell: false,
+      allowWeb: false,
+      sessionId: 'sess',
+      llm: {
+        profileName: 'deepseek-main',
+        baseUrl: 'https://api.deepseek.com',
+        apiKey: 'sk-deepseek-LEFTOVER',
+        model: 'deepseek-v4-flash',
+        wire: 'openai_chat',
+        available: true,
+      },
+    };
+
+    const req = buildLlmTurnRequestForBinding(
+      config,
+      {
+        profileName: 'kimi-main',
+        baseUrl: 'https://api.moonshot.ai/v1',
+        apiKey: 'sk-moonshot-CORRECT',
+        model: 'kimi-k2.5',
+        wire: 'openai_chat',
+        available: true,
+        apiKeyEnv: 'MOONSHOT_API_KEY',
+      },
+      [{ role: 'user', content: 'hi' }],
+      { stream: false },
+    );
+
+    assert.equal(req.chatOpts.apiKey, 'sk-moonshot-CORRECT');
+    assert.equal(req.chatOpts.baseUrl, 'https://api.moonshot.ai/v1');
+    assert.equal(req.chatOpts.model, 'kimi-k2.5');
+  });
+
+  it('throws when binding has empty apiKey instead of falling back', () => {
+    const config: AgentConfig = {
+      apiKey: 'sk-deepseek-LEFTOVER',
+      baseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-v4-flash',
+      maxTurns: 0,
+      cwd: '/tmp',
+      allowShell: false,
+      allowWeb: false,
+    };
+
+    assert.throws(
+      () =>
+        buildLlmTurnRequestForBinding(
+          config,
+          {
+            profileName: 'kimi-main',
+            baseUrl: 'https://api.moonshot.ai/v1',
+            apiKey: '',
+            model: 'kimi-k2.5',
+            wire: 'openai_chat',
+            available: false,
+            apiKeyEnv: 'MOONSHOT_API_KEY',
+          },
+          [{ role: 'user', content: 'hi' }],
+          { stream: false },
+        ),
+      /empty API key.*MOONSHOT_API_KEY/,
+    );
+  });
+
   it('merges profile extra_body and openrouter session_id', () => {
     const config: AgentConfig = {
       apiKey: 'key',

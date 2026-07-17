@@ -1,13 +1,20 @@
 import { LlmHttpError, parseRetryAfterMs } from './llm-retry.js';
+import {
+  appendReasoningDelta,
+  extractReasoningText,
+  normalizeReasoningText,
+} from './llm-reasoning-content.js';
 import type { ChatMessage, ToolCall, ToolDefinition } from './types.js';
 
 export { LlmHttpError } from './llm-retry.js';
 
-/** OpenAI base usage + vendor extensions (DeepSeek / GLM / xAI / OpenRouter). */
+/** OpenAI base usage + vendor extensions (DeepSeek / GLM / xAI / OpenRouter / Kimi). */
 export type LlmUsage = Record<string, unknown> & {
   prompt_tokens?: number;
   completion_tokens?: number;
   total_tokens?: number;
+  /** Moonshot/Kimi often put cache hits at usage root. */
+  cached_tokens?: number;
   prompt_cache_hit_tokens?: number;
   prompt_cache_miss_tokens?: number;
   prompt_tokens_details?: {
@@ -22,6 +29,8 @@ interface ChatCompletionResponse {
       role: 'assistant';
       content: string | null;
       tool_calls?: ToolCall[];
+      reasoning_content?: string | null;
+      reasoning?: string | null;
     };
     finish_reason: string | null;
   }>;
@@ -63,7 +72,7 @@ async function chatBlocking(
 ): Promise<LlmResult> {
   const url = `${opts.baseUrl.replace(/\/$/, '')}/chat/completions`;
   const body = buildChatBody(opts.model, messages, tools, false, opts.extraBody);
-  const bodyText = await postChat(url, opts.apiKey, body, opts.signal);
+  const bodyText = await postChat(url, opts.apiKey, body, opts.signal, opts);
 
   const data = JSON.parse(bodyText) as ChatCompletionResponse;
   return parseCompletion(data);
@@ -89,7 +98,7 @@ async function chatStream(
     const errText = await res.text();
     throw new LlmHttpError(
       res.status,
-      errText,
+      formatLlmAuthErrorBody(res.status, errText, opts),
       parseRetryAfterMs(res.headers.get('retry-after')),
     );
   }
@@ -99,6 +108,7 @@ async function chatStream(
   }
 
   let content = '';
+  let reasoningAcc = '';
   const toolCallsByIndex = new Map<number, ToolCall>();
   let finishReason: string | null = null;
   let usage: ChatCompletionResponse['usage'];
@@ -129,6 +139,8 @@ async function chatStream(
         choices?: Array<{
           delta?: {
             content?: string | null;
+            reasoning_content?: string | null;
+            reasoning?: string | null;
             tool_calls?: Array<{
               index: number;
               id?: string;
@@ -161,6 +173,8 @@ async function chatStream(
         opts.onToken?.(delta.content);
       }
 
+      reasoningAcc = appendReasoningDelta(reasoningAcc, delta);
+
       if (delta.tool_calls) {
         for (const tc of delta.tool_calls) {
           const existing = toolCallsByIndex.get(tc.index) ?? {
@@ -184,11 +198,13 @@ async function chatStream(
           .map(([, tc]) => tc)
       : undefined;
 
+  const reasoning_content = normalizeReasoningText(reasoningAcc);
   return {
     message: {
       role: 'assistant',
       content: content || null,
       tool_calls,
+      ...(reasoning_content ? { reasoning_content } : {}),
     },
     finishReason,
     usage,
@@ -224,6 +240,7 @@ async function postChat(
   apiKey: string,
   body: Record<string, unknown>,
   signal?: AbortSignal,
+  diag?: ChatOptions,
 ): Promise<string> {
   const res = await fetch(url, {
     method: 'POST',
@@ -239,11 +256,32 @@ async function postChat(
   if (!res.ok) {
     throw new LlmHttpError(
       res.status,
-      bodyText,
+      formatLlmAuthErrorBody(res.status, bodyText, diag ?? { apiKey, baseUrl: url, model: '' }),
       parseRetryAfterMs(res.headers.get('retry-after')),
     );
   }
   return bodyText;
+}
+
+/** Append profile/host/key fingerprint on auth failures so mixed profile bugs are obvious. */
+function formatLlmAuthErrorBody(
+  status: number,
+  bodyText: string,
+  opts: Pick<ChatOptions, 'apiKey' | 'baseUrl' | 'model'>,
+): string {
+  if (status !== 401 && status !== 403) return bodyText;
+  try {
+    const host = new URL(opts.baseUrl).host;
+    const suf =
+      opts.apiKey.trim().length >= 4 ? opts.apiKey.trim().slice(-4) : '?';
+    return (
+      `${bodyText}\n` +
+      `[auth diag] host=${host} model=${opts.model} key=…${suf} ` +
+      `(if key suffix is from another provider, profile credentials are mixed — /profile reset or restart TUI after editing .env)`
+    );
+  } catch {
+    return bodyText;
+  }
 }
 
 function parseCompletion(data: ChatCompletionResponse): LlmResult {
@@ -252,11 +290,16 @@ function parseCompletion(data: ChatCompletionResponse): LlmResult {
     throw new Error('LLM returned no choices');
   }
 
+  const reasoning_content = normalizeReasoningText(
+    extractReasoningText(choice.message),
+  );
+
   return {
     message: {
       role: 'assistant',
       content: choice.message.content,
       tool_calls: choice.message.tool_calls,
+      ...(reasoning_content ? { reasoning_content } : {}),
     },
     finishReason: choice.finish_reason,
     usage: data.usage,

@@ -9,7 +9,13 @@ import { AgentRuntime } from '../src/runner.js';
 import { loadSession } from '../src/session.js';
 import { parseSlashLine } from '../src/tui/slash.js';
 
-const ENV_KEYS = ['OPENAI_API_KEY', 'DEEPSEEK_API_KEY', 'ZAI_API_KEY', 'MODEL'] as const;
+const ENV_KEYS = [
+  'OPENAI_API_KEY',
+  'DEEPSEEK_API_KEY',
+  'ZAI_API_KEY',
+  'MOONSHOT_API_KEY',
+  'MODEL',
+] as const;
 
 function snapshotEnv(): Record<string, string | undefined> {
   const out: Record<string, string | undefined> = {};
@@ -265,6 +271,101 @@ describe('TUI llm slash (G2-c)', () => {
     assert.match(rejected.message, /not in profile/);
     assert.match(runtime.formatSessionLlmShortLine(), /deepseek-v4-flash$/);
     assert.equal(runtime.formatSessionLlmShortLine().includes('*'), false);
+  });
+
+  it('preserves /profile override when first session is created after deferSession', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ma-tui-llm-defer-profile-'));
+    writeFileSync(
+      join(dir, 'agent.json'),
+      JSON.stringify({
+        default_api_profile: 'deepseek-main',
+        api_profiles: {
+          'deepseek-main': {
+            base_url: 'https://api.deepseek.com',
+            api_key_env: 'DEEPSEEK_API_KEY',
+            default_model: 'deepseek-v4-pro',
+            models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+          },
+          'kimi-main': {
+            base_url: 'https://api.moonshot.ai/v1',
+            api_key_env: 'MOONSHOT_API_KEY',
+            default_model: 'kimi-k2.5',
+            models: ['kimi-k2.5'],
+          },
+        },
+      }),
+    );
+
+    process.env.DEEPSEEK_API_KEY = 'sk-deepseek-LEFTOVER18fb';
+    process.env.MOONSHOT_API_KEY = 'sk-moonshot-CORRECTCJ1J';
+    delete process.env.OPENAI_API_KEY;
+
+    // Match TUI: no session until first task / /profile
+    const runtime = new AgentRuntime({ cwd: dir, deferSession: true });
+    assert.equal(runtime.hasActiveSession(), false);
+
+    const set = runtime.setSessionLlmProfile('kimi-main');
+    assert.equal(set.ok, true);
+    assert.match(set.message, /kimi-main/);
+    assert.match(set.message, /moonshot/i);
+    assert.equal(runtime.getSessionLlmOverride().profileName, 'kimi-main');
+    assert.match(runtime.formatSessionLlmShortLine(), /^llm:kimi-main\/kimi-k2\.5\*/);
+
+    // First run path: ensureSession + buildRunConfig must keep kimi credentials
+    const runConfig = (runtime as unknown as { buildRunConfig: (s: AbortSignal) => import('../src/types.js').AgentConfig }).buildRunConfig(
+      new AbortController().signal,
+    );
+    assert.equal(runConfig.llm?.profileName, 'kimi-main');
+    assert.equal(runConfig.baseUrl, 'https://api.moonshot.ai/v1');
+    assert.equal(runConfig.apiKey, 'sk-moonshot-CORRECTCJ1J');
+    assert.equal(runConfig.model, 'kimi-k2.5');
+    assert.notEqual(runConfig.apiKey.slice(-4), '18fb');
+  });
+
+  it('preserves pending /profile when ensureSession creates session after bare set', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ma-tui-llm-defer-pending-'));
+    writeFileSync(
+      join(dir, 'agent.json'),
+      JSON.stringify({
+        default_api_profile: 'deepseek-main',
+        api_profiles: {
+          'deepseek-main': {
+            base_url: 'https://api.deepseek.com',
+            api_key_env: 'DEEPSEEK_API_KEY',
+            default_model: 'deepseek-v4-pro',
+            models: ['deepseek-v4-pro'],
+          },
+          'kimi-main': {
+            base_url: 'https://api.moonshot.ai/v1',
+            api_key_env: 'MOONSHOT_API_KEY',
+            default_model: 'kimi-k2.5',
+            models: ['kimi-k2.5'],
+          },
+        },
+      }),
+    );
+
+    process.env.DEEPSEEK_API_KEY = 'sk-deepseek-LEFTOVER18fb';
+    process.env.MOONSHOT_API_KEY = 'sk-moonshot-CORRECTCJ1J';
+    delete process.env.OPENAI_API_KEY;
+
+    const runtime = new AgentRuntime({ cwd: dir, deferSession: true });
+    // Simulate older path: set override in memory only (no ensureSession)
+    (runtime as unknown as { sessionLlmOverride: { profileName: string } }).sessionLlmOverride = {
+      profileName: 'kimi-main',
+    };
+    (runtime as unknown as { syncConfigLlmFromSessionOverride: () => void }).syncConfigLlmFromSessionOverride();
+
+    const session = runtime.ensureSession();
+    assert.ok(session.session_id);
+    assert.equal(runtime.getSessionLlmOverride().profileName, 'kimi-main');
+    assert.equal(session.llm_override?.profileName, 'kimi-main');
+
+    const runConfig = (runtime as unknown as { buildRunConfig: (s: AbortSignal) => import('../src/types.js').AgentConfig }).buildRunConfig(
+      new AbortController().signal,
+    );
+    assert.equal(runConfig.apiKey, 'sk-moonshot-CORRECTCJ1J');
+    assert.equal(runConfig.baseUrl, 'https://api.moonshot.ai/v1');
   });
 
   it('persists model override across resume and process restart', () => {

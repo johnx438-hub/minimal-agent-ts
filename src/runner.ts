@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import { config as loadDotenv } from 'dotenv';
+
 import { loadAgentPluginConfig } from './plugins/config-loader.js';
 import { discoverSkills } from './plugins/skills.js';
 import { runAgent, type AgentResult } from './agent.js';
@@ -132,6 +134,7 @@ import {
   workspacePromptRunStartMeta,
 } from './agent-prompt.js';
 import {
+  apiKeyFingerprint,
   buildRunStartLlmMeta,
   listModelsForProfile,
   listProfileNames,
@@ -401,10 +404,21 @@ export class AgentRuntime {
     return this.session?.session_id ?? '(none)';
   }
 
-  /** Create a session on first task when TUI started with deferSession. */
+  /**
+   * Create a session on first task when TUI started with deferSession.
+   * Preserves in-memory llm override set via /profile before any session existed
+   * (persist is a no-op without session; attach must not wipe the pending override).
+   */
   ensureSession(): SessionFile {
     if (!this.session) {
+      const pending = this.normalizeSessionLlmOverride(this.sessionLlmOverride);
       this.attachSession(createSession(env('USER_ID') ?? 'user_default'), true);
+      // attachSession restored empty llm_override from the brand-new session file.
+      if (pending && Object.keys(pending).length > 0) {
+        this.sessionLlmOverride = pending;
+        this.syncConfigLlmFromSessionOverride();
+        this.persistSessionLlmOverride();
+      }
     }
     return this.session!;
   }
@@ -442,6 +456,7 @@ export class AgentRuntime {
   private restoreSessionLlmOverrideFromSession(session?: SessionFile | null): void {
     const normalized = this.normalizeSessionLlmOverride(session?.llm_override);
     this.sessionLlmOverride = normalized ?? {};
+    this.syncConfigLlmFromSessionOverride();
     this.bumpModelListGeneration();
   }
 
@@ -633,6 +648,7 @@ export class AgentRuntime {
 
   private clearSessionLlmOverride(persist = true): void {
     this.sessionLlmOverride = {};
+    this.syncConfigLlmFromSessionOverride();
     this.bumpModelListGeneration();
     if (persist) {
       this.persistSessionLlmOverride();
@@ -654,6 +670,23 @@ export class AgentRuntime {
       opts.model = model;
     }
     return resolveLlmBinding(this.pluginConfig, opts);
+  }
+
+  /**
+   * Keep this.config.apiKey/baseUrl/llm aligned with session override.
+   * Avoids any path reading stale deepseek key after /profile kimi-main.
+   * Also reloads .env (non-override) so newly added MOONSHOT_API_KEY is picked up
+   * without restarting the TUI.
+   */
+  private syncConfigLlmFromSessionOverride(): void {
+    // Fill missing keys from .env; do not clobber intentional shell exports.
+    loadDotenv({ override: false });
+
+    const override = this.getSessionLlmOverride();
+    configureAgentLlmBinding(this.config, this.pluginConfig, {
+      profileName: override.profileName?.trim(),
+      model: override.model?.trim(),
+    });
   }
 
   getEffectiveProfileName(): string {
@@ -738,6 +771,8 @@ export class AgentRuntime {
       return { ok: false, message: 'error: profile name required' };
     }
     try {
+      // Materialize session so llm_override can be persisted (deferSession TUI).
+      this.ensureSession();
       const binding = resolveLlmBinding(this.pluginConfig, { profileName: trimmed });
       if (!binding.available) {
         return {
@@ -755,17 +790,24 @@ export class AgentRuntime {
         ...(preservedModel ? { model: preservedModel } : {}),
         ...(preservedReasoning ? { reasoningLevel: preservedReasoning } : {}),
       };
+      // Re-resolve after writing override (picks up .env + syncs this.config credentials).
+      this.syncConfigLlmFromSessionOverride();
+      const live = this.resolveRunLlmBinding();
       this.persistSessionLlmOverride();
       const models = listModelsForProfile(this.pluginConfig, trimmed);
       const hint =
         models.length > 1
           ? ` Models: ${models.join(', ')} (use /model)`
           : '';
-      const displayModel = preservedModel ?? binding.model;
+      const displayModel = preservedModel ?? live.model;
+      const keyEnv = live.apiKeyEnv ? ` ${live.apiKeyEnv}` : '';
+      const keyFp = apiKeyFingerprint(live.apiKey);
       this.bumpModelListGeneration();
       return {
         ok: true,
-        message: `profile → ${trimmed}/${displayModel} (next task)${hint}`,
+        message:
+          `profile → ${trimmed}/${displayModel} (next task)` +
+          ` · key${keyEnv}=${keyFp} · ${live.baseUrl}${hint}`,
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -779,6 +821,7 @@ export class AgentRuntime {
       return { ok: false, message: 'error: model id required' };
     }
     try {
+      this.ensureSession();
       const profileName = this.getEffectiveProfileName();
       const catalogBinding = resolveLlmBinding(this.pluginConfig, { profileName });
       const validation = validateModelForProfile(
@@ -804,7 +847,9 @@ export class AgentRuntime {
         ...this.sessionLlmOverride,
         model: trimmed,
       };
+      this.syncConfigLlmFromSessionOverride();
       this.persistSessionLlmOverride();
+      this.bumpModelListGeneration();
       return {
         ok: true,
         message: `model → ${profileName}/${trimmed} (next task)`,
@@ -873,6 +918,7 @@ export class AgentRuntime {
       this.clearSessionLlmOverride();
       return;
     }
+    this.syncConfigLlmFromSessionOverride();
     this.persistSessionLlmOverride();
   }
 

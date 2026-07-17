@@ -76,6 +76,20 @@ export function applyCacheAdapter(
     };
   }
 
+  if (mode === 'prompt_cache_key') {
+    const sessionId = resolveStickySessionId(
+      cache ?? { mode: 'prompt_cache_key' },
+      ctx.sessionId,
+    );
+    if (!sessionId) {
+      return { messages };
+    }
+    return {
+      messages,
+      extraBody: { prompt_cache_key: sessionId },
+    };
+  }
+
   return { messages };
 }
 
@@ -98,10 +112,15 @@ export function parseCacheUsage(
   if (deepseekHit !== undefined) stats.cached_tokens = deepseekHit;
   if (deepseekMiss !== undefined) stats.cache_miss_tokens = deepseekMiss;
 
+  // Moonshot/Kimi: top-level usage.cached_tokens (also some OpenAI-compat gateways).
+  const rootCached = readFiniteNumber(root, 'cached_tokens');
+  if (rootCached !== undefined) stats.cached_tokens = rootCached;
+
   const details = asRecord(root.prompt_tokens_details);
   if (details) {
     const cached = readFiniteNumber(details, 'cached_tokens');
     const write = readFiniteNumber(details, 'cache_write_tokens');
+    // Prefer details when present (more specific than root).
     if (cached !== undefined) stats.cached_tokens = cached;
     if (write !== undefined) stats.cache_write_tokens = write;
   }
@@ -171,12 +190,26 @@ export function buildLlmTurnRequestForBinding(
       );
   const extraBody = mergeExtraBody(profileExtra, adapted.extraBody, reasoningExtra);
 
+  // When a binding is present, use its credentials as a unit — never mix
+  // binding.baseUrl with a leftover config.apiKey from another profile.
+  const apiKey = binding ? binding.apiKey : config.apiKey;
+  const baseUrl = binding ? binding.baseUrl : config.baseUrl;
+  const model = binding ? binding.model : config.model;
+  if (binding && !apiKey?.trim()) {
+    const envHint = binding.apiKeyEnv
+      ? ` (set ${binding.apiKeyEnv} in .env)`
+      : '';
+    throw new Error(
+      `LLM profile "${binding.profileName}" has empty API key${envHint}`,
+    );
+  }
+
   return {
     apiMessages: adapted.messages,
     chatOpts: {
-      apiKey: binding?.apiKey ?? config.apiKey,
-      baseUrl: binding?.baseUrl ?? config.baseUrl,
-      model: binding?.model ?? config.model,
+      apiKey,
+      baseUrl,
+      model,
       stream: opts.stream,
       signal: opts.signal,
       extraBody,

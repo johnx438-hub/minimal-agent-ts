@@ -22,6 +22,11 @@ export type JobsSlashAction =
 
 export type SpawnsSlashAction = { kind: 'list' };
 
+export type ImageSlashAction =
+  | { kind: 'add'; path: string }
+  | { kind: 'list' }
+  | { kind: 'clear' };
+
 export interface SlashResult {
   handled: boolean;
   message?: string;
@@ -42,6 +47,8 @@ export interface SlashResult {
   llmAction?: LlmSlashAction;
   jobsAction?: JobsSlashAction;
   spawnsAction?: SpawnsSlashAction;
+  /** Attach image for next chat line (SPEC_VISION VI-3). */
+  imageAction?: ImageSlashAction;
 }
 
 /** Single source of truth for slash help, aliases, and autocomplete hints. */
@@ -237,6 +244,24 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
     autocomplete: false,
     hintZh: '武装或立即运行 workflow',
     hintEn: 'Arm or run workflow',
+  },
+  {
+    command: '/image <path|url>',
+    aliases: ['/img'],
+    hintZh: '挂图到下一条消息（也可 @path.png）',
+    hintEn: 'Attach image for next message (or @path.png)',
+  },
+  {
+    command: '/image list',
+    autocomplete: false,
+    hintZh: '查看待发送图片缓冲',
+    hintEn: 'List pending image buffer',
+  },
+  {
+    command: '/image clear',
+    autocomplete: false,
+    hintZh: '清空待发送图片',
+    hintEn: 'Clear pending images',
   },
   {
     command: '/cwd <path>',
@@ -708,6 +733,28 @@ export function parseSlashLine(line: string): SlashResult | null {
         return { handled: true, armWorkflow: nameOrPath };
       }
       return { handled: true, runWorkflow: { path: nameOrPath, task } };
+    }
+
+    case '/image': {
+      const sub = parts[1];
+      if (!sub) {
+        return {
+          handled: true,
+          message:
+            'Usage: /image <path|https-url> | /image list | /image clear\n' +
+            '  Or embed @./shot.png in the next chat line.',
+        };
+      }
+      const subLower = sub.toLowerCase();
+      if (subLower === 'list' || subLower === 'status') {
+        return { handled: true, imageAction: { kind: 'list' } };
+      }
+      if (subLower === 'clear' || subLower === 'off') {
+        return { handled: true, imageAction: { kind: 'clear' } };
+      }
+      // Path may contain spaces: join remainder.
+      const path = parts.slice(1).join(' ').trim();
+      return { handled: true, imageAction: { kind: 'add', path } };
     }
 
     case '/session':

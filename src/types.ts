@@ -27,6 +27,15 @@ export interface LlmProfile {
   displayName?: string;
   fallbackProfiles?: string[];
   reasoningMap?: Record<string, Record<string, unknown>>;
+  /**
+   * Re-send assistant reasoning_content on later turns (Kimi Preserved Thinking).
+   * Parse/store always; outbound only when true.
+   */
+  preserveReasoning?: boolean;
+  /** Env var that supplied apiKey (diagnostics). */
+  apiKeyEnv?: string;
+  /** Profile accepts image_url parts (SPEC_VISION); gates read_file image attach. */
+  supportsVision?: boolean;
   available: boolean;
   unavailableReason?: string;
 }
@@ -74,6 +83,11 @@ export interface ChatMessage {
   content: MessageContent;
   tool_calls?: ToolCall[];
   tool_call_id?: string;
+  /**
+   * Thinking / CoT from the model (Kimi `reasoning_content`, DeepSeek-style).
+   * Stored when present; re-sent only if profile.preserve_reasoning.
+   */
+  reasoning_content?: string;
   /** Phase 2: linkage to ActionStore (not sent to LLM API). */
   action_id?: string;
   pointerized?: boolean;
