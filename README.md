@@ -113,11 +113,11 @@ npm start -- "读一下README，用三句话总结这个项目是做什么的"
 | 模式 | 工具名 | 行为 | 适用场景 |
 |------|--------|------|---------|
 | **同步** | `spawn_agent` | 阻塞等待子 Agent 完成后返回结果 | API 有并发限制时（如免费 tier 只允许 1 个并发请求） |
-| **后台** | `spawn_background` | 立即返回 `job_id`，子 Agent 在后台异步跑，进度写文件 | 多个独立任务并行处理（但需手动验收） |
+| **后台** | `spawn_background` | 立即返回 `job_id`，子 Agent 在后台异步跑，进度写文件 | 多个独立任务并行处理（完成后自动回推主 Agent 验收） |
 
 > ⚠️ **API 并发限制**：如果用的是 DeepSeek / OpenRouter 等有限流 API（比如同一 API Key 只允许 1 个并发请求），后台模式下的并行子 Agent 会触发 429 错误。此时应在 Prompt 里明确指定 `spawn_agent`（同步模式），子 Agent 会排队串行执行。  
 > 当前框架**不会自动降级**——同步还是后台由 Agent 根据你的 Prompt 自行选择，所以想串行就说「用 spawn_agent 一个个做」。  
-> **后台通信机制**：后台子 Agent 不使用消息总线，而是通过文件事件流（`workspace/jobs/<id>/events.jsonl`）写入进度，结果落盘到 `report.md` / `result.json`。主 Agent 不会主动「监听」——想查看后台任务进度，请在本轮 Prompt 中要求 Agent 调用 `npm run spawn:status` 检查 `/jobs` 面板，或在下一轮对话中提醒它验收（读 report）或终止（`npm run spawn:kill`）已完成/跑偏的作业。
+> **后台通信机制**：后台子 Agent 不使用消息总线，而是通过文件事件流（`workspace/jobs/<id>/events.jsonl`）写入进度，结果落盘到 `report.md` / `result.json`。所有后台任务落地时，框架会生成 `jobs_all_settled` 系统事件**自动唤醒主 Agent 验收**（合成 prompt 触发新 turn，不打断正在进行的对话）——无需手动提醒。想中途查看进度可调用 `npm run spawn:status` 检查 `/jobs` 面板，或要求终止（`npm run spawn:kill`）跑偏的作业。
 
 ---
 
@@ -309,5 +309,6 @@ MY_GW_KEY=sk-xxxxxxxx
 | **Grok 4.5 + Composer 2.5** | 主力开发 — 大部分源码由其直接生成 |
 | **DeepSeek V4 Pro** | 完整驻扎体验 + 代码审查 + 长期运行验证 |
 | **豆包 2.1 Pro** | 文档与 README 文本润色 |
+| **Kimi K3** | 框架隐形风险排查（verdict 协议裂缝 / stream-draft 复合 bug）+ 审美担当（星空展示页 / 机制笔记 docx） |
 
-> 一个 Agent 框架，由三个不同的 Agent 协作完成——这本身就是最好的证明。
+> 一个 Agent 框架，由四个不同的 Agent 协作完成——这本身就是最好的证明。
