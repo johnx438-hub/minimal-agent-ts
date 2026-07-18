@@ -4,3 +4,4 @@ export type { WebUiHandle, WebUiServerOptions, WebControlFrame } from './types.j
 export { createWsMessageSink } from './ws-sink.js';
 export { WsHub } from './ws-hub.js';
 export { attachRuntimeEventBridge, snapshotJobs } from './event-bridge.js';
+export { dispatchWebCommand, llmStatus } from '../slash/index.js';

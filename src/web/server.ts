@@ -15,6 +15,7 @@ import {
 } from './auth.js';
 import { handleApiRoute } from './routes.js';
 import { sendJson, tryServeStatic, safeJoin, sendFile } from './static.js';
+import { llmStatus } from '../slash/index.js';
 import { attachRuntimeEventBridge, snapshotJobs } from './event-bridge.js';
 import type { WebHelloFrame, WebUiHandle, WebUiServerOptions } from './types.js';
 import { WsHub } from './ws-hub.js';
@@ -85,13 +86,17 @@ export async function startWebUi(opts: StartWebUiOptions): Promise<WebUiHandle> 
       task_count: m.task_count,
       note: m.note,
     }));
+    const llm = llmStatus(opts.runtime);
     const hello: WebHelloFrame = {
       type: 'hello',
       session_id: opts.runtime.session?.session_id,
-      model: opts.runtime.config.model ?? opts.runtime.config.llm?.model,
+      model: (llm.model as string | null) ?? undefined,
       running: opts.runtime.isRunning(),
       sessions,
       jobs: snapshotJobs(opts.runtime),
+      profile: (llm.profile as string | null) ?? undefined,
+      armed_workflow: (llm.armed_workflow as string | null) ?? undefined,
+      loaded_skills: llm.loaded_skills as string[] | undefined,
     };
     try {
       ws.send(JSON.stringify(hello));

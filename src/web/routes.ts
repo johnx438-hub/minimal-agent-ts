@@ -1,9 +1,17 @@
 /**
- * HTTP route handlers for Web UI (SPEC_WEB_UI W1).
+ * HTTP route handlers for Web UI (SPEC_WEB_UI W1–W3).
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AgentRuntime } from '../runner.js';
+import { loadSession } from '../session.js';
+import { buildSessionChatHistory } from '../session-chat-history.js';
+import {
+  broadcastArmed,
+  broadcastLlm,
+  dispatchWebCommand,
+  llmStatus,
+} from '../slash/index.js';
 import { sendJson } from './static.js';
 import type { WsHub } from './ws-hub.js';
 import type { WebRunStateFrame } from './types.js';
@@ -65,11 +73,264 @@ export async function handleApiRoute(
 
   if (path === '/health' && method === 'GET') {
     const session = ctx.runtime.session;
+    const st = llmStatus(ctx.runtime);
     sendJson(res, 200, {
       ok: true,
       running: ctx.runtime.isRunning(),
       session_id: session?.session_id ?? null,
-      model: ctx.runtime.config.model ?? ctx.runtime.config.llm?.model ?? null,
+      model: st.model,
+      profile: st.profile,
+      armed_workflow: st.armed_workflow,
+    });
+    return true;
+  }
+
+  // ── LLM catalog / switch (W3a) ───────────────────────────────────────
+  if (path === '/v1/llm/status' && method === 'GET') {
+    sendJson(res, 200, llmStatus(ctx.runtime));
+    return true;
+  }
+
+  if (path === '/v1/llm/profiles' && method === 'GET') {
+    sendJson(res, 200, { profiles: ctx.runtime.listSessionProfileChoices() });
+    return true;
+  }
+
+  if (path === '/v1/llm/profile' && method === 'POST') {
+    if (ctx.runtime.isRunning()) {
+      sendJson(res, 409, { error: 'agent_running' });
+      return true;
+    }
+    let body: Record<string, unknown>;
+    try {
+      body = await parseJsonBody(req);
+    } catch (e) {
+      sendJson(res, 400, { error: 'bad_body', detail: String(e) });
+      return true;
+    }
+    if (body.reset === true) {
+      ctx.runtime.resetSessionLlmOverride();
+      broadcastLlm(ctx.hub, ctx.runtime);
+      sendJson(res, 200, { ok: true, ...llmStatus(ctx.runtime) });
+      return true;
+    }
+    const name = String(body.name ?? '').trim();
+    if (!name) {
+      sendJson(res, 400, { error: 'name_required' });
+      return true;
+    }
+    const r = ctx.runtime.setSessionLlmProfile(name);
+    if (r.ok) broadcastLlm(ctx.hub, ctx.runtime);
+    sendJson(res, r.ok ? 200 : 400, {
+      ok: r.ok,
+      message: r.message,
+      ...llmStatus(ctx.runtime),
+    });
+    return true;
+  }
+
+  if (path === '/v1/llm/models' && method === 'GET') {
+    const asyncMode = url.searchParams.get('async') === '1';
+    if (asyncMode) {
+      const list = await ctx.runtime.listSessionModelChoicesAsync();
+      sendJson(res, 200, {
+        models: list.choices,
+        source: list.source,
+        remoteError: list.remoteError,
+      });
+      return true;
+    }
+    sendJson(res, 200, { models: ctx.runtime.listSessionModelChoices() });
+    return true;
+  }
+
+  if (path === '/v1/llm/model' && method === 'POST') {
+    if (ctx.runtime.isRunning()) {
+      sendJson(res, 409, { error: 'agent_running' });
+      return true;
+    }
+    let body: Record<string, unknown>;
+    try {
+      body = await parseJsonBody(req);
+    } catch (e) {
+      sendJson(res, 400, { error: 'bad_body', detail: String(e) });
+      return true;
+    }
+    if (body.reset === true) {
+      ctx.runtime.resetSessionLlmModel();
+      broadcastLlm(ctx.hub, ctx.runtime);
+      sendJson(res, 200, { ok: true, ...llmStatus(ctx.runtime) });
+      return true;
+    }
+    const model = String(body.model ?? '').trim();
+    if (!model) {
+      sendJson(res, 400, { error: 'model_required' });
+      return true;
+    }
+    const r = ctx.runtime.setSessionLlmModel(model);
+    if (r.ok) broadcastLlm(ctx.hub, ctx.runtime);
+    sendJson(res, r.ok ? 200 : 400, {
+      ok: r.ok,
+      message: r.message,
+      ...llmStatus(ctx.runtime),
+    });
+    return true;
+  }
+
+  // ── Workflows (W3b) ──────────────────────────────────────────────────
+  if (path === '/v1/workflows' && method === 'GET') {
+    const workflows = ctx.runtime.listWorkflowMeta().map((w) => ({
+      name: w.name,
+      path: w.path,
+      kind: w.kind,
+      roles: w.roles,
+      share_session: w.shareSession,
+    }));
+    sendJson(res, 200, {
+      workflows,
+      armed: ctx.runtime.getArmedWorkflow(),
+    });
+    return true;
+  }
+
+  if (path === '/v1/workflows/arm' && method === 'POST') {
+    let body: Record<string, unknown>;
+    try {
+      body = await parseJsonBody(req);
+    } catch (e) {
+      sendJson(res, 400, { error: 'bad_body', detail: String(e) });
+      return true;
+    }
+    if (body.name === null || body.path === null || body.arm === false) {
+      ctx.runtime.armWorkflow(null);
+      broadcastArmed(ctx.hub, ctx.runtime, null);
+      sendJson(res, 200, { ok: true, armed: null });
+      return true;
+    }
+    const nameOrPath = String(body.name ?? body.path ?? '').trim();
+    if (!nameOrPath) {
+      sendJson(res, 400, { error: 'name_or_path_required' });
+      return true;
+    }
+    const resolved = ctx.runtime.resolveWorkflowPath(nameOrPath);
+    if (!resolved) {
+      sendJson(res, 404, { error: 'workflow_not_found', name: nameOrPath });
+      return true;
+    }
+    ctx.runtime.armWorkflow(resolved);
+    broadcastArmed(ctx.hub, ctx.runtime, nameOrPath);
+    sendJson(res, 200, { ok: true, armed: resolved, name: nameOrPath });
+    return true;
+  }
+
+  if (path === '/v1/workflows/armed' && method === 'GET') {
+    sendJson(res, 200, { armed: ctx.runtime.getArmedWorkflow() });
+    return true;
+  }
+
+  // ── Skills (W3b) ─────────────────────────────────────────────────────
+  if (path === '/v1/skills' && method === 'GET') {
+    sendJson(res, 200, {
+      skills: ctx.runtime.listSkills(),
+      loaded: ctx.runtime.getLoadedSkills(),
+    });
+    return true;
+  }
+
+  if (path === '/v1/skills/load' && method === 'POST') {
+    let body: Record<string, unknown>;
+    try {
+      body = await parseJsonBody(req);
+    } catch (e) {
+      sendJson(res, 400, { error: 'bad_body', detail: String(e) });
+      return true;
+    }
+    const name = String(body.name ?? '').trim();
+    if (!name) {
+      sendJson(res, 400, { error: 'name_required' });
+      return true;
+    }
+    const known = ctx.runtime.listSkills().some((s) => s.name === name);
+    if (!known) {
+      sendJson(res, 404, { error: 'skill_not_found', name });
+      return true;
+    }
+    ctx.runtime.loadSkill(name);
+    ctx.hub.broadcast({ type: 'skills', loaded: ctx.runtime.getLoadedSkills() });
+    sendJson(res, 200, {
+      ok: true,
+      loaded: ctx.runtime.getLoadedSkills(),
+    });
+    return true;
+  }
+
+  // ── Slash command bus (W3c) ──────────────────────────────────────────
+  if (path === '/v1/command' && method === 'POST') {
+    let body: Record<string, unknown>;
+    try {
+      body = await parseJsonBody(req);
+    } catch (e) {
+      sendJson(res, 400, { error: 'bad_body', detail: String(e) });
+      return true;
+    }
+    const line = String(body.line ?? body.command ?? '').trim();
+    if (!line) {
+      sendJson(res, 400, { error: 'line_required' });
+      return true;
+    }
+    const result = dispatchWebCommand(line, ctx.runtime, ctx.hub);
+
+    if (result.action?.type === 'task' || result.action?.type === 'workflow_run') {
+      if (ctx.runtime.isRunning()) {
+        sendJson(res, 409, { error: 'agent_running', message: result.message });
+        return true;
+      }
+      broadcastRunState(ctx.hub, 'running');
+      const runPromise =
+        result.action.type === 'workflow_run'
+          ? ctx.runtime.runWorkflowTask(result.action.task, result.action.path)
+          : ctx.runtime.runTask(result.action.text);
+      void runPromise
+        .then(() => broadcastRunState(ctx.hub, 'idle'))
+        .catch((err: unknown) => {
+          const detail = err instanceof Error ? err.message : String(err);
+          broadcastRunState(
+            ctx.hub,
+            detail.includes('Abort') ? 'aborted' : 'error',
+            detail,
+          );
+        });
+      sendJson(res, 202, {
+        ok: true,
+        accepted: true,
+        message: result.message,
+        data: result.data,
+      });
+      return true;
+    }
+
+    sendJson(res, result.ok ? 200 : 400, {
+      ok: result.ok,
+      message: result.message,
+      data: result.data,
+    });
+    return true;
+  }
+
+  // ── Catalog bundle (optional convenience) ────────────────────────────
+  if (path === '/v1/catalog' && method === 'GET') {
+    sendJson(res, 200, {
+      llm: llmStatus(ctx.runtime),
+      profiles: ctx.runtime.listSessionProfileChoices(),
+      models: ctx.runtime.listSessionModelChoices(),
+      workflows: ctx.runtime.listWorkflowMeta().map((w) => ({
+        name: w.name,
+        kind: w.kind,
+        roles: w.roles,
+      })),
+      skills: ctx.runtime.listSkills(),
+      loaded_skills: ctx.runtime.getLoadedSkills(),
+      armed_workflow: ctx.runtime.getArmedWorkflow(),
     });
     return true;
   }
@@ -99,6 +360,64 @@ export async function handleApiRoute(
     return true;
   }
 
+  // GET /v1/sessions/:id/messages — chat history (transcript + in-flight)
+  if (
+    path.startsWith('/v1/sessions/') &&
+    path.endsWith('/messages') &&
+    method === 'GET'
+  ) {
+    const id = decodeURIComponent(
+      path.slice('/v1/sessions/'.length, -'/messages'.length),
+    );
+    if (!id) {
+      sendJson(res, 400, { error: 'missing_session_id' });
+      return true;
+    }
+    const session =
+      ctx.runtime.session?.session_id === id
+        ? ctx.runtime.session
+        : loadSession(id);
+    if (!session) {
+      sendJson(res, 404, { error: 'session_not_found', session_id: id });
+      return true;
+    }
+    const limitRaw = url.searchParams.get('limit');
+    const limit = limitRaw ? Number(limitRaw) : 500;
+    const includeTools = url.searchParams.get('tools') !== '0';
+    const messages = buildSessionChatHistory(session, {
+      limit: Number.isFinite(limit) ? limit : 500,
+      includeTools,
+    });
+    sendJson(res, 200, {
+      session_id: session.session_id,
+      count: messages.length,
+      messages,
+    });
+    return true;
+  }
+
+  // Alias: current session messages
+  if (path === '/v1/messages' && method === 'GET') {
+    const session = ctx.runtime.session;
+    if (!session) {
+      sendJson(res, 200, { session_id: null, count: 0, messages: [] });
+      return true;
+    }
+    const limitRaw = url.searchParams.get('limit');
+    const limit = limitRaw ? Number(limitRaw) : 500;
+    const includeTools = url.searchParams.get('tools') !== '0';
+    const messages = buildSessionChatHistory(session, {
+      limit: Number.isFinite(limit) ? limit : 500,
+      includeTools,
+    });
+    sendJson(res, 200, {
+      session_id: session.session_id,
+      count: messages.length,
+      messages,
+    });
+    return true;
+  }
+
   if (path.startsWith('/v1/sessions/') && path.endsWith('/switch') && method === 'POST') {
     const id = path.slice('/v1/sessions/'.length, -'/switch'.length);
     if (!id) {
@@ -114,9 +433,14 @@ export async function handleApiRoute(
       sendJson(res, 404, { error: 'session_not_found', session_id: id });
       return true;
     }
+    const session = ctx.runtime.session!;
+    const messages = buildSessionChatHistory(session, { limit: 500 });
     sendJson(res, 200, {
       ok: true,
-      session_id: ctx.runtime.session?.session_id ?? id,
+      session_id: session.session_id,
+      /** Include history so clients can hydrate chat without a second round-trip. */
+      messages,
+      message_count: messages.length,
     });
     return true;
   }
@@ -163,10 +487,15 @@ export async function handleApiRoute(
       return true;
     }
 
-    const workflow =
+    let workflow =
       typeof body.workflow === 'string' && body.workflow.trim()
         ? body.workflow.trim()
         : undefined;
+    // TUI parity: armed workflow applies when body omits workflow.
+    if (!workflow) {
+      const armed = ctx.runtime.getArmedWorkflow();
+      if (armed) workflow = armed;
+    }
 
     const sessionId =
       typeof body.session_id === 'string' && body.session_id.trim()

@@ -78,6 +78,25 @@ describe('web ui static path safety', () => {
   });
 });
 
+describe('web ui command dispatch', () => {
+  it('dispatches /help without runtime side effects', async () => {
+    const { dispatchWebCommand } = await import('../src/slash/index.js');
+    const hub = { broadcast() {} };
+    const runtime = {
+      isRunning: () => false,
+      listSessionProfileChoices: () => [],
+      listSessionModelChoices: () => [],
+      listWorkflowMeta: () => [],
+      listSkills: () => [],
+      getLoadedSkills: () => [],
+      getArmedWorkflow: () => null,
+    };
+    const r = dispatchWebCommand('/help', runtime as never, hub as never);
+    assert.equal(r.ok, true);
+    assert.match(r.message || '', /Web slash|profile|workflow/i);
+  });
+});
+
 describe('web ui event bridge', () => {
   it('maps runtime events to control frames', async () => {
     const { attachRuntimeEventBridge } = await import('../src/web/event-bridge.js');

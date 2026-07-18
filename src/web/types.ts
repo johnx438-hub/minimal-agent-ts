@@ -7,6 +7,9 @@ export interface WebHelloFrame {
   session_id?: string;
   model?: string;
   running: boolean;
+  profile?: string;
+  armed_workflow?: string | null;
+  loaded_skills?: string[];
   /** Recent sessions for sidebar bootstrap (W2). */
   sessions?: Array<{
     session_id: string;
@@ -54,12 +57,35 @@ export interface WebWorkflowHandbackFrame {
   round?: number;
 }
 
+export interface WebLlmFrame {
+  type: 'llm';
+  profile?: string | null;
+  profile_display?: string | null;
+  model?: string | null;
+  armed_workflow?: string | null;
+  loaded_skills?: string[];
+}
+
+export interface WebWorkflowArmedFrame {
+  type: 'workflow_armed';
+  path: string | null;
+  name?: string | null;
+}
+
+export interface WebSkillsFrame {
+  type: 'skills';
+  loaded: string[];
+}
+
 export type WebControlFrame =
   | WebHelloFrame
   | WebRunStateFrame
   | WebJobFrame
   | WebWorkflowStepFrame
-  | WebWorkflowHandbackFrame;
+  | WebWorkflowHandbackFrame
+  | WebLlmFrame
+  | WebWorkflowArmedFrame
+  | WebSkillsFrame;
 
 export interface WebUiServerOptions {
   /** Default 127.0.0.1 — never bind public without explicit opt-in later. */

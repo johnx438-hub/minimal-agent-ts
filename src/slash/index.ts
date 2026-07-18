@@ -1,6 +1,6 @@
 /**
- * TUI compatibility re-export of shared slash parse layer.
- * Prefer `import { … } from '../slash/index.js'` in new code.
+ * Shared slash command layer (parse + runtime dispatch).
+ * TUI keeps overlay handlers in `src/tui/slash-handlers.ts`.
  */
 
 export type {
@@ -13,7 +13,7 @@ export type {
   SlashLocale,
   SlashResult,
   SpawnsSlashAction,
-} from '../slash/parse.js';
+} from './parse.js';
 
 export {
   formatSlashHelpLines,
@@ -23,4 +23,12 @@ export {
   parseSlashLine,
   SLASH_HELP_LINES,
   slashAutocompleteItems,
-} from '../slash/parse.js';
+} from './parse.js';
+
+export {
+  broadcastArmed,
+  broadcastLlm,
+  dispatchWebCommand,
+  llmStatus,
+  type CommandResult,
+} from './dispatch-runtime.js';
