@@ -14,7 +14,14 @@ import {
   resolveWebUiToken,
 } from './auth.js';
 import { handleApiRoute } from './routes.js';
-import { sendJson, tryServeStatic, safeJoin, sendFile } from './static.js';
+import {
+  applyCors,
+  CORS_HEADERS,
+  sendJson,
+  tryServeStatic,
+  safeJoin,
+  sendFile,
+} from './static.js';
 import { llmStatus } from '../slash/index.js';
 import { attachRuntimeEventBridge, snapshotJobs } from './event-bridge.js';
 import type { WebHelloFrame, WebUiHandle, WebUiServerOptions } from './types.js';
@@ -117,13 +124,10 @@ export async function startWebUi(opts: StartWebUiOptions): Promise<WebUiHandle> 
       const hostHdr = req.headers.host ?? `${host}:${port}`;
       const url = new URL(req.url ?? '/', `http://${hostHdr}`);
 
-      // CORS not needed for same-origin static; allow simple tools.
+      // Cross-origin GUIs (Next :3000 → API :7788) need CORS on every response.
+      applyCors(res);
       if (req.method === 'OPTIONS') {
-        res.writeHead(204, {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        });
+        res.writeHead(204, CORS_HEADERS);
         res.end();
         return;
       }

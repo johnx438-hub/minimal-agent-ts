@@ -260,6 +260,38 @@ export async function handleApiRoute(
     sendJson(res, 200, {
       ok: true,
       loaded: ctx.runtime.getLoadedSkills(),
+      /** Process-scoped until clear — not cleared by switchSession. */
+      scope: 'process',
+    });
+    return true;
+  }
+
+  if (path === '/v1/skills/clear' && method === 'POST') {
+    ctx.runtime.clearLoadedSkills();
+    ctx.hub.broadcast({ type: 'skills', loaded: [] });
+    sendJson(res, 200, { ok: true, loaded: [] });
+    return true;
+  }
+
+  if (path === '/v1/skills/unload' && method === 'POST') {
+    let body: Record<string, unknown>;
+    try {
+      body = await parseJsonBody(req);
+    } catch (e) {
+      sendJson(res, 400, { error: 'bad_body', detail: String(e) });
+      return true;
+    }
+    const name = String(body.name ?? '').trim();
+    if (!name) {
+      sendJson(res, 400, { error: 'name_required' });
+      return true;
+    }
+    const ok = ctx.runtime.unloadSkill(name);
+    ctx.hub.broadcast({ type: 'skills', loaded: ctx.runtime.getLoadedSkills() });
+    sendJson(res, ok ? 200 : 404, {
+      ok,
+      loaded: ctx.runtime.getLoadedSkills(),
+      error: ok ? undefined : 'not_loaded',
     });
     return true;
   }

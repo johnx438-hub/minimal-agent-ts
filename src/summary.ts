@@ -26,17 +26,29 @@ export function parseAgentSummary(finalAnswer: string): AgentSummaryFields {
   }
 
   try {
-    // Normalize keys to unquoted format
-    const jsonStr = match[0]
-      .replace(/"pending_tasks"/g, 'pending_tasks')
-      .replace(/'pending_tasks'/g, 'pending_tasks')
-      .replace(/"current_work"/g, 'current_work')
-      .replace(/'current_work'/g, 'current_work');
-
-    const parsed = JSON.parse(jsonStr);
+    // Prefer strict JSON; also accept single-quoted keys/values from sloppy models.
+    const raw = match[0];
+    let parsed: { pending_tasks?: unknown; current_work?: unknown };
+    try {
+      parsed = JSON.parse(raw) as {
+        pending_tasks?: unknown;
+        current_work?: unknown;
+      };
+    } catch {
+      const normalized = raw
+        .replace(/'/g, '"')
+        .replace(/(\w+)\s*:/g, '"$1":');
+      parsed = JSON.parse(normalized) as {
+        pending_tasks?: unknown;
+        current_work?: unknown;
+      };
+    }
     return {
-      pending_tasks: Array.isArray(parsed.pending_tasks) ? parsed.pending_tasks : [],
-      current_work: typeof parsed.current_work === 'string' ? parsed.current_work : '',
+      pending_tasks: Array.isArray(parsed.pending_tasks)
+        ? parsed.pending_tasks.map(String)
+        : [],
+      current_work:
+        typeof parsed.current_work === 'string' ? parsed.current_work : '',
     };
   } catch {
     return DEFAULT_SUMMARY;

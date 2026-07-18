@@ -1,0 +1,743 @@
+"use client";
+
+import { create } from "zustand";
+
+import { getMinimalToken, minimalFetch, rememberToken } from "./client";
+import {
+  applyToolExpandPolicy,
+  collapseToolsExceptLatestTurn,
+  fromHistoryDto,
+  newMsgId,
+  projectAssistantFinal,
+} from "./convert";
+import type {
+  ConnectionState,
+  JobMeta,
+  MinimalMessage,
+  ModelMeta,
+  ProfileMeta,
+  SessionChatMessageDto,
+  SessionMeta,
+  SkillMeta,
+  WorkflowMeta,
+  WsFrame,
+} from "./types";
+
+export interface MinimalStore {
+  token: string;
+  connection: ConnectionState;
+  lastError?: string;
+
+  messages: MinimalMessage[];
+  isRunning: boolean;
+
+  sessionId: string | null;
+  sessions: SessionMeta[];
+
+  profile: string | null;
+  model: string | null;
+  profiles: ProfileMeta[];
+  models: ModelMeta[];
+
+  workflows: WorkflowMeta[];
+  armedWorkflow: string | null;
+  skills: SkillMeta[];
+  loadedSkills: string[];
+  jobs: JobMeta[];
+
+  workflowSteps: Array<{
+    id: string;
+    phase: string;
+    role: string;
+    nodeId?: string;
+    status?: string;
+  }>;
+
+  setToken: (token: string) => void;
+  setConnection: (c: ConnectionState, err?: string) => void;
+  setMessages: (messages: MinimalMessage[]) => void;
+  hydrateHistory: (rows: SessionChatMessageDto[]) => void;
+  applyWsFrame: (frame: WsFrame) => void;
+
+  sendTask: (text: string) => Promise<void>;
+  /** Slash line e.g. /profile list — POST /v1/command */
+  sendCommand: (line: string) => Promise<void>;
+  abort: () => Promise<void>;
+  switchSession: (id: string) => Promise<void>;
+  armWorkflow: (name: string | null) => Promise<void>;
+  setProfile: (name: string) => Promise<void>;
+  setModel: (model: string) => Promise<void>;
+  loadSkill: (name: string) => Promise<void>;
+  clearLoadedSkills: () => Promise<void>;
+  clearWorkflowSteps: () => void;
+  refreshCatalog: () => Promise<void>;
+  loadHistory: (sessionId?: string) => Promise<void>;
+}
+
+function appendAssistantDelta(
+  messages: MinimalMessage[],
+  delta: string,
+): MinimalMessage[] {
+  const next = [...messages];
+  const last = next[next.length - 1];
+  if (last?.role === "assistant" && last.status === "running") {
+    next[next.length - 1] = {
+      ...last,
+      content: last.content + delta,
+    };
+    return next;
+  }
+  next.push({
+    id: newMsgId("a"),
+    role: "assistant",
+    content: delta,
+    status: "running",
+    source: "live",
+  });
+  return next;
+}
+
+function finalizeAssistant(
+  messages: MinimalMessage[],
+  content?: string,
+): MinimalMessage[] {
+  const next = [...messages];
+  const last = next[next.length - 1];
+  const projected =
+    content != null && content !== ""
+      ? projectAssistantFinal(content)
+      : last?.role === "assistant"
+        ? projectAssistantFinal(last.content)
+        : null;
+
+  if (last?.role === "assistant" && last.status === "running") {
+    next[next.length - 1] = {
+      ...last,
+      content: projected?.content ?? last.content,
+      meta: projected?.meta ?? last.meta,
+      viewKind: projected?.viewKind ?? last.viewKind,
+      status: "complete",
+    };
+    return next;
+  }
+  if (projected && projected.content) {
+    next.push({
+      id: newMsgId("a"),
+      role: "assistant",
+      content: projected.content,
+      meta: projected.meta,
+      viewKind: projected.viewKind,
+      status: "complete",
+      source: "live",
+    });
+  }
+  return next;
+}
+
+export const useMinimalStore = create<MinimalStore>((set, get) => ({
+  token: "",
+  connection: "idle",
+  messages: [],
+  isRunning: false,
+  sessionId: null,
+  sessions: [],
+  profile: null,
+  model: null,
+  profiles: [],
+  models: [],
+  workflows: [],
+  armedWorkflow: null,
+  skills: [],
+  loadedSkills: [],
+  jobs: [],
+  workflowSteps: [],
+
+  setToken(token) {
+    rememberToken(token);
+    set({ token });
+  },
+
+  setConnection(connection, lastError) {
+    set({ connection, lastError });
+  },
+
+  setMessages(messages) {
+    set({ messages });
+  },
+
+  hydrateHistory(rows) {
+    set({
+      messages: applyToolExpandPolicy(rows.map(fromHistoryDto)),
+    });
+  },
+
+  applyWsFrame(frame) {
+    // Control frames with type
+    if (frame && typeof frame === "object" && "type" in frame && frame.type) {
+      switch (frame.type) {
+        case "hello": {
+          set({
+            sessionId: frame.session_id ?? get().sessionId,
+            model: frame.model ?? get().model,
+            profile: frame.profile ?? get().profile,
+            isRunning: !!frame.running,
+            sessions: frame.sessions ?? get().sessions,
+            armedWorkflow:
+              frame.armed_workflow !== undefined
+                ? frame.armed_workflow
+                : get().armedWorkflow,
+            loadedSkills: frame.loaded_skills ?? get().loadedSkills,
+            jobs: frame.jobs
+              ? frame.jobs.map((j) => ({
+                  id: j.id,
+                  status: j.status,
+                  label: j.label,
+                }))
+              : get().jobs,
+          });
+          return;
+        }
+        case "run_state": {
+          const running = frame.state === "running";
+          const ending =
+            frame.state === "idle" ||
+            frame.state === "aborted" ||
+            frame.state === "error";
+          set((s) => {
+            let messages = s.messages;
+            if (ending) {
+              messages = collapseToolsExceptLatestTurn(
+                finalizeAssistant(messages),
+              );
+            }
+            return {
+              isRunning: running,
+              sessionId: frame.session_id ?? s.sessionId,
+              model: frame.model ?? s.model,
+              messages,
+              lastError:
+                frame.state === "error" ? frame.detail : s.lastError,
+            };
+          });
+          if (frame.state === "error" && frame.detail) {
+            set((s) => ({
+              messages: [
+                ...s.messages,
+                {
+                  id: newMsgId("sys"),
+                  role: "system",
+                  content: `⚠ ${frame.detail}`,
+                  status: "complete",
+                  source: "live",
+                  viewKind: "system_ui",
+                },
+              ],
+            }));
+          }
+          return;
+        }
+        case "job": {
+          set((s) => {
+            const jobs = [...s.jobs];
+            const i = jobs.findIndex((j) => j.id === frame.id);
+            const row = {
+              id: frame.id,
+              status: frame.status,
+              label: frame.label,
+            };
+            if (i >= 0) jobs[i] = row;
+            else jobs.unshift(row);
+            return { jobs };
+          });
+          return;
+        }
+        case "workflow_step": {
+          set((s) => ({
+            workflowSteps: [
+              ...s.workflowSteps.map((st) =>
+                st.status === "running" ? { ...st, status: "done" } : st,
+              ),
+              {
+                id: newMsgId("wf"),
+                phase: frame.phase,
+                role: frame.role,
+                nodeId: frame.nodeId,
+                status: frame.status || "running",
+              },
+            ],
+          }));
+          return;
+        }
+        case "workflow_armed": {
+          set({
+            armedWorkflow: frame.name ?? frame.path,
+          });
+          return;
+        }
+        case "workflow_handback": {
+          set((s) => ({
+            messages: [
+              ...s.messages,
+              {
+                id: newMsgId("sys"),
+                role: "system",
+                content: `handback · ${frame.workflow} · ${frame.reason}\n${frame.detail || ""}`,
+                status: "complete",
+                source: "live",
+              },
+            ],
+            isRunning: false,
+          }));
+          return;
+        }
+        case "llm": {
+          set({
+            profile: frame.profile ?? get().profile,
+            model: frame.model ?? get().model,
+            armedWorkflow:
+              frame.armed_workflow !== undefined
+                ? frame.armed_workflow
+                : get().armedWorkflow,
+          });
+          return;
+        }
+        case "skills": {
+          set({ loadedSkills: frame.loaded ?? [] });
+          return;
+        }
+        default:
+          break;
+      }
+    }
+
+    // SessionMessage (no discriminant `type`)
+    if (!frame || typeof frame !== "object" || !("role" in frame)) return;
+    const role = (frame as { role?: string }).role;
+    if (!role || role === "user") {
+      // Local onNew already appended user; skip bridge echo to avoid duplicates
+      return;
+    }
+
+    const delta = (frame as { delta?: string }).delta;
+    const content = (frame as { content?: string }).content;
+    const toolName = (frame as { tool_name?: string }).tool_name;
+    const callId = (frame as { call_id?: string }).call_id;
+
+    if (role === "assistant") {
+      if (delta) {
+        set((s) => ({ messages: appendAssistantDelta(s.messages, delta) }));
+        return;
+      }
+      if (content != null && content !== "") {
+        set((s) => ({
+          messages: finalizeAssistant(s.messages, content),
+        }));
+      }
+      return;
+    }
+
+    if (role === "tool") {
+      // Live tools open while run is active; expand flag true until run ends.
+      set((s) => ({
+        messages: [
+          ...s.messages.filter(
+            (m) => !(m.role === "assistant" && m.status === "running" && !m.content),
+          ),
+          {
+            id: newMsgId("t"),
+            role: "tool" as const,
+            content: content ?? "",
+            toolName,
+            callId,
+            status: s.isRunning ? ("running" as const) : ("complete" as const),
+            source: "live" as const,
+            viewKind: "tool" as const,
+            toolExpanded: true,
+          },
+        ],
+      }));
+      return;
+    }
+
+    if (role === "system_notice" && content) {
+      set((s) => ({
+        messages: [
+          ...s.messages,
+          {
+            id: newMsgId("sys"),
+            role: "system",
+            content,
+            status: "complete",
+            source: "live",
+            viewKind: "system_ui",
+          },
+        ],
+      }));
+    }
+  },
+
+  async sendTask(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    // Slash commands never go through the agent task path
+    if (trimmed.startsWith("/")) {
+      await get().sendCommand(trimmed);
+      return;
+    }
+    const userMsg: MinimalMessage = {
+      id: newMsgId("u"),
+      role: "user",
+      content: trimmed,
+      status: "complete",
+      source: "live",
+    };
+    set((s) => ({
+      messages: [...s.messages, userMsg],
+      isRunning: true,
+      lastError: undefined,
+      workflowSteps: s.armedWorkflow ? [] : s.workflowSteps,
+    }));
+
+    try {
+      const body: Record<string, string> = { text: trimmed };
+      const { sessionId } = get();
+      if (sessionId) body.session_id = sessionId;
+      const res = await minimalFetch<{
+        session_id?: string;
+      }>("/v1/task", {
+        method: "POST",
+        body: JSON.stringify(body),
+        token: get().token || getMinimalToken(),
+      });
+      if (res.session_id) set({ sessionId: res.session_id });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      set((s) => ({
+        isRunning: false,
+        lastError: message,
+        messages: [
+          ...s.messages,
+          {
+            id: newMsgId("sys"),
+            role: "system",
+            content: `发送失败: ${message}`,
+            status: "complete",
+            source: "live",
+          },
+        ],
+      }));
+    }
+  },
+
+  async sendCommand(line: string) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("/")) {
+      await get().sendTask(trimmed);
+      return;
+    }
+
+    // Show the slash line in the thread as a system/user echo
+    set((s) => ({
+      messages: [
+        ...s.messages,
+        {
+          id: newMsgId("u"),
+          role: "user",
+          content: trimmed,
+          status: "complete",
+          source: "live",
+        },
+      ],
+      lastError: undefined,
+    }));
+
+    try {
+      const res = await minimalFetch<{
+        ok?: boolean;
+        message?: string;
+        accepted?: boolean;
+        data?: unknown;
+      }>("/v1/command", {
+        method: "POST",
+        body: JSON.stringify({ line: trimmed }),
+        token: get().token || getMinimalToken(),
+      });
+
+      const reply =
+        res.message?.trim() ||
+        (res.ok === false ? "command failed" : "ok");
+
+      set((s) => ({
+        messages: [
+          ...s.messages,
+          {
+            id: newMsgId("sys"),
+            role: "system",
+            content: reply,
+            status: "complete",
+            source: "live",
+          },
+        ],
+        // Command may start a long run (/workflow run …) — 202 accepted
+        isRunning: res.accepted === true ? true : s.isRunning,
+        workflowSteps:
+          res.accepted === true && /workflow/i.test(trimmed)
+            ? []
+            : s.workflowSteps,
+      }));
+
+      // Refresh catalog after profile/model/workflow/skills side effects
+      void get().refreshCatalog();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      set((s) => ({
+        lastError: message,
+        isRunning: false,
+        messages: [
+          ...s.messages,
+          {
+            id: newMsgId("sys"),
+            role: "system",
+            content: `命令失败: ${message}`,
+            status: "complete",
+            source: "live",
+          },
+        ],
+      }));
+    }
+  },
+
+  async abort() {
+    try {
+      await minimalFetch("/v1/abort", {
+        method: "POST",
+        body: "{}",
+        token: get().token || getMinimalToken(),
+      });
+    } catch (e) {
+      set({
+        lastError: e instanceof Error ? e.message : String(e),
+      });
+    }
+  },
+
+  async switchSession(id: string) {
+    if (get().isRunning) {
+      set({ lastError: "agent is running — abort first" });
+      return;
+    }
+    if (id === get().sessionId && get().messages.length > 0) return;
+    try {
+      const res = await minimalFetch<{
+        session_id: string;
+        messages?: SessionChatMessageDto[];
+      }>(`/v1/sessions/${encodeURIComponent(id)}/switch`, {
+        method: "POST",
+        body: "{}",
+        token: get().token || getMinimalToken(),
+      });
+      set({
+        sessionId: res.session_id || id,
+        messages: applyToolExpandPolicy(
+          (res.messages ?? []).map(fromHistoryDto),
+        ),
+        workflowSteps: [],
+        lastError: undefined,
+        sessions: get().sessions.map((s) =>
+          s.session_id === (res.session_id || id) ? { ...s } : s,
+        ),
+      });
+      if (!res.messages?.length) {
+        await get().loadHistory(res.session_id || id);
+      }
+    } catch (e) {
+      set({
+        lastError: e instanceof Error ? e.message : String(e),
+      });
+    }
+  },
+
+  async armWorkflow(name: string | null) {
+    const res = await minimalFetch<{
+      armed?: string | null;
+      name?: string;
+    }>("/v1/workflows/arm", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+      token: get().token || getMinimalToken(),
+    });
+    set({
+      armedWorkflow: name === null ? null : res.name || name,
+      workflowSteps: name === null ? get().workflowSteps : [],
+    });
+  },
+
+  clearWorkflowSteps() {
+    set({ workflowSteps: [] });
+  },
+
+  async setProfile(name: string) {
+    if (get().isRunning) {
+      set({ lastError: "cannot change profile while running" });
+      return;
+    }
+    try {
+      const res = await minimalFetch<{
+        ok?: boolean;
+        message?: string;
+        profile?: string;
+        model?: string;
+      }>("/v1/llm/profile", {
+        method: "POST",
+        body: JSON.stringify({ name }),
+        token: get().token || getMinimalToken(),
+      });
+      set({
+        profile: res.profile ?? name,
+        model: res.model ?? get().model,
+        lastError: undefined,
+      });
+      await get().refreshCatalog();
+    } catch (e) {
+      set({ lastError: e instanceof Error ? e.message : String(e) });
+      await get().refreshCatalog();
+    }
+  },
+
+  async setModel(model: string) {
+    if (get().isRunning) {
+      set({ lastError: "cannot change model while running" });
+      return;
+    }
+    try {
+      const res = await minimalFetch<{
+        ok?: boolean;
+        message?: string;
+        model?: string;
+      }>("/v1/llm/model", {
+        method: "POST",
+        body: JSON.stringify({ model }),
+        token: get().token || getMinimalToken(),
+      });
+      set({
+        model: res.model ?? model,
+        lastError: undefined,
+      });
+      await get().refreshCatalog();
+    } catch (e) {
+      set({ lastError: e instanceof Error ? e.message : String(e) });
+      await get().refreshCatalog();
+    }
+  },
+
+  async loadSkill(name: string) {
+    try {
+      const res = await minimalFetch<{ loaded?: string[] }>("/v1/skills/load", {
+        method: "POST",
+        body: JSON.stringify({ name }),
+        token: get().token || getMinimalToken(),
+      });
+      set({
+        loadedSkills: res.loaded ?? [...get().loadedSkills, name],
+        lastError: undefined,
+      });
+    } catch (e) {
+      set({ lastError: e instanceof Error ? e.message : String(e) });
+    }
+  },
+
+  async clearLoadedSkills() {
+    try {
+      await minimalFetch("/v1/skills/clear", {
+        method: "POST",
+        body: "{}",
+        token: get().token || getMinimalToken(),
+      });
+      set({ loadedSkills: [], lastError: undefined });
+    } catch (e) {
+      set({ lastError: e instanceof Error ? e.message : String(e) });
+    }
+  },
+
+  async refreshCatalog() {
+    const token = get().token || getMinimalToken();
+    try {
+      const cat = await minimalFetch<{
+        profiles?: ProfileMeta[];
+        models?: ModelMeta[];
+        workflows?: WorkflowMeta[];
+        skills?: SkillMeta[];
+        loaded_skills?: string[];
+        llm?: {
+          profile?: string;
+          model?: string;
+          armed_workflow?: string | null;
+        };
+        armed_workflow?: string | null;
+      }>("/v1/catalog", { token });
+      set({
+        profiles: cat.profiles ?? [],
+        models: cat.models ?? [],
+        workflows: cat.workflows ?? [],
+        skills: cat.skills ?? [],
+        loadedSkills: cat.loaded_skills ?? [],
+        profile: cat.llm?.profile ?? get().profile,
+        model: cat.llm?.model ?? get().model,
+        armedWorkflow:
+          cat.llm?.armed_workflow ??
+          cat.armed_workflow ??
+          get().armedWorkflow,
+      });
+    } catch {
+      /* offline / no token */
+    }
+
+    try {
+      const sess = await minimalFetch<{
+        sessions?: SessionMeta[];
+        current?: string | null;
+      }>("/v1/sessions", { token });
+      set({
+        sessions: sess.sessions ?? [],
+        sessionId: sess.current ?? get().sessionId,
+      });
+    } catch {
+      /* ignore */
+    }
+
+    try {
+      const jobsRes = await minimalFetch<{
+        jobs?: Array<{ id: string; status: string; label?: string }>;
+      }>("/v1/jobs", { token });
+      if (jobsRes.jobs) {
+        set({
+          jobs: jobsRes.jobs.map((j) => ({
+            id: j.id,
+            status: j.status,
+            label: j.label,
+          })),
+        });
+      }
+    } catch {
+      /* ignore */
+    }
+  },
+
+  async loadHistory(sessionId?: string) {
+    const sid = sessionId ?? get().sessionId;
+    const path = sid
+      ? `/v1/sessions/${encodeURIComponent(sid)}/messages`
+      : "/v1/messages";
+    const res = await minimalFetch<{
+      session_id?: string;
+      messages: SessionChatMessageDto[];
+    }>(path, { token: get().token || getMinimalToken() });
+    // Only replace when we actually got history (or explicit empty after switch)
+    set({
+      sessionId: res.session_id ?? get().sessionId,
+      messages: applyToolExpandPolicy(
+        (res.messages ?? []).map(fromHistoryDto),
+      ),
+    });
+  },
+}));

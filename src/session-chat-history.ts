@@ -1,13 +1,23 @@
 /**
  * Flatten session transcript + in-flight messages for multi-UI chat history.
  * Same data TUI `/transcript` browses via session-history + session-transcript.
+ *
+ * Projection (display): strip pending_tasks JSON tail; expose meta for UI cards.
  */
 
 import {
   listTranscriptTaskRecords,
   type TranscriptMessage,
 } from './session-transcript.js';
+import { extractCleanAnswer, parseAgentSummary } from './summary.js';
 import type { ChatMessage, MessageContent, SessionFile } from './types.js';
+
+export interface SessionChatMessageMeta {
+  pending_tasks?: string[];
+  current_work?: string;
+  /** Pointer / compacted placeholder (not full tool body). */
+  artifact?: boolean;
+}
 
 export interface SessionChatMessage {
   role: 'user' | 'assistant' | 'tool' | 'system';
@@ -19,6 +29,12 @@ export interface SessionChatMessage {
   /** transcript completed task | live current_messages */
   source: 'transcript' | 'in_flight';
   completed_at?: number;
+  meta?: SessionChatMessageMeta;
+  /**
+   * chat = main timeline; tool = collapsible; task_summary reserved;
+   * artifact = compacted/pointer stub.
+   */
+  view_kind?: 'chat' | 'tool' | 'task_summary' | 'artifact' | 'system_ui';
 }
 
 function contentToText(content: MessageContent): string {
@@ -30,6 +46,43 @@ function contentToText(content: MessageContent): string {
       .join('\n');
   }
   return String(content);
+}
+
+function looksLikeArtifact(content: string): boolean {
+  const t = content.trim();
+  if (!t) return false;
+  if (t.startsWith('[action:')) return true;
+  if (t.includes('…[truncated]') || t.includes('...[truncated]')) return true;
+  if (/^\[pointer/i.test(t)) return true;
+  return false;
+}
+
+function projectAssistantBody(raw: string): {
+  content: string;
+  meta?: SessionChatMessageMeta;
+  view_kind: SessionChatMessage['view_kind'];
+} {
+  const summary = parseAgentSummary(raw);
+  const clean = extractCleanAnswer(raw);
+  const hasMeta =
+    summary.pending_tasks.length > 0 || Boolean(summary.current_work?.trim());
+  if (looksLikeArtifact(clean)) {
+    return {
+      content: clean,
+      view_kind: 'artifact',
+      meta: { artifact: true },
+    };
+  }
+  return {
+    content: clean,
+    view_kind: 'chat',
+    meta: hasMeta
+      ? {
+          pending_tasks: summary.pending_tasks,
+          current_work: summary.current_work || undefined,
+        }
+      : undefined,
+  };
 }
 
 function fromTranscriptMessage(
@@ -45,16 +98,20 @@ function fromTranscriptMessage(
       task_id: taskId,
       source: 'transcript',
       completed_at: completedAt,
+      view_kind: 'chat',
     };
   }
   if (msg.role === 'assistant') {
+    const projected = projectAssistantBody(msg.content);
     return {
       role: 'assistant',
-      content: msg.content,
+      content: projected.content,
       turn: msg.turn,
       task_id: taskId,
       source: 'transcript',
       completed_at: completedAt,
+      meta: projected.meta,
+      view_kind: projected.view_kind,
     };
   }
   return {
@@ -66,6 +123,7 @@ function fromTranscriptMessage(
     action_id: msg.action_id,
     source: 'transcript',
     completed_at: completedAt,
+    view_kind: 'tool',
   };
 }
 
@@ -77,6 +135,7 @@ function fromChatMessage(msg: ChatMessage, taskId?: string): SessionChatMessage 
       turn: msg.turn,
       task_id: taskId,
       source: 'in_flight',
+      view_kind: 'system_ui',
     };
   }
   if (msg.role === 'user') {
@@ -86,26 +145,34 @@ function fromChatMessage(msg: ChatMessage, taskId?: string): SessionChatMessage 
       turn: msg.turn,
       task_id: taskId,
       source: 'in_flight',
+      view_kind: 'chat',
     };
   }
   if (msg.role === 'assistant') {
+    const raw = contentToText(msg.content);
+    const projected = projectAssistantBody(raw);
     return {
       role: 'assistant',
-      content: contentToText(msg.content),
+      content: projected.content,
       turn: msg.turn,
       task_id: taskId,
       source: 'in_flight',
+      meta: projected.meta,
+      view_kind: projected.view_kind,
     };
   }
   if (msg.role === 'tool') {
+    const content = contentToText(msg.content);
     return {
       role: 'tool',
-      content: contentToText(msg.content),
+      content,
       turn: msg.turn,
       task_id: taskId,
       tool_name: undefined,
       action_id: msg.action_id ?? msg.tool_call_id,
       source: 'in_flight',
+      view_kind: looksLikeArtifact(content) ? 'artifact' : 'tool',
+      meta: looksLikeArtifact(content) ? { artifact: true } : undefined,
     };
   }
   return null;

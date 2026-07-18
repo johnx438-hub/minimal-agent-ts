@@ -38,12 +38,26 @@ export function safeJoin(root: string, reqPath: string): string | null {
   return full;
 }
 
+/** Browser GUIs (e.g. Next on :3000) call this API cross-origin. */
+export const CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+};
+
+export function applyCors(res: ServerResponse): void {
+  for (const [k, v] of Object.entries(CORS_HEADERS)) {
+    res.setHeader(k, v);
+  }
+}
+
 export function sendJson(
   res: ServerResponse,
   status: number,
   body: unknown,
 ): void {
   const data = JSON.stringify(body);
+  applyCors(res);
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(data),
@@ -62,6 +76,7 @@ export function sendFile(
     return;
   }
   const st = statSync(filePath);
+  applyCors(res);
   res.writeHead(status, {
     'Content-Type': contentType(filePath),
     'Content-Length': st.size,

@@ -206,8 +206,20 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
   {
     command: '/skills load <name>',
     autocomplete: false,
-    hintZh: '加载指定 skill',
-    hintEn: 'Load a skill by name',
+    hintZh: '加载指定 skill（进程级，跨 session 直到 clear）',
+    hintEn: 'Load skill by name (process-scoped until clear)',
+  },
+  {
+    command: '/skills clear',
+    autocompleteName: 'skills clear',
+    hintZh: '清空本进程已 load 的 skills',
+    hintEn: 'Clear process-scoped loaded skills',
+  },
+  {
+    command: '/skills unload <name>',
+    autocomplete: false,
+    hintZh: '卸载单个已 load 的 skill',
+    hintEn: 'Unload one process-scoped skill',
   },
   {
     command: '/tools',
@@ -655,10 +667,19 @@ export function parseSlashLine(line: string): SlashResult | null {
     }
 
     case '/skills': {
-      if (parts[1]?.toLowerCase() === 'load') {
+      const sub = parts[1]?.toLowerCase();
+      if (sub === 'load') {
         const name = parts[2];
         if (!name) return { handled: true, message: 'Usage: /skills load <name>' };
         return { handled: true, message: `__skill_load__:${name}` };
+      }
+      if (sub === 'clear' || sub === 'reset') {
+        return { handled: true, message: '__skills_clear__' };
+      }
+      if (sub === 'unload' || sub === 'remove') {
+        const name = parts[2];
+        if (!name) return { handled: true, message: 'Usage: /skills unload <name>' };
+        return { handled: true, message: `__skill_unload__:${name}` };
       }
       return { handled: true, message: '__skills__' };
     }

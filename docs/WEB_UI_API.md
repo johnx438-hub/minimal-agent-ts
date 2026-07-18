@@ -1,6 +1,7 @@
 # Web UI 后端接口清单（对接开源组件库）
 
 > 供选型 chat/shell UI 组件库时对照。实现见 `SPEC_WEB_UI.md` · `src/web/routes.ts` · `src/slash/*`。  
+> **对接路线 A（已定）**: ExternalStore — 见 [WEB_UI_ROUTE_A.md](./WEB_UI_ROUTE_A.md) · `minimal-gui/lib/minimal/*`。  
 > **基址**: `http://127.0.0.1:<port>` · **鉴权**: `Authorization: Bearer <token>` 或 `?token=`（除 `/health` 与静态壳）。
 
 ---

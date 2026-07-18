@@ -23,4 +23,25 @@ describe('session chat history', () => {
     assert.equal(msgs[1]!.role, 'assistant');
     assert.equal(msgs[1]!.content, 'hi there');
   });
+
+  it('strips pending_tasks JSON and exposes meta', () => {
+    const session = {
+      session_id: 'session_test',
+      user_id: 'u',
+      created_at: 1,
+      tasks: [],
+      current_messages: [
+        {
+          role: 'assistant',
+          content:
+            'Done with the fix.\n\n{"pending_tasks": ["add tests"], "current_work": "patched foo"}',
+        },
+      ],
+    } as SessionFile;
+    const msgs = buildSessionChatHistory(session);
+    assert.equal(msgs.length, 1);
+    assert.equal(msgs[0]!.content, 'Done with the fix.');
+    assert.deepEqual(msgs[0]!.meta?.pending_tasks, ['add tests']);
+    assert.equal(msgs[0]!.meta?.current_work, 'patched foo');
+  });
 });

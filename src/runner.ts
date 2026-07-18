@@ -1116,11 +1116,30 @@ export class AgentRuntime {
     this.emit({ type: 'runtime', shell: this.config.allowShell, web: on });
   }
 
+  /**
+   * Mid-run skill injection list (pluginConfig.loaded_skills).
+   * **Process-scoped**, not per-session — survives switchSession until clear/restart.
+   * Distinct from session.skills_invoked (tool invoke_skill tracking).
+   */
   loadSkill(name: string): void {
     const skills = this.pluginConfig.loaded_skills ?? [];
     if (!skills.includes(name)) {
       this.pluginConfig.loaded_skills = [...skills, name];
     }
+  }
+
+  /** Remove one skill from process-scoped loaded_skills. */
+  unloadSkill(name: string): boolean {
+    const skills = this.pluginConfig.loaded_skills ?? [];
+    const next = skills.filter((s) => s !== name);
+    if (next.length === skills.length) return false;
+    this.pluginConfig.loaded_skills = next;
+    return true;
+  }
+
+  /** Clear all process-scoped /skills load entries (not agent.json defaults). */
+  clearLoadedSkills(): void {
+    this.pluginConfig.loaded_skills = [];
   }
 
   getLoadedSkills(): string[] {
