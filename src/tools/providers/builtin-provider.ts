@@ -4,6 +4,10 @@ import { APPLY_PATCH_DEFINITIONS, runApplyPatchTool } from '../apply-patch.js';
 import { CODE_REVIEW_DEFINITIONS, runCodeReviewTool } from '../code-review.js';
 import { EDIT_FILE_DEFINITIONS, runEditFileTool } from '../edit-file.js';
 import { EXPLORE_DEFINITIONS, runExploreTool } from '../explore.js';
+import {
+  CONTEXT_FOCUS_DEFINITIONS,
+  runContextFocusTool,
+} from '../context-focus.js';
 import { READ_WRITE_DEFINITIONS, runReadWriteTool } from '../read-write.js';
 import { RECALL_DEFINITIONS, runRecallTool } from '../recall.js';
 import { GIT_DEFINITIONS, runGitTool } from '../git.js';
@@ -37,6 +41,10 @@ const BUILTIN_TOOLS: Record<string, BuiltinToolEntry> = {
   list_files: { defs: EXPLORE_DEFINITIONS, handler: runExploreTool },
   diff_file: { defs: EXPLORE_DEFINITIONS, handler: runExploreTool },
   recall_query: { defs: RECALL_DEFINITIONS, handler: runRecallTool },
+  context_focus: {
+    defs: CONTEXT_FOCUS_DEFINITIONS,
+    handler: async (name, args, config) => runContextFocusTool(name, args, config),
+  },
   run_shell: { defs: SHELL_DEFINITIONS, handler: runShellTool, requiresShell: true },
   test_run: { defs: TEST_RUN_DEFINITIONS, handler: runTestRunTool, requiresShell: true },
   git_status: { defs: GIT_DEFINITIONS, handler: runGitTool, requiresShell: true },

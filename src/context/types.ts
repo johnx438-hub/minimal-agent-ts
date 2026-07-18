@@ -1,7 +1,7 @@
 import type { PreviewPolicy } from '../action-preview.js';
-import type { PointerizePolicy } from '../plugins/types.js';
+import type { PointerizeMode, PointerizePolicy } from '../plugins/types.js';
 import type { BudgetConfig } from './budget.js';
-import type { ChatMessage, SessionFile } from '../types.js';
+import type { AgentConfig, ChatMessage, SessionFile } from '../types.js';
 
 /** Per-turn input for turn-end context management (L2 pipeline). */
 export interface TurnContext {
@@ -12,6 +12,10 @@ export interface TurnContext {
   session?: SessionFile;
   keepInlineTurns?: number;
   pointerizePolicy?: PointerizePolicy;
+  pointerizeMode?: PointerizeMode;
+  pointerizeFocus?: AgentConfig['pointerizeFocus'];
+  /** Mutable config ref so focus ttl can be ticked. */
+  configRef?: AgentConfig;
   previewPolicy?: PreviewPolicy;
 }
 

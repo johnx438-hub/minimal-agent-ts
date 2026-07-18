@@ -19,6 +19,8 @@ export interface WorkflowRoleConfig {
    * Useful for multi-criteria review nodes that re-read large tool results.
    */
   keep_inline_turns?: number;
+  /** P2: hold = no pointerize for this role run until budget pressure. */
+  pointerize_mode?: import('../plugins/types.js').PointerizeMode;
   /** Optional shell policy (merged over spawn_policy.shell when preset has shell). */
   shell?: SpawnShellPolicy;
   description?: string;
@@ -122,6 +124,7 @@ export interface ResolvedWorkflowRole {
   maxTurns?: number;
   /** SPEC_POINTERIZE_SCOPE: role-level keep window override. */
   keepInlineTurns?: number;
+  pointerizeMode?: import('../plugins/types.js').PointerizeMode;
   /** Applied via spawnShellPolicy + spawnDepth when role runs. */
   shellPolicy?: SpawnShellPolicy;
 }

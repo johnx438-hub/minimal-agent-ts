@@ -1,10 +1,16 @@
 import { attachActionPreview, DEFAULT_PREVIEW_POLICY, type PreviewPolicy } from './action-preview.js';
 import { loadAction } from './action-store.js';
 import type {
+  PointerizeMode,
   PointerizePolicy,
   PointerizeToolOverride,
 } from './plugins/types.js';
 import type { ActionBlock, ChatMessage } from './types.js';
+import {
+  estimateTokens,
+  usableContextTokens,
+  type BudgetConfig,
+} from './context/budget.js';
 
 export const POINTER_RULES: Record<
   string,
@@ -73,15 +79,48 @@ export function resolveKeepInlineTurnsForTool(
   toolName: string,
   globalKeep: number,
   policy?: PointerizePolicy | null,
+  focus?: {
+    keepInlineTurns: number;
+    remainingTurns: number;
+    tools?: string[];
+  } | null,
 ): number {
+  let keep = Math.max(0, globalKeep);
   const override = resolveToolOverride(toolName, policy);
   if (
     override?.keep_inline_turns !== undefined &&
     Number.isFinite(override.keep_inline_turns)
   ) {
-    return Math.max(0, Math.floor(override.keep_inline_turns));
+    keep = Math.max(0, Math.floor(override.keep_inline_turns));
   }
-  return Math.max(0, globalKeep);
+  if (
+    focus &&
+    focus.remainingTurns > 0 &&
+    Number.isFinite(focus.keepInlineTurns) &&
+    (!focus.tools?.length || focus.tools.includes(toolName))
+  ) {
+    keep = Math.max(keep, Math.max(0, Math.floor(focus.keepInlineTurns)));
+  }
+  return keep;
+}
+
+export const DEFAULT_SOFT_FORCE_RATIO = 0.75;
+
+/** True when context is high enough to force pointerize despite hold/focus. */
+export function shouldForcePointerize(
+  messages: ChatMessage[],
+  budget: BudgetConfig | undefined,
+  policy?: PointerizePolicy | null,
+): boolean {
+  if (!budget) return false;
+  const ratio =
+    policy?.soft_force_ratio !== undefined &&
+    Number.isFinite(policy.soft_force_ratio)
+      ? Math.min(0.95, Math.max(0.5, policy.soft_force_ratio))
+      : DEFAULT_SOFT_FORCE_RATIO;
+  const usable = usableContextTokens(budget);
+  if (usable <= 0) return false;
+  return estimateTokens(messages) > usable * ratio;
 }
 
 /** @deprecated Use buildPointerCard; kept for tests. */
@@ -133,6 +172,16 @@ export interface PointerizeOptions {
   previewPolicy?: PreviewPolicy;
   /** Full policy including tool_overrides (SPEC_POINTERIZE_SCOPE). */
   pointerizePolicy?: PointerizePolicy | null;
+  /** P2: hold skips pointerize unless force. */
+  pointerizeMode?: PointerizeMode | null;
+  /** P2: context_focus temporary boost. */
+  pointerizeFocus?: {
+    keepInlineTurns: number;
+    remainingTurns: number;
+    tools?: string[];
+  } | null;
+  /** Force window pointerize (budget pressure). */
+  force?: boolean;
 }
 
 export function materializePriorTurnTools(
@@ -140,8 +189,17 @@ export function materializePriorTurnTools(
   beforeTurn: number,
   opts?: PointerizeOptions,
 ): number {
+  const mode = opts?.pointerizeMode ?? 'window';
+  if (mode === 'hold' && !opts?.force) {
+    return 0;
+  }
+
   const globalKeep = Math.max(0, opts?.keepInlineTurns ?? 0);
   const pointerizePolicy = opts?.pointerizePolicy;
+  const focus =
+    opts?.force || !opts?.pointerizeFocus || opts.pointerizeFocus.remainingTurns <= 0
+      ? null
+      : opts.pointerizeFocus;
   const previewPolicy = opts?.previewPolicy ?? DEFAULT_PREVIEW_POLICY;
   let pointerized = 0;
 
@@ -160,6 +218,7 @@ export function materializePriorTurnTools(
       block.tool_name,
       globalKeep,
       pointerizePolicy,
+      focus,
     );
     const pointerizeBeforeTurn = beforeTurn - toolKeep;
     if (msg.turn >= pointerizeBeforeTurn) {
@@ -179,4 +238,13 @@ export function materializePriorTurnTools(
   }
 
   return pointerized;
+}
+
+/** Decrement context_focus remainingTurns after a pointerize stage. */
+export function tickPointerizeFocus(focus: {
+  remainingTurns: number;
+} | null | undefined): boolean {
+  if (!focus || focus.remainingTurns <= 0) return false;
+  focus.remainingTurns -= 1;
+  return focus.remainingTurns <= 0;
 }

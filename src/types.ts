@@ -165,6 +165,20 @@ export interface AgentConfig {
    * uses per-tool keep/mode (SPEC_POINTERIZE_SCOPE).
    */
   pointerizePolicy?: import('./plugins/types.js').PointerizePolicy;
+  /** P2: window (default) | hold (child/reviewer: skip pointerize until budget force). */
+  pointerizeMode?: import('./plugins/types.js').PointerizeMode;
+  /**
+   * P2: temporary keep boost from context_focus tool (main agent only).
+   * Mutated across turns within a run.
+   */
+  pointerizeFocus?: {
+    keepInlineTurns: number;
+    remainingTurns: number;
+    tools?: string[];
+    reason?: string;
+  };
+  /** Current agent loop turn (set by runAgent for context_focus ttl). */
+  currentTurn?: number;
   /** recall_query auto format=full when action_id hit and body is below this size. */
   recallAutoFullMaxChars?: number;
   previewPolicy?: PreviewPolicy;

@@ -36,11 +36,19 @@ export interface PointerizeToolOverride {
   keep_inline_turns?: number;
 }
 
+/** window = sliding keep; hold = no pointerize until budget pressure (P2). */
+export type PointerizeMode = 'window' | 'hold';
+
 export interface PointerizePolicy {
   /** Recent tool turns kept inline (not pointerized). Default 2. */
   keep_inline_turns?: number;
   /** Per-tool mode / keep window (e.g. recall_query never). */
   tool_overrides?: Record<string, PointerizeToolOverride>;
+  /**
+   * When estimateTokens > ratio * usable context, force pointerize even in hold/focus.
+   * Default 0.75 (SPEC_POINTERIZE_SCOPE P2).
+   */
+  soft_force_ratio?: number;
   /** Min preview budget chars when pointerizing. */
   preview_min_chars?: number;
   /** Max preview budget chars on pointer cards. */
@@ -179,6 +187,8 @@ export interface SpawnPresetConfig {
    * Reviewer-style presets often want a higher value than the main agent.
    */
   keep_inline_turns?: number;
+  /** P2: hold = no pointerize inside this child until budget pressure. */
+  pointerize_mode?: PointerizeMode;
   /** C5: per-preset shell policy (merged over spawn_policy.shell). */
   shell?: SpawnShellPolicy;
 }

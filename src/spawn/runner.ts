@@ -209,6 +209,7 @@ async function runSpawnAgentInner(opts: {
     nestedStepSink: undefined,
     webSearchTaskState: { externalCount: 0 },
     keepInlineTurns: preset.keepInlineTurns ?? parentConfig.keepInlineTurns,
+    pointerizeMode: preset.pointerizeMode ?? parentConfig.pointerizeMode,
   };
 
   if (parentConfig.llmPluginConfig) {

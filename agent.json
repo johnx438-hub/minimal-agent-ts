@@ -84,6 +84,7 @@
     "list_files",
     "diff_file",
     "recall_query",
+    "context_focus",
     "invoke_skill",
     "run_shell",
     "test_run",
@@ -351,6 +352,7 @@
   "loaded_skills": ["memory"],
   "pointerize_policy": {
     "keep_inline_turns": 2,
+    "soft_force_ratio": 0.75,
     "tool_overrides": {
       "recall_query": { "mode": "never" },
       "read_file": { "keep_inline_turns": 6 }

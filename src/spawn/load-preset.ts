@@ -20,6 +20,7 @@ export function resolveSpawnPreset(
     tools: profile.tools,
     maxTurns: profile.maxTurns,
     keepInlineTurns: profile.keepInlineTurns,
+    pointerizeMode: profile.pointerizeMode,
     shellPolicy: profile.shellPolicy,
   };
 }

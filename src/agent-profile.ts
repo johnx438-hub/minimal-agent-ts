@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, resolve, sep } from 'node:path';
 
 import type {
+  PointerizeMode,
   SpawnPolicy,
   SpawnPresetConfig,
   SpawnShellPolicy,
@@ -34,6 +35,8 @@ export interface AgentProfileInput {
   model?: string;
   /** SPEC_POINTERIZE_SCOPE Phase 1. */
   keep_inline_turns?: number;
+  /** SPEC_POINTERIZE_SCOPE Phase 2. */
+  pointerize_mode?: PointerizeMode;
   shell?: SpawnShellPolicy;
   description?: string;
 }
@@ -60,6 +63,7 @@ export interface ResolvedAgentProfile {
   api_profile?: string;
   model?: string;
   keepInlineTurns?: number;
+  pointerizeMode?: PointerizeMode;
   shellPolicy?: SpawnShellPolicy;
 }
 
@@ -225,6 +229,7 @@ export function resolveSpawnPresetConfig(
   let apiProfile = config.api_profile;
   let model = config.model;
   let keepInlineTurns = config.keep_inline_turns;
+  let pointerizeMode = config.pointerize_mode;
 
   if (meta.tools) {
     tools = parseToolsList(meta.tools);
@@ -238,6 +243,10 @@ export function resolveSpawnPresetConfig(
   if (keepInlineTurns === undefined && meta.keep_inline_turns) {
     const n = Number(meta.keep_inline_turns);
     if (Number.isFinite(n) && n >= 0) keepInlineTurns = Math.floor(n);
+  }
+  if (!pointerizeMode && meta.pointerize_mode) {
+    const m = meta.pointerize_mode.trim().toLowerCase();
+    if (m === 'hold' || m === 'window') pointerizeMode = m;
   }
 
   if (!body) {
@@ -260,6 +269,10 @@ export function resolveSpawnPresetConfig(
     keepInlineTurns:
       keepInlineTurns !== undefined && Number.isFinite(keepInlineTurns)
         ? Math.max(0, Math.floor(keepInlineTurns))
+        : undefined,
+    pointerizeMode:
+      pointerizeMode === 'hold' || pointerizeMode === 'window'
+        ? pointerizeMode
         : undefined,
     shellPolicy: mergeSpawnShellPolicy(policy?.shell, config.shell),
   };
@@ -288,6 +301,7 @@ export function resolveAgentProfile(
   let apiProfile = input.api_profile;
   let model = input.model;
   let keepInlineTurns = input.keep_inline_turns;
+  let pointerizeMode = input.pointerize_mode;
   let description = input.description?.trim();
   let shellFromPreset: SpawnShellPolicy | undefined;
   let shellFromRole = input.shell;
@@ -305,6 +319,7 @@ export function resolveAgentProfile(
       if (!apiProfile) apiProfile = base.api_profile;
       if (!model) model = base.model;
       if (keepInlineTurns === undefined) keepInlineTurns = base.keepInlineTurns;
+      if (pointerizeMode === undefined) pointerizeMode = base.pointerizeMode;
       if (!description) description = base.description;
       shellFromPreset = base.shellPolicy;
     } else {
@@ -395,6 +410,10 @@ export function resolveAgentProfile(
     keepInlineTurns:
       keepInlineTurns !== undefined && Number.isFinite(keepInlineTurns)
         ? Math.max(0, Math.floor(Number(keepInlineTurns)))
+        : undefined,
+    pointerizeMode:
+      pointerizeMode === 'hold' || pointerizeMode === 'window'
+        ? pointerizeMode
         : undefined,
     shellPolicy,
   };
