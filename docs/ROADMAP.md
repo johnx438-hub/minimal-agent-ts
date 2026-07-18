@@ -24,6 +24,7 @@
 | [SPEC_SESSION_WORKSPACE.md](../SPEC_SESSION_WORKSPACE.md) | Session 分桶 / 同会话切目录 / 路径授权与权限继承（**设计**） |
 | [SPEC_VISION.md](../SPEC_VISION.md) | Vision / 多模态 user 图片消息管线（**设计**） |
 | [SPEC_TUI.md](../SPEC_TUI.md) | TUI 规范 |
+| [SPEC_WEB_UI.md](../SPEC_WEB_UI.md) | 浏览器第二 UI：HTTP/WS + MessageBridge sink + 本地 token（**W0/W1**） |
 | [agent.mcp.example.json](../agent.mcp.example.json) | MCP 配置示例 |
 
 **维护约定**: 新里程碑写入本文；子 SPEC 写接口/验收；根 `ROADMAP.md` 只追加版本行。
@@ -54,6 +55,7 @@
 | **P1 产品** | 产品 | ~~`/spawns` 实装、TUI `turn_io`~~ ✅；pi overlay 统一（按需） |
 | **P1 压测** | B | 高压场景 harness（§5）；填压测表 |
 | **P1 底座** | 底座 | ToolProvider 拆分、context pipeline、**MessageBridge 出站**（§6 H1–H5；类型已有） |
+| **P1 产品** | 产品 | **Web UI**（[SPEC_WEB_UI](../SPEC_WEB_UI.md)）：本机 HTTP/WS + token + AgentUI；W1 竖切 |
 | **P2 底座** | 底座 | **InboundAdapter + Dispatch + Schedule**（§6.5–6.8；cron ≠ bridge） |
 | **P2** | G5 | Anthropic 显式缓存 `anthropic_breakpoints` |
 | **P2** | A/E | workflow **W1** preset 共用（[SPEC_WORKFLOW](../SPEC_WORKFLOW.md)）；其后 parallel/switch；TUI jobs 抛光 |

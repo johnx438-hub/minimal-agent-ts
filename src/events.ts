@@ -161,6 +161,10 @@ export type RuntimeEvent =
       phase: 'role' | 'loop' | 'parallel' | 'switch' | 'dag' | 'job';
       role: string;
       round?: number;
+      /** DAG node id when available (Web UI / multi-UI). */
+      nodeId?: string;
+      /** Context slot alias when available. */
+      as?: string;
     }
   | {
       type: 'workflow_handback';

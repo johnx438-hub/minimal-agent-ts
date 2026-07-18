@@ -1599,6 +1599,8 @@ export class AgentRuntime {
             phase: info.phase,
             role: info.role,
             round: info.round,
+            nodeId: info.nodeId,
+            as: info.as,
           });
         },
       });

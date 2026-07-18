@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent WebUI · minimal-agent-ts</title>
+<style>
+  :root {
+    --bg-0: #0a0e14;
+    --bg-1: #0d1117;
+    --panel: #11161f;
+    --panel-2: #161d29;
+    --border: #1f2733;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #22d3ee;
+    --green: #3fb950;
+    --red: #f85149;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    --sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg-0);
+    color: var(--text);
+    font-family: var(--sans);
+    overflow: hidden;
+  }
+
+  /* ⑥ 背景层：固定全屏网格 + 顶部微光，不响应任何事件 */
+  #bg-grid {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(34, 211, 238, 1) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(34, 211, 238, 1) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.05;
+  }
+  #bg-glow {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse 65% 45% at 50% -5%, rgba(34, 211, 238, 0.08), transparent 70%);
+  }
+
+  #app {
+    position: relative;
+    z-index: 1;
+    height: 100vh;
+    display: grid;
+    grid-template-rows: 46px minmax(0, 1fr) auto;
+  }
+
+  /* ④ 顶部状态栏 */
+  #statusbar {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 0 16px;
+    background: rgba(17, 22, 31, 0.92);
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  #statusbar .brand {
+    font-family: var(--mono);
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 1px;
+  }
+  #statusbar .tag {
+    font-size: 11px;
+    padding: 1px 8px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  #statusbar .stat b {
+    color: var(--text);
+    font-family: var(--mono);
+    font-weight: 600;
+    margin-left: 4px;
+  }
+  #statusbar .spacer { flex: 1; }
+  #statusbar .conn { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  #statusbar .conn .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px rgba(63, 185, 80, 0.9);
+  }
+
+  #main { display: flex; min-height: 0; }
+
+  /* 消息流（左） */
+  #stream {
+    flex: 1;
+    overflow-y: auto;
+    padding: 18px 22px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .msg { display: flex; animation: fade-in 0.25s ease; }
+  @keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  .msg .bubble {
+    max-width: 72%;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    font-size: 14px;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .msg.user { justify-content: flex-end; }
+  .msg.user .bubble {
+    background: var(--panel-2);
+    border-right: 3px solid var(--accent);
+  }
+  .msg.assistant { justify-content: flex-start; }
+  .msg.assistant .bubble { border-left: 3px solid var(--green); }
+  .cursor {
+    color: var(--accent);
+    font-family: var(--mono);
+    animation: blink 0.9s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ② 工具调用卡片（默认折叠，点击头部展开） */
+  .msg.tool .bubble {
+    padding: 0;
+    width: min(640px, 100%);
+    max-width: 100%;
+    background: transparent;
+    border: none;
+  }
+  .tool-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel);
+    overflow: hidden;
+  }
+  .tool-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    user-select: none;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--accent);
+  }
+  .tool-head:hover { background: rgba(34, 211, 238, 0.06); }
+  .tool-toggle { transition: transform 0.15s; color: var(--text-dim); }
+  .tool-card.open .tool-toggle { transform: rotate(90deg); }
+  .tool-state { margin-left: auto; font-size: 11px; color: var(--green); }
+  .tool-body { display: none; border-top: 1px solid var(--border); padding: 10px 12px; }
+  .tool-card.open .tool-body { display: block; }
+  .tool-section { font-size: 11px; color: var(--text-dim); margin: 6px 0 4px; letter-spacing: 1px; }
+  .tool-json {
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-dim);
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  /* ③ 右侧栏：Workflow / Jobs / Sessions */
+  #side {
+    width: 300px;
+    flex-shrink: 0;
+    border-left: 1px solid var(--border);
+    background: rgba(17, 22, 31, 0.92);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .side-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .side-tab {
+    flex: 1;
+    padding: 10px 6px;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-family: var(--sans);
+  }
+  .side-tab:hover { color: var(--text); }
+  .side-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .side-panel {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .side-panel.active { display: flex; }
+  .side-panel:empty::before,
+  .side-empty {
+    display: block;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 12px;
+    margin-top: 20px;
+  }
+  .job, .wf-step, .sess-item {
+    border: 1px solid var(--border);
+    border-left-width: 3px;
+    border-radius: 8px;
+    background: var(--panel-2);
+    padding: 8px 10px;
+    animation: fade-in 0.25s ease;
+  }
+  .job[data-status="running"], .wf-step[data-status="running"] { border-left-color: var(--accent); }
+  .job[data-status="done"], .wf-step[data-status="done"] { border-left-color: var(--green); }
+  .job[data-status="failed"], .job[data-status="error"] { border-left-color: var(--red); }
+  .wf-step[data-status="pending"] { border-left-color: var(--border); opacity: 0.75; }
+  .job-top, .wf-top, .sess-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .job-label, .wf-label, .sess-label { font-size: 13px; }
+  .job-id, .wf-meta, .sess-meta { font-family: var(--mono); font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+  .sess-item { cursor: pointer; border-left-color: var(--border); }
+  .sess-item:hover { border-color: var(--accent); }
+  .sess-item.active { border-left-color: var(--accent); background: rgba(34, 211, 238, 0.06); }
+  .badge {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    white-space: nowrap;
+  }
+  .job[data-status="running"] .badge,
+  .wf-step[data-status="running"] .badge { background: var(--accent); color: #062a30; animation: pulse 1.2s ease-in-out infinite; }
+  .job[data-status="done"] .badge,
+  .wf-step[data-status="done"] .badge { background: var(--green); color: #06210f; }
+  .job[data-status="failed"] .badge { background: var(--red); color: #2b0605; }
+  @keyframes pulse { 50% { opacity: 0.45; } }
+  #banner-token {
+    display: none;
+    padding: 8px 16px;
+    background: rgba(248, 81, 73, 0.12);
+    border-bottom: 1px solid var(--red);
+    color: var(--text);
+    font-size: 12px;
+  }
+  #banner-token.show { display: block; }
+  #send:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+  #workflow-input {
+    width: 140px;
+    flex-shrink: 0;
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 9px 8px;
+  }
+  #workflow-input:focus { color: var(--text); border-color: var(--accent); outline: none; }
+
+  /* ⑤ 底部输入区 */
+  #inputbar {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    padding: 12px 16px;
+    background: rgba(17, 22, 31, 0.92);
+    border-top: 1px solid var(--border);
+  }
+  #input {
+    flex: 1;
+    resize: none;
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 9px 12px;
+    outline: none;
+    max-height: 120px;
+  }
+  #input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.15); }
+  #send {
+    padding: 9px 22px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #062a30;
+    background: var(--accent);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: box-shadow 0.15s, transform 0.1s;
+  }
+  #send:hover { box-shadow: 0 0 14px rgba(34, 211, 238, 0.5); }
+  #send:active { transform: scale(0.97); }
+
+  /* 滚动条 */
+  #stream::-webkit-scrollbar, #jobs-list::-webkit-scrollbar { width: 8px; }
+  #stream::-webkit-scrollbar-thumb, #jobs-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+</style>
+</head>
+<body>
+  <div id="bg-grid"></div>
+  <div id="bg-glow"></div>
+
+  <div id="app">
+    <div id="banner-token">未检测到 token。请用启动日志里的完整 URL（含 ?token=）打开，否则无法发任务或连 WS。</div>
+    <header id="statusbar">
+      <span class="brand">◈ Agent WebUI</span>
+      <span class="tag">W2</span>
+      <span class="stat">模型<b id="st-model">—</b></span>
+      <span class="stat">会话<b id="st-session">—</b></span>
+      <span class="stat">轮次<b id="st-turn">0</b></span>
+      <span class="stat">状态<b id="st-run">idle</b></span>
+      <span class="spacer"></span>
+      <button type="button" id="btn-abort" style="display:none;margin-right:10px;padding:4px 10px;border-radius:6px;border:1px solid var(--red);background:transparent;color:var(--red);cursor:pointer;font-size:12px;">中止</button>
+      <span class="conn"><span class="dot" id="conn-dot"></span><span id="conn-label">连接中…</span></span>
+    </header>
+
+    <div id="main">
+      <div id="stream"></div>
+      <aside id="side">
+        <div class="side-tabs">
+          <button type="button" class="side-tab active" data-tab="wf">Workflow</button>
+          <button type="button" class="side-tab" data-tab="jobs">Jobs</button>
+          <button type="button" class="side-tab" data-tab="sess">Sessions</button>
+        </div>
+        <div class="side-panel active" id="panel-wf"></div>
+        <div class="side-panel" id="panel-jobs"></div>
+        <div class="side-panel" id="panel-sess"></div>
+      </aside>
+    </div>
+
+    <footer id="inputbar">
+      <input id="workflow-input" type="text" placeholder="workflow 可选" title="例如 dag-review 或 workflows/dag-review.json" />
+      <textarea id="input" rows="1" placeholder="输入消息…（Enter 发送，Shift+Enter 换行）"></textarea>
+      <button id="send">发送</button>
+    </footer>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+
+  var stream = document.getElementById('stream');
+  var panelWf = document.getElementById('panel-wf');
+  var panelJobs = document.getElementById('panel-jobs');
+  var panelSess = document.getElementById('panel-sess');
+  var input = document.getElementById('input');
+  var workflowInput = document.getElementById('workflow-input');
+  var sendBtn = document.getElementById('send');
+  var abortBtn = document.getElementById('btn-abort');
+  var connDot = document.getElementById('conn-dot');
+  var connLabel = document.getElementById('conn-label');
+  var bannerToken = document.getElementById('banner-token');
+
+  var params = new URLSearchParams(location.search);
+  var token = params.get('token') || localStorage.getItem('minimal_web_token') || '';
+  if (params.get('token')) localStorage.setItem('minimal_web_token', token);
+  if (!token) bannerToken.classList.add('show');
+
+  var state = { turn: 0, model: '—', run: 'idle', sessionId: null };
+  var jobs = new Map();
+  var sessions = [];
+  var wfSteps = [];
+  var currentAssistant = null;
+  var sendHandler = null;
+  var ws = null;
+  var running = false;
+  var reconnectMs = 1500;
+  var intentionalClose = false;
+
+  var STATUS_TEXT = {
+    running: '运行中', done: '完成', failed: '失败', error: '错误',
+    pending: '待定', completed: '完成', cancelled: '取消'
+  };
+
+  function shortId(id) {
+    if (!id) return '—';
+    return id.length > 18 ? id.slice(0, 10) + '…' + id.slice(-4) : id;
+  }
+
+  function updateStatus() {
+    document.getElementById('st-model').textContent = state.model || '—';
+    document.getElementById('st-session').textContent = shortId(state.sessionId);
+    document.getElementById('st-turn').textContent = String(state.turn);
+    document.getElementById('st-run').textContent = state.run;
+    abortBtn.style.display = running ? 'inline-block' : 'none';
+    sendBtn.disabled = running || !token;
+  }
+
+  function setConn(ok, label) {
+    connDot.style.background = ok ? 'var(--green)' : 'var(--red)';
+    connDot.style.boxShadow = ok
+      ? '0 0 8px rgba(63, 185, 80, 0.9)'
+      : '0 0 8px rgba(248, 81, 73, 0.7)';
+    connLabel.textContent = label;
+  }
+
+  function scrollToBottom() { stream.scrollTop = stream.scrollHeight; }
+
+  function finalizeAssistant() {
+    if (currentAssistant) {
+      if (currentAssistant.cursor && currentAssistant.cursor.parentNode) {
+        currentAssistant.cursor.remove();
+      }
+      currentAssistant = null;
+    }
+  }
+
+  function appendMessage(role, content) {
+    finalizeAssistant();
+    var el = document.createElement('div');
+    el.className = 'msg ' + role;
+    var bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    var textEl = document.createElement('span');
+    textEl.className = 'text';
+    textEl.textContent = content == null ? '' : String(content);
+    bubble.appendChild(textEl);
+    if (role === 'assistant') {
+      var cursor = document.createElement('span');
+      cursor.className = 'cursor';
+      cursor.textContent = '▍';
+      bubble.appendChild(cursor);
+      currentAssistant = { textEl: textEl, cursor: cursor };
+    }
+    el.appendChild(bubble);
+    stream.appendChild(el);
+    scrollToBottom();
+    return el;
+  }
+
+  function appendToken(delta) {
+    if (!currentAssistant) appendMessage('assistant', '');
+    currentAssistant.textEl.textContent += delta;
+    scrollToBottom();
+  }
+
+  function previewJson(obj) {
+    var s;
+    try { s = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2); }
+    catch (e) { s = String(obj); }
+    if (typeof s !== 'string') s = String(obj);
+    var lines = s.split('\n');
+    return lines.length > 3 ? lines.slice(0, 3).join('\n') + '\n…' : s;
+  }
+
+  function showToolCall(call) {
+    finalizeAssistant();
+    var el = document.createElement('div');
+    el.className = 'msg tool';
+    var bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    var card = document.createElement('div');
+    card.className = 'tool-card';
+    var head = document.createElement('div');
+    head.className = 'tool-head';
+    var toggle = document.createElement('span');
+    toggle.className = 'tool-toggle';
+    toggle.textContent = '▸';
+    var name = document.createElement('span');
+    name.className = 'tool-name';
+    name.textContent = '⚙ ' + (call && call.name ? call.name : 'tool');
+    var st = document.createElement('span');
+    st.className = 'tool-state';
+    st.textContent = call && call.result !== undefined ? '✓ 已完成' : '调用中…';
+    head.appendChild(toggle);
+    head.appendChild(name);
+    head.appendChild(st);
+    var body = document.createElement('div');
+    body.className = 'tool-body';
+    var secA = document.createElement('div');
+    secA.className = 'tool-section';
+    secA.textContent = '参数 ARGS';
+    var preA = document.createElement('pre');
+    preA.className = 'tool-json';
+    preA.textContent = previewJson(call && call.args);
+    var secB = document.createElement('div');
+    secB.className = 'tool-section';
+    secB.textContent = '结果 RESULT';
+    var preB = document.createElement('pre');
+    preB.className = 'tool-json';
+    preB.textContent = previewJson(call && (call.result !== undefined ? call.result : call.content));
+    body.appendChild(secA);
+    body.appendChild(preA);
+    body.appendChild(secB);
+    body.appendChild(preB);
+    head.addEventListener('click', function () { card.classList.toggle('open'); });
+    card.appendChild(head);
+    card.appendChild(body);
+    bubble.appendChild(card);
+    el.appendChild(bubble);
+    stream.appendChild(el);
+    scrollToBottom();
+    return el;
+  }
+
+  function setJobStatus(id, status, label) {
+    jobs.set(id, { id: id, status: status, label: label || (jobs.get(id) && jobs.get(id).label) || id });
+    renderJobs();
+  }
+
+  function renderJobs() {
+    panelJobs.innerHTML = '';
+    if (jobs.size === 0) {
+      panelJobs.innerHTML = '<div class="side-empty">暂无后台任务</div>';
+      return;
+    }
+    jobs.forEach(function (job) {
+      var el = document.createElement('div');
+      el.className = 'job';
+      el.dataset.status = job.status;
+      el.innerHTML =
+        '<div class="job-top"><span class="job-label"></span><span class="badge"></span></div>' +
+        '<div class="job-id"></div>';
+      el.querySelector('.job-label').textContent = job.label || job.id;
+      el.querySelector('.badge').textContent = STATUS_TEXT[job.status] || job.status;
+      el.querySelector('.job-id').textContent = job.id;
+      panelJobs.appendChild(el);
+    });
+  }
+
+  function pushWorkflowStep(step) {
+    var key = step.nodeId || step.as || step.role;
+    var prev = wfSteps[wfSteps.length - 1];
+    if (prev && prev.status === 'running') prev.status = 'done';
+    wfSteps.push({
+      key: key,
+      nodeId: step.nodeId,
+      as: step.as,
+      role: step.role,
+      phase: step.phase,
+      round: step.round,
+      status: step.status || 'running',
+    });
+    renderWorkflow();
+  }
+
+  function renderWorkflow() {
+    panelWf.innerHTML = '';
+    if (wfSteps.length === 0) {
+      panelWf.innerHTML = '<div class="side-empty">运行 workflow 后步骤会出现在这里<br><span style="opacity:.7">或在下方填写 workflow 名</span></div>';
+      return;
+    }
+    wfSteps.forEach(function (s, i) {
+      var el = document.createElement('div');
+      el.className = 'wf-step';
+      el.dataset.status = s.status || 'pending';
+      var title = (s.nodeId || s.as || s.role) + (s.role && s.nodeId !== s.role ? ' · ' + s.role : '');
+      el.innerHTML =
+        '<div class="wf-top"><span class="wf-label"></span><span class="badge"></span></div>' +
+        '<div class="wf-meta"></div>';
+      el.querySelector('.wf-label').textContent = (i + 1) + '. ' + title;
+      el.querySelector('.badge').textContent = STATUS_TEXT[s.status] || s.status;
+      el.querySelector('.wf-meta').textContent =
+        (s.phase || '') + (s.round !== undefined ? ' · round ' + s.round : '');
+      panelWf.appendChild(el);
+    });
+  }
+
+  function renderSessions() {
+    panelSess.innerHTML = '';
+    if (!sessions.length) {
+      panelSess.innerHTML = '<div class="side-empty">暂无会话列表</div>';
+      return;
+    }
+    sessions.forEach(function (s) {
+      var el = document.createElement('div');
+      el.className = 'sess-item' + (s.session_id === state.sessionId ? ' active' : '');
+      el.innerHTML =
+        '<div class="sess-top"><span class="sess-label"></span></div>' +
+        '<div class="sess-meta"></div>';
+      el.querySelector('.sess-label').textContent = s.note || s.session_id;
+      el.querySelector('.sess-meta').textContent =
+        s.session_id + (s.task_count != null ? ' · ' + s.task_count + ' tasks' : '');
+      el.addEventListener('click', function () { switchSession(s.session_id); });
+      panelSess.appendChild(el);
+    });
+  }
+
+  function onSend(cb) { sendHandler = cb; }
+
+  function authHeaders() {
+    var h = { 'Content-Type': 'application/json' };
+    if (token) h['Authorization'] = 'Bearer ' + token;
+    return h;
+  }
+
+  function apiUrl(path) {
+    var u = path;
+    if (token && path.indexOf('token=') < 0) {
+      u += (path.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(token);
+    }
+    return u;
+  }
+
+  async function postTask(text) {
+    var body = { text: text };
+    var wf = workflowInput.value.trim();
+    if (wf) body.workflow = wf;
+    if (state.sessionId) body.session_id = state.sessionId;
+    var res = await fetch(apiUrl('/v1/task'), {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(body),
+    });
+    var data = await res.json().catch(function () { return {}; });
+    if (!res.ok) throw new Error(data.error || data.detail || ('HTTP ' + res.status));
+    if (data.session_id) state.sessionId = data.session_id;
+    if (wf) {
+      wfSteps = [];
+      renderWorkflow();
+    }
+    updateStatus();
+    return data;
+  }
+
+  async function postAbort() {
+    await fetch(apiUrl('/v1/abort'), {
+      method: 'POST',
+      headers: authHeaders(),
+      body: '{}',
+    });
+  }
+
+  async function switchSession(id) {
+    if (!id || id === state.sessionId || running) return;
+    var res = await fetch(apiUrl('/v1/sessions/' + encodeURIComponent(id) + '/switch'), {
+      method: 'POST',
+      headers: authHeaders(),
+      body: '{}',
+    });
+    var data = await res.json().catch(function () { return {}; });
+    if (!res.ok) {
+      appendMessage('assistant', '切换会话失败: ' + (data.error || res.status));
+      finalizeAssistant();
+      return;
+    }
+    state.sessionId = data.session_id || id;
+    updateStatus();
+    renderSessions();
+    appendMessage('assistant', '已切换会话 ' + state.sessionId);
+    finalizeAssistant();
+  }
+
+  function handleWsPayload(msg) {
+    if (!msg || typeof msg !== 'object') return;
+
+    if (msg.type === 'hello') {
+      if (msg.model) state.model = msg.model;
+      if (msg.session_id) state.sessionId = msg.session_id;
+      running = !!msg.running;
+      state.run = running ? 'running' : 'idle';
+      if (Array.isArray(msg.sessions)) {
+        sessions = msg.sessions;
+        renderSessions();
+      }
+      if (Array.isArray(msg.jobs)) {
+        jobs.clear();
+        msg.jobs.forEach(function (j) {
+          jobs.set(j.id, { id: j.id, status: j.status, label: j.label || j.id });
+        });
+        renderJobs();
+      }
+      updateStatus();
+      return;
+    }
+    if (msg.type === 'run_state') {
+      state.run = msg.state || 'idle';
+      running = msg.state === 'running';
+      if (msg.session_id) state.sessionId = msg.session_id;
+      if (msg.model) state.model = msg.model;
+      if (msg.state === 'idle' || msg.state === 'aborted' || msg.state === 'error') {
+        finalizeAssistant();
+        if (wfSteps.length) {
+          var last = wfSteps[wfSteps.length - 1];
+          if (last.status === 'running') last.status = msg.state === 'idle' ? 'done' : 'failed';
+          renderWorkflow();
+        }
+      }
+      if (msg.state === 'error' && msg.detail) {
+        appendMessage('assistant', '⚠ ' + msg.detail);
+        finalizeAssistant();
+      }
+      if (msg.state === 'aborted') {
+        appendMessage('assistant', '〔已中止〕');
+        finalizeAssistant();
+      }
+      updateStatus();
+      return;
+    }
+    if (msg.type === 'job') {
+      setJobStatus(msg.id, msg.status, msg.label);
+      return;
+    }
+    if (msg.type === 'workflow_step') {
+      pushWorkflowStep(msg);
+      return;
+    }
+    if (msg.type === 'workflow_handback') {
+      appendMessage(
+        'assistant',
+        '〔workflow handback〕 ' + msg.workflow + ' · ' + msg.reason + '\n' + (msg.detail || '')
+      );
+      finalizeAssistant();
+      return;
+    }
+
+    if (msg.role === 'user' && msg.content) return;
+    if (msg.role === 'assistant') {
+      if (msg.delta) appendToken(msg.delta);
+      else if (msg.content != null && msg.content !== '') {
+        if (currentAssistant) {
+          currentAssistant.textEl.textContent = msg.content;
+          finalizeAssistant();
+        } else {
+          appendMessage('assistant', msg.content);
+          finalizeAssistant();
+        }
+      }
+      return;
+    }
+    if (msg.role === 'tool') {
+      showToolCall({
+        name: msg.tool_name || 'tool',
+        args: msg.call_id ? { call_id: msg.call_id } : {},
+        content: msg.content,
+        result: msg.content,
+      });
+      return;
+    }
+    if (msg.role === 'system_notice' && msg.content) {
+      appendMessage('assistant', '〔system〕 ' + msg.content);
+      finalizeAssistant();
+    }
+  }
+
+  function connectWs() {
+    if (!token) {
+      setConn(false, '缺少 token');
+      return;
+    }
+    if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
+    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var wsUrl = proto + '//' + location.host + '/v1/ws?token=' + encodeURIComponent(token);
+    setConn(false, '连接中…');
+    ws = new WebSocket(wsUrl);
+    ws.onopen = function () {
+      reconnectMs = 1500;
+      setConn(true, '已连接');
+    };
+    ws.onclose = function () {
+      setConn(false, '已断开 · 重连中');
+      if (!intentionalClose) {
+        setTimeout(connectWs, reconnectMs);
+        reconnectMs = Math.min(reconnectMs * 1.5, 10000);
+      }
+    };
+    ws.onerror = function () { setConn(false, 'WS 错误'); };
+    ws.onmessage = function (ev) {
+      try { handleWsPayload(JSON.parse(ev.data)); }
+      catch (e) { /* ignore */ }
+    };
+  }
+
+  document.querySelectorAll('.side-tab').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      document.querySelectorAll('.side-tab').forEach(function (t) { t.classList.remove('active'); });
+      document.querySelectorAll('.side-panel').forEach(function (p) { p.classList.remove('active'); });
+      tab.classList.add('active');
+      var id = tab.getAttribute('data-tab');
+      if (id === 'wf') panelWf.classList.add('active');
+      if (id === 'jobs') panelJobs.classList.add('active');
+      if (id === 'sess') panelSess.classList.add('active');
+    });
+  });
+
+  function handleSend() {
+    var text = input.value.trim();
+    if (!text || running || !token) return;
+    input.value = '';
+    autoResize();
+    if (sendHandler) sendHandler(text);
+  }
+
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  });
+  sendBtn.addEventListener('click', handleSend);
+  abortBtn.addEventListener('click', function () {
+    void postAbort().catch(function (e) {
+      appendMessage('assistant', '中止失败: ' + e.message);
+      finalizeAssistant();
+    });
+  });
+
+  function autoResize() {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+  }
+  input.addEventListener('input', autoResize);
+
+  window.AgentUI = {
+    appendMessage: appendMessage,
+    appendToken: appendToken,
+    showToolCall: showToolCall,
+    setJobStatus: setJobStatus,
+    onSend: onSend,
+  };
+
+  onSend(function (text) {
+    appendMessage('user', text);
+    state.turn += 1;
+    running = true;
+    state.run = 'running';
+    updateStatus();
+    postTask(text).catch(function (err) {
+      running = false;
+      state.run = 'error';
+      updateStatus();
+      appendMessage('assistant', '发送失败: ' + err.message);
+      finalizeAssistant();
+    });
+  });
+
+  renderWorkflow();
+  renderJobs();
+  renderSessions();
+  updateStatus();
+  connectWs();
+
+  fetch('/health').then(function (r) { return r.json(); }).then(function (h) {
+    if (h.model) { state.model = h.model; updateStatus(); }
+    if (h.session_id) { state.sessionId = h.session_id; updateStatus(); }
+    if (h.running) { running = true; state.run = 'running'; updateStatus(); }
+  }).catch(function () {});
+
+  if (token) {
+    fetch(apiUrl('/v1/sessions')).then(function (r) { return r.json(); }).then(function (d) {
+      if (d.sessions) { sessions = d.sessions; if (d.current) state.sessionId = d.current; renderSessions(); updateStatus(); }
+    }).catch(function () {});
+    fetch(apiUrl('/v1/jobs')).then(function (r) { return r.json(); }).then(function (d) {
+      if (d.jobs) {
+        d.jobs.forEach(function (j) {
+          jobs.set(j.id, { id: j.id, status: j.status, label: j.label || j.id });
+        });
+        renderJobs();
+      }
+    }).catch(function () {});
+  }
+})();
+</script>
+</body>
+</html>
