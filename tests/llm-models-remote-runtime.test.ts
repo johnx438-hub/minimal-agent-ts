@@ -43,8 +43,9 @@ describe('AgentRuntime.listSessionModelChoicesAsync (G2-d)', () => {
   function prepareRemoteModelsTestEnv(): void {
     process.env.OPENROUTER_API_KEY = 'or-key';
     delete process.env.OPENAI_API_KEY;
-    // Must allow remote merge path; host may set REMOTE_MODELS=0.
-    delete process.env.REMOTE_MODELS;
+    // Must allow remote merge path; host .env may set REMOTE_MODELS=0, and
+    // loadDotenv({ override: false }) refills deleted keys — set explicitly instead.
+    process.env.REMOTE_MODELS = '1';
   }
 
   it('matches static list when remote fetch fails', async () => {
