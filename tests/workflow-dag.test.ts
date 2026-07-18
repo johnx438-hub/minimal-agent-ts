@@ -8,7 +8,9 @@ import {
   classifyNodeReadiness,
   edgeKey,
   findReadyAndSkippable,
+  reopenTargetsAfterSettle,
   settleOutgoingEdges,
+  type DagEdgeState,
 } from '../src/workflow/dag.js';
 import { loadWorkflowDefinition, resolveWorkflowRef } from '../src/workflow/load-workflow.js';
 import type { WorkflowContext, WorkflowDefinition } from '../src/workflow/types.js';
@@ -29,10 +31,87 @@ function linearDag(): WorkflowDefinition {
   };
 }
 
+/** Mirror runner post-complete: finish → settle → reopen fired targets. */
+function completeNode(
+  nodeId: string,
+  def: WorkflowDefinition,
+  edgeState: Map<string, DagEdgeState>,
+  nodeVisits: Map<string, number>,
+  finished: Set<string>,
+  ctx: WorkflowContext,
+  patch: { output?: string; verdict?: string; slot?: string },
+): void {
+  nodeVisits.set(nodeId, (nodeVisits.get(nodeId) ?? 0) + 1);
+  const node = def.nodes![nodeId]!;
+  const slot = patch.slot ?? node.as?.trim() ?? nodeId;
+  ctx.roles[slot] = {
+    output: patch.output ?? `${nodeId}#${nodeVisits.get(nodeId)}`,
+    verdict: patch.verdict,
+  };
+  if (slot !== nodeId) {
+    ctx.roles[nodeId] = ctx.roles[slot]!;
+  }
+  finished.add(nodeId);
+  settleOutgoingEdges(nodeId, def.edges ?? [], edgeState, ctx);
+  reopenTargetsAfterSettle(
+    nodeId,
+    def.edges ?? [],
+    edgeState,
+    nodeVisits,
+    finished,
+    def.nodes ?? {},
+  );
+}
+
+function schedulePath(
+  def: WorkflowDefinition,
+  onComplete: (
+    nodeId: string,
+    priorVisits: number,
+    ctx: WorkflowContext,
+  ) => { output?: string; verdict?: string; slot?: string },
+  maxRounds = 20,
+): string[] {
+  const edgeState = new Map<string, DagEdgeState>();
+  const nodeVisits = new Map<string, number>();
+  const finished = new Set<string>();
+  const skipped = new Set<string>();
+  const running = new Set<string>();
+  const ctx: WorkflowContext = { user_task: 't', roles: {} };
+  const path: string[] = [];
+
+  for (let i = 0; i < maxRounds; i++) {
+    const { ready, toSkip } = findReadyAndSkippable(
+      def,
+      edgeState,
+      nodeVisits,
+      finished,
+      skipped,
+      running,
+    );
+    for (const id of toSkip) skipped.add(id);
+    if (ready.length === 0) break;
+    for (const id of ready) {
+      path.push(id);
+      const prior = nodeVisits.get(id) ?? 0;
+      completeNode(
+        id,
+        def,
+        edgeState,
+        nodeVisits,
+        finished,
+        ctx,
+        onComplete(id, prior, ctx),
+      );
+    }
+  }
+  return path;
+}
+
 describe('workflow DAG readiness', () => {
   it('entry is ready first; successor after settle', () => {
     const def = linearDag();
-    const edgeState = new Map();
+    const edgeState = new Map<string, DagEdgeState>();
     const visits = new Map<string, number>();
     const finished = new Set<string>();
     const skipped = new Set<string>();
@@ -68,7 +147,7 @@ describe('workflow DAG readiness', () => {
     assert.deepEqual(ready, ['n2']);
   });
 
-  it('conditional edge does not block required join', () => {
+  it('conditional edge does not block required join; reopens impl only on needs_revision', () => {
     const def: WorkflowDefinition = {
       name: 'loopish',
       roles: { w: { prompt: 'w', tools: [] }, r: { prompt: 'r', tools: [] } },
@@ -88,12 +167,12 @@ describe('workflow DAG readiness', () => {
       ],
     };
 
-    // First: only entry impl (no required in-edges)
-    const edgeState = new Map();
+    const edgeState = new Map<string, DagEdgeState>();
     const visits = new Map<string, number>();
     const finished = new Set<string>();
     const skipped = new Set<string>();
     const running = new Set<string>();
+    const ctx: WorkflowContext = { user_task: 't', roles: {} };
 
     assert.equal(
       classifyNodeReadiness(
@@ -108,13 +187,24 @@ describe('workflow DAG readiness', () => {
       'ready',
     );
 
-    // After impl done, review ready
-    visits.set('impl', 1);
-    finished.add('impl');
-    settleOutgoingEdges('impl', def.edges!, edgeState, {
-      user_task: 't',
-      roles: { impl: { output: 'work' } },
+    // After impl done (stays finished), review ready — impl must NOT be ready again
+    completeNode('impl', def, edgeState, visits, finished, ctx, {
+      output: 'work',
+      slot: 'impl',
     });
+    assert.ok(finished.has('impl'));
+    assert.equal(
+      classifyNodeReadiness(
+        'impl',
+        def,
+        edgeState,
+        visits,
+        finished,
+        skipped,
+        running,
+      ),
+      'blocked',
+    );
     assert.equal(
       classifyNodeReadiness(
         'review',
@@ -128,16 +218,11 @@ describe('workflow DAG readiness', () => {
       'ready',
     );
 
-    // After review needs_revision, impl ready again
-    finished.delete('impl'); // allow re-visit under max_visits
-    visits.set('review', 1);
-    finished.add('review');
-    settleOutgoingEdges('review', def.edges!, edgeState, {
-      user_task: 't',
-      roles: {
-        impl: { output: 'work' },
-        review: { output: 'fix', verdict: 'needs_revision' },
-      },
+    // After review needs_revision, reopenTargets re-opens impl
+    completeNode('review', def, edgeState, visits, finished, ctx, {
+      output: 'fix',
+      verdict: 'needs_revision',
+      slot: 'review',
     });
     assert.equal(
       classifyNodeReadiness(
@@ -151,6 +236,57 @@ describe('workflow DAG readiness', () => {
       ),
       'ready',
     );
+    // review stays finished until impl re-fires the required edge
+    assert.ok(finished.has('review'));
+  });
+
+  it('dag-review happy path is plan → impl → review (not impl×3 first)', () => {
+    const def = loadWorkflowDefinition('workflows/dag-review.json', process.cwd());
+    const path = schedulePath(def, (id) => {
+      if (id === 'review') {
+        return { verdict: 'approved', output: 'lgtm', slot: 'reviewer' };
+      }
+      return { output: `${id}-ok` };
+    });
+    assert.deepEqual(path, ['plan', 'impl', 'review']);
+  });
+
+  it('dag-review revision loop is impl ⇄ review, not pre-burn max_visits', () => {
+    const def = loadWorkflowDefinition('workflows/dag-review.json', process.cwd());
+    let reviewCount = 0;
+    const path = schedulePath(def, (id) => {
+      if (id === 'review') {
+        reviewCount += 1;
+        // first two reviews request revision; third approves
+        return {
+          verdict: reviewCount < 3 ? 'needs_revision' : 'approved',
+          output: `rev-${reviewCount}`,
+          slot: 'reviewer',
+        };
+      }
+      return { output: `${id}-ok` };
+    });
+    assert.deepEqual(path, [
+      'plan',
+      'impl',
+      'review',
+      'impl',
+      'review',
+      'impl',
+      'review',
+    ]);
+  });
+
+  it('approved review does not re-run review to burn max_visits', () => {
+    const def = loadWorkflowDefinition('workflows/dag-review.json', process.cwd());
+    const path = schedulePath(def, (id) => {
+      if (id === 'review') {
+        return { verdict: 'approved', output: 'ok', slot: 'reviewer' };
+      }
+      return { output: 'ok' };
+    });
+    assert.equal(path.filter((n) => n === 'review').length, 1);
+    assert.equal(path.filter((n) => n === 'impl').length, 1);
   });
 
   it('edgeKey is stable', () => {

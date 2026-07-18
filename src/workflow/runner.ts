@@ -12,6 +12,7 @@ import { getJobRegistry } from '../spawn/job-registry.js';
 import type { ResolvedSpawnPreset } from '../spawn/types.js';
 import {
   findReadyAndSkippable,
+  reopenTargetsAfterSettle,
   settleOutgoingEdges,
   waiveOutgoingFromSkipped,
   type DagEdgeState,
@@ -513,18 +514,19 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
         if (hb) return hb;
 
         nodeVisits.set(nodeId, (nodeVisits.get(nodeId) ?? 0) + 1);
-        const node = definition.nodes![nodeId]!;
-        const maxV = node.max_visits ?? 1;
-        const visits = nodeVisits.get(nodeId) ?? 0;
 
-        // Mark finished for join purposes (required edges) even if re-visitable via optional edges
+        // Stay finished so successors can join; re-entry only when an outgoing
+        // edge fires onto a finished target that still has max_visits budget.
         finished.add(nodeId);
         settleOutgoingEdges(nodeId, edges, edgeState, ctx);
-
-        // Allow another visit if under max_visits and a loop edge may fire later
-        if (visits < maxV) {
-          finished.delete(nodeId);
-        }
+        reopenTargetsAfterSettle(
+          nodeId,
+          edges,
+          edgeState,
+          nodeVisits,
+          finished,
+          definition.nodes ?? {},
+        );
       }
     }
 

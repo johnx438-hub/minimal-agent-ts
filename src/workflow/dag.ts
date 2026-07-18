@@ -53,6 +53,39 @@ export function settleOutgoingEdges(
   }
 }
 
+/**
+ * After settling edges from a completed node: re-open targets that are already
+ * finished when an outgoing edge fires and the target still has visit budget.
+ *
+ * Correct loop semantics (do NOT clear `finished` merely because visits < max):
+ * - Stay finished so required joins can unblock successors (impl → review).
+ * - Re-entry only when a fired edge targets a finished node (loop or re-run).
+ */
+export function reopenTargetsAfterSettle(
+  from: string,
+  edges: WorkflowEdge[],
+  edgeState: Map<string, DagEdgeState>,
+  nodeVisits: Map<string, number>,
+  finished: Set<string>,
+  nodes: Record<string, { max_visits?: number }>,
+): string[] {
+  const reopened: string[] = [];
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i]!;
+    if (e.from !== from) continue;
+    const st = edgeState.get(edgeKey(e, i));
+    if (!st?.fired) continue;
+    const to = e.to;
+    if (!finished.has(to)) continue;
+    const maxV = nodes[to]?.max_visits ?? 1;
+    const visits = nodeVisits.get(to) ?? 0;
+    if (visits >= maxV) continue;
+    finished.delete(to);
+    reopened.push(to);
+  }
+  return reopened;
+}
+
 export function waiveOutgoingFromSkipped(
   nodeId: string,
   edges: WorkflowEdge[],
