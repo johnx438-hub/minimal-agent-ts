@@ -40,7 +40,9 @@ export const WORKFLOW_HANDOFF_DEFINITIONS: ToolDefinition[] = [
           },
           summary: {
             type: 'string',
-            description: 'Primary handoff text for the next step (required).',
+            description:
+              'Primary handoff text for the next step (required). Must be self-contained: ' +
+              'the next role does not see this chat. For plans, put the full numbered plan here—not a stub.',
           },
           verdict: {
             type: 'string',
@@ -90,6 +92,72 @@ export function formatHandoffPayloadAsOutput(p: WorkflowHandoffPayload): string 
     );
   }
   return lines.join('\n');
+}
+
+/**
+ * Minimal guard for models that monologue a full plan then call
+ * workflow_handoff with a stub summary. Slot output prefers structured handoff;
+ * when summary is thin and final text is much richer, expand summary from final.
+ */
+export const HANDOFF_SUMMARY_THIN_CHARS = 160;
+export const HANDOFF_FINAL_EXPAND_MIN_CHARS = 400;
+export const HANDOFF_FINAL_VS_SUMMARY_RATIO = 2.5;
+
+export interface ResolveHandoffSlotResult {
+  output: string;
+  /** True when final message replaced a thin tool summary. */
+  merged: boolean;
+  warning?: string;
+}
+
+function isThinHandoffSummary(summary: string, finalText: string): boolean {
+  const s = summary.trim();
+  const f = finalText.trim();
+  if (!s || !f) return false;
+  if (f.length < HANDOFF_FINAL_EXPAND_MIN_CHARS) return false;
+  if (s.length >= HANDOFF_SUMMARY_THIN_CHARS && f.length < s.length * HANDOFF_FINAL_VS_SUMMARY_RATIO) {
+    return false;
+  }
+  // Thin: short absolute summary, or final substantially longer than summary.
+  if (s.length < HANDOFF_SUMMARY_THIN_CHARS) return true;
+  return f.length >= s.length * HANDOFF_FINAL_VS_SUMMARY_RATIO;
+}
+
+/**
+ * Prefer structured handoff; if summary is a stub vs a long final message,
+ * re-format with final text as summary body and keep kind/verdict/artifacts.
+ */
+export function resolveHandoffSlotOutput(
+  structured: WorkflowHandoffPayload | null | undefined,
+  finalText: string,
+): ResolveHandoffSlotResult {
+  const final = (finalText ?? '').trim();
+  if (!structured) {
+    return { output: finalText ?? '', merged: false };
+  }
+
+  const summary = structured.summary?.trim() ?? '';
+  if (isThinHandoffSummary(summary, final) && final.length > summary.length) {
+    const warning =
+      `handoff: expanded slot from final message ` +
+      `(summary ${summary.length} chars → final ${final.length} chars; ` +
+      `tool summary was thin vs monologue)`;
+    const expanded: WorkflowHandoffPayload = {
+      ...structured,
+      summary: final,
+    };
+    const body = formatHandoffPayloadAsOutput(expanded);
+    return {
+      output: `> ⚠ ${warning}\n\n${body}`,
+      merged: true,
+      warning,
+    };
+  }
+
+  return {
+    output: formatHandoffPayloadAsOutput(structured),
+    merged: false,
+  };
 }
 
 export function runWorkflowHandoffTool(

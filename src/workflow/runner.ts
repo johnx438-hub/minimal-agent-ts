@@ -31,7 +31,7 @@ import {
 } from './envelope.js';
 import {
   WORKFLOW_HANDOFF_TOOL,
-  formatHandoffPayloadAsOutput,
+  resolveHandoffSlotOutput,
   type WorkflowRoleRuntime,
 } from './handoff-tool.js';
 import {
@@ -392,11 +392,13 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
     }
     saveSessionThrottled(session, { force: true });
 
-    // Structured handoff preferred; final text remains a valid handoff body.
+    // Structured handoff preferred; thin tool summary + long monologue → expand from final.
     const structured = workflowRoleRuntime.handoff;
-    const output = structured
-      ? formatHandoffPayloadAsOutput(structured)
-      : result.text;
+    const resolved = resolveHandoffSlotOutput(structured, result.text);
+    const output = resolved.output;
+    if (resolved.warning) {
+      console.warn(`[workflow] ${resolved.warning} (role=${step.role} slot=${slot})`);
+    }
     // Structured handoff and free text both go through normalize (pass/approve → approved).
     const verdict =
       (structured?.verdict

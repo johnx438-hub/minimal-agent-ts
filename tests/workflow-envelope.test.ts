@@ -11,6 +11,7 @@ import {
 import {
   WORKFLOW_HANDOFF_TOOL,
   formatHandoffPayloadAsOutput,
+  resolveHandoffSlotOutput,
   runWorkflowHandoffTool,
   type WorkflowRoleRuntime,
 } from '../src/workflow/handoff-tool.js';
@@ -34,6 +35,9 @@ describe('workflow envelope (W4 isolation)', () => {
     assert.match(env, /What counts as success/);
     assert.match(env, /Negative feedback/);
     assert.match(env, /workflow_handoff/);
+    assert.match(env, /full numbered plan/i);
+    assert.match(env, /self-contained/i);
+    assert.match(env, /stub summary|tiny handoff/i);
     assert.match(env, /Also valid/);
     assert.match(env, /parent session/i);
     assert.match(env, /burns max_turns|turn_ceiling|incomplete/i);
@@ -106,6 +110,42 @@ describe('workflow_handoff tool', () => {
 
   it('tool name is workflow_handoff', () => {
     assert.equal(WORKFLOW_HANDOFF_TOOL, 'workflow_handoff');
+  });
+
+  it('resolveHandoffSlotOutput expands thin summary from long final monologue', () => {
+    const longPlan =
+      '## Numbered plan\n' +
+      Array.from({ length: 12 }, (_, i) => `${i + 1}. step detail about path/foo-${i}.ts and verify`).join(
+        '\n',
+      );
+    assert.ok(longPlan.length > 400);
+    const resolved = resolveHandoffSlotOutput(
+      { kind: 'plan', summary: 'See above plan.' },
+      longPlan,
+    );
+    assert.equal(resolved.merged, true);
+    assert.match(resolved.output, /expanded slot from final message/i);
+    assert.match(resolved.output, /step detail about path\/foo-0/);
+    assert.match(resolved.output, /## Handoff \(plan\)/);
+  });
+
+  it('resolveHandoffSlotOutput keeps rich structured summary', () => {
+    const summary =
+      '1. edit a.ts\n2. edit b.ts\n3. run tests\n4. verify paths\n' +
+      'details: implement feature X with acceptance Y and notes Z for reviewer.';
+    const resolved = resolveHandoffSlotOutput(
+      { kind: 'plan', summary },
+      'ok done',
+    );
+    assert.equal(resolved.merged, false);
+    assert.match(resolved.output, /implement feature X/);
+    assert.doesNotMatch(resolved.output, /expanded slot/i);
+  });
+
+  it('resolveHandoffSlotOutput falls back to final text without tool handoff', () => {
+    const resolved = resolveHandoffSlotOutput(null, 'plain body only');
+    assert.equal(resolved.merged, false);
+    assert.equal(resolved.output, 'plain body only');
   });
 });
 

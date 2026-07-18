@@ -43,6 +43,8 @@ function dutyLine(hint: WorkflowEnvelopeMeta['dutyHint'], canWrite: boolean): st
     case 'planner':
       return (
         'Duty: produce an executable handoff **plan** only. Do not implement or claim the task is done. ' +
+        'Put the **full numbered plan** in `workflow_handoff.summary` (self-contained for the next role); ' +
+        'do not leave the real plan only in chat with a stub summary. ' +
         (canWrite ? '' : 'You have no write tools.')
       );
     case 'worker':
@@ -86,8 +88,9 @@ export function buildWorkflowRoleEnvelope(meta: WorkflowEnvelopeMeta): string {
     'Exploration and edits that never become a handoff are treated as incomplete work.',
     '',
     '## How to hand off (pick one)',
-    `1. **Preferred:** call \`${'workflow_handoff'}\` once with a complete summary` +
-      ' (reviewers: include verdict), then send a short final reply and end the step.',
+    `1. **Preferred:** call \`${'workflow_handoff'}\` once with a complete, self-contained summary` +
+      ' (the next role does **not** see this chat; reviewers: include verdict). ' +
+      'Then send a short final reply and end the step.',
     '2. **Also valid:** end with a single final message that *is* the full handoff body' +
       ' (no tool required). Downstream reads that text as this slot’s output.',
     '',
@@ -96,6 +99,8 @@ export function buildWorkflowRoleEnvelope(meta: WorkflowEnvelopeMeta): string {
     '- After the deliverable is already clear, more tool calls do not improve the handoff' +
       ' and risk turn_ceiling / early handback.',
     '- Vague or empty endings leave the next role with nothing usable — same as failing the step.',
+    '- A long plan in chat plus a tiny handoff.summary starves the next role ' +
+      '(downstream reads the slot, not your monologue).',
     '',
     '## If there is no usable handoff',
     'This step fails. Control returns to the **parent session** (chat history preserved).',
