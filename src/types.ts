@@ -160,6 +160,11 @@ export interface AgentConfig {
   loopGuard?: LoopGuardConfig;
   /** Recent tool turns kept inline before pointerize. */
   keepInlineTurns?: number;
+  /**
+   * Full pointerize policy (tool_overrides). When set, materializePriorTurnTools
+   * uses per-tool keep/mode (SPEC_POINTERIZE_SCOPE).
+   */
+  pointerizePolicy?: import('./plugins/types.js').PointerizePolicy;
   /** recall_query auto format=full when action_id hit and body is below this size. */
   recallAutoFullMaxChars?: number;
   previewPolicy?: PreviewPolicy;

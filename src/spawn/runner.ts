@@ -208,6 +208,7 @@ async function runSpawnAgentInner(opts: {
     // Child owns its onStep; do not inherit parent's nested sink on toolConfig.
     nestedStepSink: undefined,
     webSearchTaskState: { externalCount: 0 },
+    keepInlineTurns: preset.keepInlineTurns ?? parentConfig.keepInlineTurns,
   };
 
   if (parentConfig.llmPluginConfig) {

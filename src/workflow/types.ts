@@ -14,6 +14,11 @@ export interface WorkflowRoleConfig {
   /** Optional api_profiles key; inherits main agent profile when omitted. */
   api_profile?: string;
   max_turns?: number;
+  /**
+   * Override pointerize keep window for this role (SPEC_POINTERIZE_SCOPE).
+   * Useful for multi-criteria review nodes that re-read large tool results.
+   */
+  keep_inline_turns?: number;
   /** Optional shell policy (merged over spawn_policy.shell when preset has shell). */
   shell?: SpawnShellPolicy;
   description?: string;
@@ -115,6 +120,8 @@ export interface ResolvedWorkflowRole {
   model?: string;
   api_profile?: string;
   maxTurns?: number;
+  /** SPEC_POINTERIZE_SCOPE: role-level keep window override. */
+  keepInlineTurns?: number;
   /** Applied via spawnShellPolicy + spawnDepth when role runs. */
   shellPolicy?: SpawnShellPolicy;
 }

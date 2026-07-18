@@ -30,6 +30,7 @@ export function resolveWorkflowRole(
       max_turns: config.max_turns,
       api_profile: config.api_profile,
       model: config.model,
+      keep_inline_turns: config.keep_inline_turns,
       shell: config.shell,
       description: config.description,
     },
@@ -49,6 +50,7 @@ export function resolveWorkflowRole(
     model: profile.model,
     api_profile: profile.api_profile,
     maxTurns: profile.maxTurns,
+    keepInlineTurns: profile.keepInlineTurns,
     shellPolicy: profile.shellPolicy,
   };
 }

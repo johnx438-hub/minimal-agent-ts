@@ -6,5 +6,6 @@ export function runPointerizeStage(ctx: TurnContext): number {
   return materializePriorTurnTools(ctx.messages, ctx.turn, {
     keepInlineTurns: ctx.keepInlineTurns ?? 2,
     previewPolicy: ctx.previewPolicy,
+    pointerizePolicy: ctx.pointerizePolicy,
   });
 }

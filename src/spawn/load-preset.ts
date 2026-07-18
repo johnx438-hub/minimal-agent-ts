@@ -19,6 +19,7 @@ export function resolveSpawnPreset(
     systemPrompt: profile.systemPrompt,
     tools: profile.tools,
     maxTurns: profile.maxTurns,
+    keepInlineTurns: profile.keepInlineTurns,
     shellPolicy: profile.shellPolicy,
   };
 }

@@ -26,9 +26,21 @@ export interface McpPolicy {
 
 export type PreviewMode = 'generic' | 'smart';
 
+/** Per-tool pointerize override (SPEC_POINTERIZE_SCOPE Phase 1). */
+export type PointerizeToolMode = 'default' | 'never';
+
+export interface PointerizeToolOverride {
+  /** never = do not pointerize this tool; default = use POINTER_RULES + keep window. */
+  mode?: PointerizeToolMode;
+  /** Override global keep_inline_turns for this tool only. */
+  keep_inline_turns?: number;
+}
+
 export interface PointerizePolicy {
   /** Recent tool turns kept inline (not pointerized). Default 2. */
   keep_inline_turns?: number;
+  /** Per-tool mode / keep window (e.g. recall_query never). */
+  tool_overrides?: Record<string, PointerizeToolOverride>;
   /** Min preview budget chars when pointerizing. */
   preview_min_chars?: number;
   /** Max preview budget chars on pointer cards. */
@@ -162,6 +174,11 @@ export interface SpawnPresetConfig {
   /** G1-c: optional LLM profile + model override for this preset. */
   api_profile?: string;
   model?: string;
+  /**
+   * Override pointerize keep window for this child agent (SPEC_POINTERIZE_SCOPE).
+   * Reviewer-style presets often want a higher value than the main agent.
+   */
+  keep_inline_turns?: number;
   /** C5: per-preset shell policy (merged over spawn_policy.shell). */
   shell?: SpawnShellPolicy;
 }

@@ -133,6 +133,7 @@ function roleToSpawnPreset(role: ResolvedWorkflowRole): ResolvedSpawnPreset {
     systemPrompt: role.systemPrompt,
     tools: role.tools,
     maxTurns: role.maxTurns ?? 15,
+    keepInlineTurns: role.keepInlineTurns,
     shellPolicy: role.shellPolicy,
   };
 }
@@ -294,6 +295,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<WorkflowRes
       spawnDepth: Math.max(1, config.spawnDepth ?? 0),
       spawnShellPolicy: role.shellPolicy,
       workflowRole: workflowRoleRuntime,
+      keepInlineTurns: role.keepInlineTurns ?? config.keepInlineTurns,
     };
 
     if (config.llmPluginConfig) {

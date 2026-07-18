@@ -1,4 +1,5 @@
 import type { PreviewPolicy } from '../action-preview.js';
+import type { PointerizePolicy } from '../plugins/types.js';
 import type { BudgetConfig } from './budget.js';
 import type { ChatMessage, SessionFile } from '../types.js';
 
@@ -10,6 +11,7 @@ export interface TurnContext {
   userTask: ChatMessage;
   session?: SessionFile;
   keepInlineTurns?: number;
+  pointerizePolicy?: PointerizePolicy;
   previewPolicy?: PreviewPolicy;
 }
 

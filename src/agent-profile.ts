@@ -32,6 +32,8 @@ export interface AgentProfileInput {
   max_turns?: number;
   api_profile?: string;
   model?: string;
+  /** SPEC_POINTERIZE_SCOPE Phase 1. */
+  keep_inline_turns?: number;
   shell?: SpawnShellPolicy;
   description?: string;
 }
@@ -57,6 +59,7 @@ export interface ResolvedAgentProfile {
   maxTurns: number;
   api_profile?: string;
   model?: string;
+  keepInlineTurns?: number;
   shellPolicy?: SpawnShellPolicy;
 }
 
@@ -221,6 +224,7 @@ export function resolveSpawnPresetConfig(
   let maxTurns = config.max_turns;
   let apiProfile = config.api_profile;
   let model = config.model;
+  let keepInlineTurns = config.keep_inline_turns;
 
   if (meta.tools) {
     tools = parseToolsList(meta.tools);
@@ -231,6 +235,10 @@ export function resolveSpawnPresetConfig(
   }
   if (!apiProfile && meta.api_profile) apiProfile = meta.api_profile;
   if (!model && meta.model) model = meta.model;
+  if (keepInlineTurns === undefined && meta.keep_inline_turns) {
+    const n = Number(meta.keep_inline_turns);
+    if (Number.isFinite(n) && n >= 0) keepInlineTurns = Math.floor(n);
+  }
 
   if (!body) {
     body = `你是 spawn 预设「${config.name}」子 Agent。Complete the delegated task and reply concisely.`;
@@ -249,6 +257,10 @@ export function resolveSpawnPresetConfig(
     maxTurns: clampProfileMaxTurns(maxTurns, policy),
     api_profile: apiProfile,
     model,
+    keepInlineTurns:
+      keepInlineTurns !== undefined && Number.isFinite(keepInlineTurns)
+        ? Math.max(0, Math.floor(keepInlineTurns))
+        : undefined,
     shellPolicy: mergeSpawnShellPolicy(policy?.shell, config.shell),
   };
 }
@@ -275,6 +287,7 @@ export function resolveAgentProfile(
   let maxTurns = input.max_turns;
   let apiProfile = input.api_profile;
   let model = input.model;
+  let keepInlineTurns = input.keep_inline_turns;
   let description = input.description?.trim();
   let shellFromPreset: SpawnShellPolicy | undefined;
   let shellFromRole = input.shell;
@@ -291,6 +304,7 @@ export function resolveAgentProfile(
       if (maxTurns === undefined) maxTurns = base.maxTurns;
       if (!apiProfile) apiProfile = base.api_profile;
       if (!model) model = base.model;
+      if (keepInlineTurns === undefined) keepInlineTurns = base.keepInlineTurns;
       if (!description) description = base.description;
       shellFromPreset = base.shellPolicy;
     } else {
@@ -378,6 +392,10 @@ export function resolveAgentProfile(
     maxTurns: clampProfileMaxTurns(maxTurns, policy),
     api_profile: apiProfile,
     model,
+    keepInlineTurns:
+      keepInlineTurns !== undefined && Number.isFinite(keepInlineTurns)
+        ? Math.max(0, Math.floor(Number(keepInlineTurns)))
+        : undefined,
     shellPolicy,
   };
 }

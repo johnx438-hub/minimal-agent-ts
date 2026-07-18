@@ -13,7 +13,8 @@
     "reviewer": {
       "prompt_file": "roles/reviewer.md",
       "tools": ["read_file", "grep_search", "diff_file", "recall_query", "list_files"],
-      "max_turns": 50
+      "max_turns": 50,
+      "keep_inline_turns": 10
     }
   },
   "flow": [

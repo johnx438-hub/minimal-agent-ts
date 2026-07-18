@@ -232,6 +232,7 @@ export function buildAgentConfig(opts: BuildConfigOptions): {
       hardCeiling: Number(env('LOOP_HARD_CEILING', '200')),
     },
     keepInlineTurns,
+    pointerizePolicy: pluginConfig.pointerize_policy,
     recallAutoFullMaxChars,
     previewPolicy,
     spawnPolicy: pluginConfig.spawn_policy,

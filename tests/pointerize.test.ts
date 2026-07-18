@@ -41,11 +41,22 @@ describe('shouldPointerize', () => {
     assert.equal(shouldPointerize('edit_file', `ok: edited ${huge}`), false);
   });
 
-  it('never pointerizes write_file, edit_file, apply_patch, or invoke_skill', () => {
+  it('never pointerizes write_file, edit_file, apply_patch, invoke_skill, or recall_query', () => {
     assert.equal(shouldPointerize('write_file', chars(5000)), false);
     assert.equal(shouldPointerize('edit_file', lines(100)), false);
     assert.equal(shouldPointerize('apply_patch', chars(5000)), false);
     assert.equal(shouldPointerize('invoke_skill', chars(20_000)), false);
+    // SPEC_POINTERIZE_SCOPE: recall is recovery path — never card by default
+    assert.equal(shouldPointerize('recall_query', chars(20_000)), false);
+  });
+
+  it('honors tool_overrides.mode=never', () => {
+    assert.equal(
+      shouldPointerize('read_file', chars(5000), {
+        tool_overrides: { read_file: { mode: 'never' } },
+      }),
+      false,
+    );
   });
 
   it('uses 400-char default for unknown tools', () => {
@@ -137,6 +148,62 @@ describe('materializePriorTurnTools', () => {
 
     materializePriorTurnTools([msg], 4, { keepInlineTurns: 2 });
 
+    assert.equal(msg.pointerized, undefined);
+    assert.equal(msg.content, body);
+  });
+
+  it('uses per-tool keep_inline_turns override for read_file', () => {
+    setupWorkspace();
+    const body = chars(800);
+    saveLargeReadAction('action_ptr_keep', body);
+
+    const msg: ChatMessage = {
+      role: 'tool',
+      content: body,
+      action_id: 'action_ptr_keep',
+      turn: 1,
+    };
+
+    // global keep=2 would pointerize turn 1 at beforeTurn=5; tool keep=6 keeps it
+    materializePriorTurnTools([msg], 5, {
+      keepInlineTurns: 2,
+      pointerizePolicy: {
+        tool_overrides: { read_file: { keep_inline_turns: 6 } },
+      },
+    });
+    assert.equal(msg.pointerized, undefined);
+    assert.equal(msg.content, body);
+
+    materializePriorTurnTools([msg], 10, {
+      keepInlineTurns: 2,
+      pointerizePolicy: {
+        tool_overrides: { read_file: { keep_inline_turns: 6 } },
+      },
+    });
+    assert.equal(msg.pointerized, true);
+  });
+
+  it('does not pointerize large recall_query results', () => {
+    setupWorkspace();
+    const body = chars(5000);
+    saveAction(
+      buildActionBlock({
+        action_id: 'action_recall_big',
+        task_id: 'task_ptr',
+        session_id: 'session_ptr',
+        turn_number: 1,
+        tool_name: 'recall_query',
+        args_json: '{}',
+        result_text: body,
+      }),
+    );
+    const msg: ChatMessage = {
+      role: 'tool',
+      content: body,
+      action_id: 'action_recall_big',
+      turn: 1,
+    };
+    materializePriorTurnTools([msg], 20, { keepInlineTurns: 2 });
     assert.equal(msg.pointerized, undefined);
     assert.equal(msg.content, body);
   });

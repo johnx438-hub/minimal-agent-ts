@@ -351,6 +351,10 @@
   "loaded_skills": ["memory"],
   "pointerize_policy": {
     "keep_inline_turns": 2,
+    "tool_overrides": {
+      "recall_query": { "mode": "never" },
+      "read_file": { "keep_inline_turns": 6 }
+    },
     "preview_min_chars": 120,
     "preview_max_chars": 480,
     "preview_ratio": 0.04,
