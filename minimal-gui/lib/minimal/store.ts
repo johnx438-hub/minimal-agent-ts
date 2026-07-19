@@ -139,6 +139,16 @@ function appendAssistantDelta(
   return next;
 }
 
+/** Walk past trailing tool/system rows to a still-running assistant (same turn). */
+function findLastRunningAssistantIndex(messages: MinimalMessage[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!;
+    if (m.role === "assistant" && m.status === "running") return i;
+    if (m.role === "user") return -1;
+  }
+  return -1;
+}
+
 /**
  * Close a streaming assistant, or append a non-stream final.
  *
@@ -172,8 +182,23 @@ function finalizeAssistant(
     return next;
   }
 
-  // run_end / collapse path with no new body: do not invent a second message
-  if (!hasExplicit) return next;
+  // run_end with tools/system after the assistant: seal without inventing a new bubble
+  if (!hasExplicit) {
+    const ai = findLastRunningAssistantIndex(next);
+    if (ai >= 0) {
+      const target = next[ai]!;
+      const projected = projectAssistantFinal(joinContent(target));
+      next[ai] = {
+        ...target,
+        content: projected.content,
+        contentChunks: undefined,
+        meta: projected.meta ?? target.meta,
+        viewKind: projected.viewKind ?? target.viewKind,
+        status: "complete",
+      };
+    }
+    return next;
+  }
 
   const projected = projectAssistantFinal(content!);
   if (!projected.content) return next;

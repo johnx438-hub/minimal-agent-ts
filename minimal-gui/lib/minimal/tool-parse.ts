@@ -2,14 +2,16 @@
  * Infer real tool names / paths from bridge previews when tool_name is missing or "tool".
  */
 
+/** File / content mutations — write-card preview (path + clip). */
 const MUTATING = new Set([
   "write_file",
   "edit_file",
   "apply_patch",
   "office_write",
-  "run_shell",
-  "test_run",
 ]);
+
+/** Shell / test runners — shell-card preview (longer output clip). */
+const SHELLISH = new Set(["run_shell", "test_run"]);
 
 const READISH = new Set([
   "read_file",
@@ -25,10 +27,13 @@ export type ToolSkin = "read" | "write" | "shell" | "generic";
 
 export function toolSkin(toolName: string): ToolSkin {
   const n = toolName.toLowerCase();
+  // Shell before write: names like run_shell must not hit write heuristics.
+  if (SHELLISH.has(n) || n.includes("shell")) {
+    return "shell";
+  }
   if (MUTATING.has(n) || n.includes("write") || n.includes("edit") || n.includes("patch")) {
     return "write";
   }
-  if (n === "run_shell" || n.includes("shell")) return "shell";
   if (READISH.has(n) || n.includes("read") || n.includes("grep") || n.includes("list")) {
     return "read";
   }
