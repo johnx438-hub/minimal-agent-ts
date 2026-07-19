@@ -43,21 +43,35 @@ PROJECT_SUMMARY.md
 /*-summary.md
 /*-report.md
 /workflow-module-analysis.md
+/Agent.md
+/specs/
+
+# Local / experimental roles & workflows (not product defaults)
+/roles/summarizer.md
+/workflows/build-dashboard.json
+/workflows/dag-review-kimi.json
 
 # Zvec / local index artifacts (if created outside .sessions)
 *.zvec
 agent_memory.zvec
 
-# Skills: ship thin SKILL.md only; full vendor trees (e.g. cli-web-search Cargo)
-# stay local — install / clone under skills/ without polluting git status.
-# skills/*/** re-ignores nested paths so a skill's own .gitignore cannot
-# re-include Cargo.lock / src / etc.
+# Skills: only track curated thin SKILL.md (+ cloak helper); everything else local
 skills/**
-!skills/*/
-!skills/*/SKILL.md
-skills/*/**
-!skills/*/SKILL.md
+!skills/cli-web-search/
+!skills/cli-web-search/SKILL.md
+!skills/cloak-fetch/
+!skills/cloak-fetch/SKILL.md
 !skills/cloak-fetch/cloak_fetch.py
+!skills/context-design/
+!skills/context-design/SKILL.md
+!skills/memory/
+!skills/memory/SKILL.md
+!skills/office-layout/
+!skills/office-layout/SKILL.md
+!skills/opencli-usage/
+!skills/opencli-usage/SKILL.md
+!skills/workflow-design/
+!skills/workflow-design/SKILL.md
 
 # User-level memory (personal — keep local)
 .agent/memory/
