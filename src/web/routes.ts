@@ -90,6 +90,30 @@ function broadcastRunState(
   hub.broadcast(frame);
 }
 
+/**
+ * One-shot arm: clear runtime + notify Web UI before a user task/workflow run.
+ * TUI clears uiState at the same moment; without this, GUI keeps yellow "armed".
+ */
+function consumeArmedWorkflow(
+  runtime: AgentRuntime,
+  hub: WsHub,
+  explicitWorkflow?: string,
+): string | undefined {
+  let workflow =
+    typeof explicitWorkflow === 'string' && explicitWorkflow.trim()
+      ? explicitWorkflow.trim()
+      : undefined;
+  const previouslyArmed = runtime.getArmedWorkflow();
+  if (!workflow && previouslyArmed) {
+    workflow = previouslyArmed;
+  }
+  if (previouslyArmed || workflow) {
+    runtime.armWorkflow(null);
+    broadcastArmed(hub, runtime, null);
+  }
+  return workflow;
+}
+
 export async function handleApiRoute(
   req: IncomingMessage,
   res: ServerResponse,
@@ -421,11 +445,26 @@ export async function handleApiRoute(
         sendJson(res, 409, { error: 'agent_running', message: result.message });
         return true;
       }
+      const explicitWf =
+        result.action.type === 'workflow_run' ? result.action.path : undefined;
+      const workflow = consumeArmedWorkflow(
+        ctx.runtime,
+        ctx.hub,
+        explicitWf,
+      );
       broadcastRunState(ctx.hub, 'running');
-      const runPromise =
-        result.action.type === 'workflow_run'
-          ? ctx.runtime.runWorkflowTask(result.action.task, result.action.path)
-          : ctx.runtime.runTask(result.action.text);
+      const runPromise = workflow
+        ? ctx.runtime.runWorkflowTask(
+            result.action.type === 'workflow_run'
+              ? result.action.task
+              : result.action.text,
+            workflow,
+          )
+        : ctx.runtime.runTask(
+            result.action.type === 'workflow_run'
+              ? result.action.task
+              : result.action.text,
+          );
       void runPromise
         .then(() => broadcastRunState(ctx.hub, 'idle'))
         .catch((err: unknown) => {
@@ -878,16 +917,6 @@ export async function handleApiRoute(
       return true;
     }
 
-    let workflow =
-      typeof body.workflow === 'string' && body.workflow.trim()
-        ? body.workflow.trim()
-        : undefined;
-    // TUI parity: armed workflow applies when body omits workflow.
-    if (!workflow) {
-      const armed = ctx.runtime.getArmedWorkflow();
-      if (armed) workflow = armed;
-    }
-
     const sessionId =
       typeof body.session_id === 'string' && body.session_id.trim()
         ? body.session_id.trim()
@@ -898,6 +927,13 @@ export async function handleApiRoute(
         return true;
       }
     }
+
+    // TUI parity: pull armed workflow, one-shot clear + WS notify (disarm GUI).
+    const workflow = consumeArmedWorkflow(
+      ctx.runtime,
+      ctx.hub,
+      typeof body.workflow === 'string' ? body.workflow : undefined,
+    );
 
     // Fire-and-forget: stream goes over WS via MessageBridge + event-bridge.
     // run_state also comes from RuntimeEvent run_start/run_end (W2).

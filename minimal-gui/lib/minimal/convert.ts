@@ -8,7 +8,6 @@ import {
 import {
   extractCleanAnswer,
   formatArtifactMarkdown,
-  formatPendingCardMarkdown,
   looksLikeArtifact,
   parseAgentSummary,
   projectUserDisplay,
@@ -27,6 +26,7 @@ import {
   splitToolUiDisplay,
   toolSkin,
 } from "./tool-parse";
+import { shouldAutoExpandTool, toolDisplayTier } from "./tool-tiers";
 import type {
   MinimalMessage,
   SessionChatMessageDto,
@@ -254,7 +254,7 @@ export function coalesceToolsIntoAssistants(
   return result;
 }
 
-/** After history load: tools after last user stay expanded. */
+/** Expand policy aligned with TUI tiers (rich / shell_fold / breadcrumb / spawn). */
 export function applyToolExpandPolicy(
   messages: MinimalMessage[],
 ): MinimalMessage[] {
@@ -265,15 +265,15 @@ export function applyToolExpandPolicy(
 
   return messages.map((m, i) => {
     if (m.role === "tool") {
-      // spawn_* / code_review: never auto-expand — child reports can be huge
-      if (isSpawnDelegationTool(m.toolName)) {
-        return { ...m, toolExpanded: false };
-      }
       const inLatestTurn = lastUserIdx >= 0 && i > lastUserIdx;
       return {
         ...m,
-        toolExpanded:
-          m.status === "running" ? true : inLatestTurn || m.toolExpanded === true,
+        toolExpanded: shouldAutoExpandTool({
+          toolName: m.toolName,
+          content: m.content,
+          status: m.status,
+          inLatestTurn,
+        }),
       };
     }
     if (m.role === "assistant" && m.toolParts?.length) {
@@ -282,11 +282,12 @@ export function applyToolExpandPolicy(
         ...m,
         toolParts: m.toolParts.map((p) => ({
           ...p,
-          toolExpanded: isSpawnDelegationTool(p.toolName)
-            ? false
-            : p.status === "running"
-              ? true
-              : inLatestTurn || p.toolExpanded === true,
+          toolExpanded: shouldAutoExpandTool({
+            toolName: p.toolName,
+            content: p.content,
+            status: p.status,
+            inLatestTurn,
+          }),
         })),
       };
     }
@@ -441,21 +442,29 @@ function formatToolResultBody(part: ToolPart): string {
 }
 
 function toolPartToContent(part: ToolPart) {
-  const expand =
-    part.toolExpanded === true || part.status === "running";
   const running = part.status === "running";
   const resolved = resolveToolDisplayBody(part);
   const skin = part.skin ?? toolSkin(part.toolName);
+  const tier = toolDisplayTier(part.toolName);
   const spawnLabel =
     skin === "spawn" || isSpawnDelegationTool(part.toolName)
       ? inferSpawnPresetLabel(part.content, part.argsJson)
       : undefined;
   const path = resolved.path ?? part.path ?? spawnLabel;
-  // Spawn reports default collapsed even mid-turn
+  // Prefer explicit part.toolExpanded; otherwise tier policy
   const wantExpand =
-    isSpawnDelegationTool(part.toolName) || skin === "spawn"
-      ? false
-      : expand;
+    part.toolExpanded === true
+      ? true
+      : part.toolExpanded === false
+        ? false
+        : shouldAutoExpandTool({
+            toolName: part.toolName,
+            content: part.content,
+            status: part.status,
+            inLatestTurn: true,
+          });
+  // Breadcrumb tools: keep trigger-only (empty/minimal body unless expanded/failed)
+  const breadcrumbOnly = tier === "breadcrumb" && !wantExpand;
   let argsObj: Record<string, unknown> = {};
   if (part.argsJson) {
     try {
@@ -487,7 +496,8 @@ function toolPartToContent(part: ToolPart) {
     args: argsObj,
     argsText,
     result: {
-      preview: formatToolResultBody(part),
+      // Breadcrumb (read/list/grep…): trigger only unless expanded/failed
+      preview: breadcrumbOnly ? "" : formatToolResultBody(part),
       skin,
       path,
       kind: resolved.kind,
@@ -505,8 +515,8 @@ function buildAssistantDisplayText(message: MinimalMessage): string {
   if (message.viewKind === "artifact" || message.meta?.artifact) {
     return formatArtifactMarkdown(body);
   }
-  const card = formatPendingCardMarkdown(message.meta ?? {});
-  if (card) return `${body.trimEnd()}${card}`;
+  // Pending / current_work Recap lives in the left session list only —
+  // do not append 📋 cards into the message body (avoids history/sync flicker).
   return body;
 }
 

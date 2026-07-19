@@ -60,6 +60,7 @@ import {
 } from "react";
 import { pickWelcomeGreeting } from "@/content/greetings";
 import { POST_RUN_STICKY_HOLD_MS } from "@/lib/minimal/post-run-sync";
+import { deriveRunActivity } from "@/lib/minimal/run-phase";
 import { useMinimalStore } from "@/lib/minimal/store";
 
 const VIEWPORT_SEL = '[data-slot="aui_thread-viewport"]';
@@ -85,6 +86,29 @@ function isNearBottom(el: HTMLElement, threshold = NEAR_BOTTOM_PX): boolean {
  * - content resize while sticky+running → stay bottom (fixes multi-tool jump-up)
  * - user wheel up → sticky off until near-bottom again or next send
  */
+/** Spinner + live breadcrumb (what the main agent is doing right now). */
+const RunningStatusRow: FC = () => {
+  const messages = useMinimalStore((s) => s.messages);
+  const isRunning = useMinimalStore((s) => s.isRunning);
+  const label = useMemo(
+    () => deriveRunActivity(messages, isRunning).label ?? "琢磨一下…",
+    [messages, isRunning],
+  );
+
+  return (
+    <div
+      className="text-muted-foreground flex items-center gap-2 px-2 py-2"
+      aria-label={label}
+      role="status"
+    >
+      <Loader2Icon className="size-4 shrink-0 animate-spin opacity-70" />
+      <span className="min-w-0 flex-1 truncate font-mono text-[11px] opacity-80">
+        {label}
+      </span>
+    </div>
+  );
+};
+
 const StickToBottomOnSend: FC = () => {
   const isRunning = useAuiState((s) => s.thread.isRunning);
   const messageCount = useAuiState((s) => s.thread.messages.length);
@@ -308,13 +332,7 @@ const ThreadRoot: FC<{ isEmpty: boolean }> = ({ isEmpty }) => {
             </ThreadPrimitive.Messages>
             {/* Silent spinner while run is active — no text */}
             <AuiIf condition={(s) => s.thread.isRunning}>
-              <div
-                className="text-muted-foreground flex items-center gap-2 px-2 py-2"
-                aria-label="生成中"
-                role="status"
-              >
-                <Loader2Icon className="size-4 animate-spin opacity-70" />
-              </div>
+              <RunningStatusRow />
             </AuiIf>
           </div>
 

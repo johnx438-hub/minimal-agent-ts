@@ -14,7 +14,8 @@ import {
   preserveLiveMessageIds,
   projectAssistantFinal,
 } from "./convert";
-import { inferToolName, isSpawnDelegationTool } from "./tool-parse";
+import { inferToolName } from "./tool-parse";
+import { shouldAutoExpandTool } from "./tool-tiers";
 import type {
   ActiveSpawn,
   ConnectionState,
@@ -106,8 +107,15 @@ export interface MinimalStore {
   clearWorkflowSteps: () => void;
   refreshCatalog: () => Promise<void>;
   loadHistory: (sessionId?: string) => Promise<void>;
-  /** Catalog + history (sidebar list + chat) — not LLM reload. */
+  /** Catalog + history — manual / switch only; not auto on run_end. */
   syncSessionView: () => Promise<void>;
+  /** Sidebar list only (session Recap / task_count) — does not touch chat body. */
+  refreshSessionList: () => Promise<void>;
+  /** Patch current session card Recap from live final meta. */
+  patchSessionRecap: (meta: {
+    current_work?: string;
+    pending_tasks?: string[];
+  }) => void;
   respondWorkflowConfirm: (approved: boolean) => Promise<void>;
   refreshCapabilities: () => Promise<void>;
   setCapability: (
@@ -156,6 +164,47 @@ function findLastRunningAssistantIndex(messages: MinimalMessage[]): number {
     if (m.role === "user") return -1;
   }
   return -1;
+}
+
+function lastAssistantMeta(
+  messages: MinimalMessage[],
+): { current_work?: string; pending_tasks?: string[] } | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!;
+    if (m.role === "assistant" && m.meta) {
+      const work = m.meta.current_work?.trim();
+      const pending = m.meta.pending_tasks?.filter((t) => String(t).trim());
+      if (work || pending?.length) {
+        return {
+          current_work: work || undefined,
+          pending_tasks: pending?.map(String),
+        };
+      }
+    }
+  }
+  return undefined;
+}
+
+function applyRecapToSessions(
+  sessions: SessionMeta[],
+  sessionId: string | null,
+  meta: { current_work?: string; pending_tasks?: string[] } | undefined,
+): SessionMeta[] {
+  if (!sessionId || !meta) return sessions;
+  const work = meta.current_work?.trim();
+  const pending = meta.pending_tasks?.filter((t) => String(t).trim()) ?? [];
+  if (!work && !pending.length) return sessions;
+  const preview = work || pending[0] || undefined;
+  return sessions.map((s) =>
+    s.session_id === sessionId
+      ? {
+          ...s,
+          preview,
+          current_work: work || s.current_work,
+          pending_tasks: pending.length ? pending : s.pending_tasks,
+        }
+      : s,
+  );
 }
 
 /**
@@ -333,11 +382,24 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
                 finalizeAssistant(messages),
               );
             }
+            const sid = frame.session_id ?? s.sessionId;
+            // One-shot arm: run start consumes it (server also broadcasts null).
+            const armedWorkflow = running
+              ? null
+              : s.armedWorkflow;
             return {
               isRunning: running,
-              sessionId: frame.session_id ?? s.sessionId,
+              sessionId: sid,
               model: frame.model ?? s.model,
               messages,
+              armedWorkflow,
+              sessions: ending
+                ? applyRecapToSessions(
+                    s.sessions,
+                    sid,
+                    lastAssistantMeta(messages),
+                  )
+                : s.sessions,
               // Gate only lives while a workflow is waiting — clear on terminal states
               workflowConfirm: ending ? null : s.workflowConfirm,
               workflowConfirmBusy: ending ? false : s.workflowConfirmBusy,
@@ -396,8 +458,11 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
           return;
         }
         case "workflow_armed": {
+          const name = frame.name?.trim() || null;
+          const path = frame.path?.trim() || null;
+          // Empty path+name = disarmed (server one-shot consume / explicit off).
           set({
-            armedWorkflow: frame.name ?? frame.path,
+            armedWorkflow: name || path || null,
           });
           return;
         }
@@ -414,6 +479,8 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
               },
             ],
             isRunning: false,
+            armedWorkflow: null,
+            workflowSteps: [],
           }));
           return;
         }
@@ -678,9 +745,14 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
         return;
       }
       if (content != null && content !== "") {
-        set((s) => ({
-          messages: finalizeAssistant(s.messages, content),
-        }));
+        set((s) => {
+          const messages = finalizeAssistant(s.messages, content);
+          const recap = lastAssistantMeta(messages);
+          return {
+            messages,
+            sessions: applyRecapToSessions(s.sessions, s.sessionId, recap),
+          };
+        });
       }
       return;
     }
@@ -689,25 +761,39 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
       // Live tools open while run is active; real name via inferToolName.
       const name = inferToolName(toolName, content);
       const argsJson = typeof sm.args === "string" ? sm.args : undefined;
-      // spawn_* dumps can be huge — keep collapsed in the main timeline
-      const expand = !isSpawnDelegationTool(name);
-      set((s) => ({
-        messages: [
-          ...s.messages,
-          {
-            id: newMsgId("t"),
-            role: "tool" as const,
-            content: content ?? "",
-            toolName: name,
-            callId,
-            argsJson,
-            status: s.isRunning ? ("running" as const) : ("complete" as const),
-            source: "live" as const,
-            viewKind: "tool" as const,
-            toolExpanded: expand,
-          },
-        ],
-      }));
+      // Bridge only emits tool_result (already finished) — never keep as running.
+      const status = "complete" as const;
+      const expand = shouldAutoExpandTool({
+        toolName: name,
+        content: content ?? "",
+        status,
+        inLatestTurn: true,
+      });
+      set((s) => {
+        // Seal any prior "running" tools so status strip won't stick on them.
+        const sealed = s.messages.map((m) =>
+          m.role === "tool" && m.status === "running"
+            ? { ...m, status: "complete" as const }
+            : m,
+        );
+        return {
+          messages: [
+            ...sealed,
+            {
+              id: newMsgId("t"),
+              role: "tool" as const,
+              content: content ?? "",
+              toolName: name,
+              callId,
+              argsJson,
+              status,
+              source: "live" as const,
+              viewKind: "tool" as const,
+              toolExpanded: expand,
+            },
+          ],
+        };
+      });
       return;
     }
 
@@ -1211,10 +1297,13 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
         loadedSkills: cat.loaded_skills ?? [],
         profile: cat.llm?.profile ?? get().profile,
         model: cat.llm?.model ?? get().model,
-        armedWorkflow:
-          cat.llm?.armed_workflow ??
-          cat.armed_workflow ??
-          get().armedWorkflow,
+        // null must clear local arm; ?? would treat null as missing and stick.
+        armedWorkflow: (() => {
+          const llmArm = cat.llm?.armed_workflow;
+          if (llmArm !== undefined) return llmArm;
+          if (cat.armed_workflow !== undefined) return cat.armed_workflow;
+          return get().armedWorkflow;
+        })(),
       });
     } catch {
       /* offline / no token */
@@ -1225,11 +1314,21 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
         sessions?: SessionMeta[];
         current?: string | null;
       }>("/v1/sessions", { token });
+      const prev = get().sessions;
+      const prevById = new Map(prev.map((s) => [s.session_id, s]));
       set({
-        sessions: (sess.sessions ?? []).map((s) => ({
-          ...s,
-          preview: s.preview ?? s.last_user_preview,
-        })),
+        sessions: (sess.sessions ?? []).map((s) => {
+          const old = prevById.get(s.session_id);
+          const preview =
+            s.preview ?? s.last_user_preview ?? old?.preview;
+          return {
+            ...s,
+            preview,
+            // Keep live Recap if catalog row is thinner
+            current_work: old?.current_work,
+            pending_tasks: old?.pending_tasks,
+          };
+        }),
         sessionId: sess.current ?? get().sessionId,
       });
     } catch {
@@ -1286,13 +1385,23 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
   },
 
   async syncSessionView() {
-    // Catalog (session list / preview) without trampling tool-card bodies first.
+    // Manual full sync: list + optional body reload (not used on run_end).
     await get().refreshCatalog();
     try {
       await get().loadHistory();
     } catch {
       /* empty / offline ok */
     }
+  },
+
+  async refreshSessionList() {
+    await get().refreshCatalog();
+  },
+
+  patchSessionRecap(meta) {
+    set((s) => ({
+      sessions: applyRecapToSessions(s.sessions, s.sessionId, meta),
+    }));
   },
 
   async refreshCapabilities() {

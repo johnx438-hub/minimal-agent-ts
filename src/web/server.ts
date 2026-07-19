@@ -23,7 +23,7 @@ import {
   safeJoin,
   sendFile,
 } from './static.js';
-import { llmStatus } from '../slash/index.js';
+import { broadcastArmed, llmStatus } from '../slash/index.js';
 import { subscribeJobUi } from '../spawn/job-ui-notify.js';
 import { attachRuntimeEventBridge, snapshotJobs } from './event-bridge.js';
 import type { WebHelloFrame, WebUiHandle, WebUiServerOptions } from './types.js';
@@ -264,8 +264,15 @@ async function handleWsClientMessage(
   if (msg.type === 'task') {
     const text = String(msg.text ?? '').trim();
     if (!text || runtime.isRunning()) return;
+    // One-shot arm: pull + clear + notify Web UI (TUI parity).
+    let workflow = msg.workflow?.trim() || undefined;
+    const previouslyArmed = runtime.getArmedWorkflow();
+    if (!workflow && previouslyArmed) workflow = previouslyArmed;
+    if (previouslyArmed || workflow) {
+      runtime.armWorkflow(null);
+      broadcastArmed(hub, runtime, null);
+    }
     hub.broadcast({ type: 'run_state', state: 'running' });
-    const workflow = msg.workflow?.trim();
     try {
       if (workflow) await runtime.runWorkflowTask(text, workflow);
       else await runtime.runTask(text);

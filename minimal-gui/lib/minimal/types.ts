@@ -97,6 +97,9 @@ export interface SessionMeta {
   /** Secondary line: current_work / pending (not raw task title). */
   preview?: string;
   last_user_preview?: string;
+  /** Live Recap fields (sidebar only — not driven by loadHistory body rewrite). */
+  current_work?: string;
+  pending_tasks?: string[];
 }
 
 /** Process-level shell/web capabilities (Settings S2). */

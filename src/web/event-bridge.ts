@@ -79,6 +79,12 @@ export function attachRuntimeEventBridge(
           role: event.role,
           round: event.round,
         });
+        // Parent session resumes normal chat — arm must not stick in Web UI.
+        hub.broadcast({
+          type: 'workflow_armed',
+          path: runtime.getArmedWorkflow(),
+          name: null,
+        });
         break;
       }
       case 'job_list': {

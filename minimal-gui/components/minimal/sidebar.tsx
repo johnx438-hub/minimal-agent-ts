@@ -80,10 +80,23 @@ export function MinimalSidebar() {
             {sessions.map((s) => {
               const active = s.session_id === sessionId;
               const title = s.note?.trim() || shortId(s.session_id);
+              const work = s.current_work?.trim();
+              const pending = s.pending_tasks?.filter((t) => String(t).trim()) ?? [];
+              const recapLines: string[] = [];
+              if (work) recapLines.push(`进展 · ${work}`);
+              if (pending.length) {
+                recapLines.push(
+                  pending.length === 1
+                    ? `待办 · ${pending[0]}`
+                    : `待办 · ${pending[0]}（+${pending.length - 1}）`,
+                );
+              }
               const secondary =
-                s.preview?.trim() ||
-                s.last_user_preview?.trim() ||
-                (s.task_count != null ? `${s.task_count} tasks` : "");
+                recapLines.length > 0
+                  ? recapLines.join("\n")
+                  : s.preview?.trim() ||
+                    s.last_user_preview?.trim() ||
+                    (s.task_count != null ? `${s.task_count} 任务` : "");
               const editing = editingNoteId === s.session_id;
               return (
                 <li key={s.session_id} className="group relative">
@@ -145,7 +158,7 @@ export function MinimalSidebar() {
                         <div className="truncate font-medium">{title}</div>
                         {secondary && (
                           <div
-                            className="mt-0.5 line-clamp-2 text-[10px] leading-snug opacity-60"
+                            className="mt-0.5 line-clamp-3 whitespace-pre-line text-[10px] leading-snug opacity-60"
                             title={secondary}
                           >
                             {secondary}
@@ -153,7 +166,7 @@ export function MinimalSidebar() {
                         )}
                         <div className="mt-0.5 font-mono text-[10px] opacity-40">
                           {shortId(s.session_id)}
-                          {s.task_count != null ? ` · ${s.task_count}t` : ""}
+                          {s.task_count != null ? ` · ${s.task_count} 任务` : ""}
                         </div>
                       </button>
                       <div className="mt-1 flex gap-2 opacity-0 transition group-hover:opacity-100">

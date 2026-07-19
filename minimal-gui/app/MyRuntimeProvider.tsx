@@ -25,8 +25,9 @@ import {
   textFromAppendContent,
 } from "@/lib/minimal/convert";
 import { useTheme } from "@/components/minimal/theme-provider";
-import { POST_RUN_SYNC_MS } from "@/lib/minimal/post-run-sync";
+import { POST_RUN_CATALOG_MS } from "@/lib/minimal/post-run-sync";
 import { useMinimalStore } from "@/lib/minimal/store";
+import { deriveRunActivity } from "@/lib/minimal/run-phase";
 import { connectMinimalWs } from "@/lib/minimal/ws";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -44,12 +45,10 @@ export function MyRuntimeProvider({
   const abort = useMinimalStore((s) => s.abort);
   const connection = useMinimalStore((s) => s.connection);
   const sessionId = useMinimalStore((s) => s.sessionId);
-  const armedWorkflow = useMinimalStore((s) => s.armedWorkflow);
-  const model = useMinimalStore((s) => s.model);
   const lastError = useMinimalStore((s) => s.lastError);
   const activeSpawns = useMinimalStore((s) => s.activeSpawns);
+  const refreshSessionList = useMinimalStore((s) => s.refreshSessionList);
   const jobs = useMinimalStore((s) => s.jobs);
-  const syncSessionView = useMinimalStore((s) => s.syncSessionView);
   const { theme, toggle: toggleTheme } = useTheme();
 
   // Avoid SSR/client mismatch: token may live in localStorage / ?query only on client.
@@ -67,7 +66,7 @@ export function MyRuntimeProvider({
     }
   }, []);
 
-  // After generation ends: delayed sync session list + history (preview / task count)
+  // After generation ends: sidebar catalog only — never loadHistory (chat body is live).
   useEffect(() => {
     if (isRunning) {
       wasRunningRef.current = true;
@@ -76,10 +75,10 @@ export function MyRuntimeProvider({
     if (!wasRunningRef.current) return;
     wasRunningRef.current = false;
     const t = window.setTimeout(() => {
-      void syncSessionView();
-    }, POST_RUN_SYNC_MS);
+      void refreshSessionList();
+    }, POST_RUN_CATALOG_MS);
     return () => window.clearTimeout(t);
-  }, [isRunning, syncSessionView]);
+  }, [isRunning, refreshSessionList]);
 
   // Merge tool rows; optionally cap long sessions for DOM cost
   const { displayMessages, hiddenCount } = useMemo(() => {
@@ -175,30 +174,45 @@ export function MyRuntimeProvider({
     },
   });
 
+  /** Slim chrome: connection + short session; model/armed live under composer. */
   const banner = useMemo(() => {
-    return [
-      connection === "open" ? "WS connected" : `WS ${connection}`,
-      sessionId ? `session ${sessionId.slice(0, 18)}…` : "no session",
-      model ? `model ${model}` : null,
-      armedWorkflow ? `armed ${armedWorkflow}` : null,
-      lastError ? `err: ${lastError}` : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-  }, [connection, sessionId, model, armedWorkflow, lastError]);
+    const ws =
+      connection === "open"
+        ? "●"
+        : connection === "connecting"
+          ? "◐"
+          : "○";
+    const sess = sessionId
+      ? sessionId.length > 14
+        ? `${sessionId.slice(0, 12)}…`
+        : sessionId
+      : "no session";
+    const err = lastError ? ` · err: ${lastError}` : "";
+    return `${ws} ${sess}${err}`;
+  }, [connection, sessionId, lastError]);
 
   /**
-   * Compact activity strip: fixed height, no streaming previews.
-   * Multi-job token streams used to thrash this bar → layout jump + scroll shake.
+   * Background activity only (jobs/spawns). Main-run phase lives in
+   * RunningStatusRow inside the thread — avoids double spinners / stale tools.
    */
   const activityStrip = useMemo(() => {
     const spawnRun = activeSpawns.filter((s) => s.status === "running");
     const jobRun = jobs.filter(
       (j) => j.status === "running" || j.status === "queued",
     );
-    if (!spawnRun.length && !jobRun.length) return null;
+
+    if (!spawnRun.length && !jobRun.length) {
+      // No bg work: only show strip when main is running with a non-default phase
+      // if we ever want dual display — currently keep strip free of main phase.
+      return null;
+    }
 
     const bits: string[] = [];
+    // When main agent also running, prefix phase so strip still informative alone.
+    if (isRunning) {
+      const act = deriveRunActivity(messages, true);
+      if (act.label) bits.push(act.label);
+    }
     if (jobRun.length) {
       const names = jobRun
         .slice(0, 4)
@@ -219,7 +233,7 @@ export function MyRuntimeProvider({
       );
     }
     return bits.join("  |  ");
-  }, [activeSpawns, jobs]);
+  }, [activeSpawns, jobs, isRunning, messages]);
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -234,7 +248,16 @@ export function MyRuntimeProvider({
               minimal
             </Link>
             <span className="opacity-40">·</span>
-            <span className="min-w-0 flex-1 truncate">{banner}</span>
+            <span
+              className="min-w-0 flex-1 truncate"
+              title={
+                connection === "open"
+                  ? `WS connected · ${sessionId ?? "no session"}`
+                  : `WS ${connection} · ${sessionId ?? "no session"}`
+              }
+            >
+              {banner}
+            </span>
             {tokenHint && (
               <span className="shrink-0 text-red-500">
                 请设置 NEXT_PUBLIC_MINIMAL_TOKEN 或 URL ?token=
