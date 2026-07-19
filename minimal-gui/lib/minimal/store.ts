@@ -728,6 +728,15 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
       lastError: undefined,
       workflowSteps: s.armedWorkflow ? [] : s.workflowSteps,
     }));
+    // Nudge thread viewport after layout (Thread StickToBottomOnSend also watches isRunning)
+    if (typeof document !== "undefined") {
+      requestAnimationFrame(() => {
+        const el = document.querySelector(
+          '[data-slot="aui_thread-viewport"]',
+        ) as HTMLElement | null;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+    }
 
     try {
       const body: Record<string, string> = { text: trimmed };

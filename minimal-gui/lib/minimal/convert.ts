@@ -95,6 +95,60 @@ function mergeAdjacentToolsOnly(messages: MinimalMessage[]): MinimalMessage[] {
   return out;
 }
 
+function toolPartsSemanticallyEqual(
+  a: ToolPart[] | undefined,
+  b: ToolPart[] | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i]!;
+    const y = b[i]!;
+    if (
+      x.callId !== y.callId ||
+      x.toolName !== y.toolName ||
+      x.content !== y.content ||
+      x.status !== y.status ||
+      x.toolExpanded !== y.toolExpanded
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Reuse previous coalesce output object identities when content is unchanged.
+ * ExternalStore ThreadMessageConverter caches by WeakMap(input object) — new
+ * wrappers every tool call forced full reconvert + layout thrash / scroll jumps.
+ */
+function reuseCoalesceIdentities(
+  next: MinimalMessage[],
+  prev: MinimalMessage[] | undefined,
+): MinimalMessage[] {
+  if (!prev?.length) return next;
+  const prevById = new Map(prev.map((m) => [m.id, m]));
+  let reused = 0;
+  const out = next.map((m) => {
+    const p = prevById.get(m.id);
+    if (!p || p.role !== m.role) return m;
+    if (
+      p.content === m.content &&
+      p.status === m.status &&
+      p.toolsOnly === m.toolsOnly &&
+      p.viewKind === m.viewKind &&
+      toolPartsSemanticallyEqual(p.toolParts, m.toolParts) &&
+      p.meta === m.meta &&
+      p.toolExpanded === m.toolExpanded
+    ) {
+      reused += 1;
+      return p;
+    }
+    return m;
+  });
+  return reused > 0 ? out : next;
+}
+
 /** Fold consecutive tool rows into the previous assistant (or a tools-only assistant). */
 export function coalesceToolsIntoAssistants(
   messages: MinimalMessage[],
@@ -171,8 +225,9 @@ export function coalesceToolsIntoAssistants(
       host.toolParts = [...(host.toolParts ?? []), part];
       if (part.status === "running") host.status = "running";
     } else {
+      // Stable id from tool call — never newMsgId per coalesce pass (remount thrash)
       out.push({
-        id: newMsgId("at"),
+        id: `at_${part.callId || m.id}`,
         role: "assistant",
         content: "",
         status: part.status === "running" ? "running" : "complete",
@@ -185,7 +240,8 @@ export function coalesceToolsIntoAssistants(
   }
 
   const merged = mergeAdjacentToolsOnly(out);
-  const result = applyToolExpandPolicy(merged);
+  const expanded = applyToolExpandPolicy(merged);
+  const result = reuseCoalesceIdentities(expanded, coalesceCache?.output);
   coalesceCache = { inputs: messages, output: result };
   return result;
 }

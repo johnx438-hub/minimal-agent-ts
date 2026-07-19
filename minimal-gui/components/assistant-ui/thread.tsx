@@ -51,13 +51,129 @@ import {
 import {
   createContext,
   useContext,
+  useLayoutEffect,
   useMemo,
+  useRef,
   type ComponentType,
   type FC,
   type PropsWithChildren,
 } from "react";
 import { pickWelcomeGreeting } from "@/content/greetings";
 import { useMinimalStore } from "@/lib/minimal/store";
+
+const VIEWPORT_SEL = '[data-slot="aui_thread-viewport"]';
+const NEAR_BOTTOM_PX = 96;
+
+function getThreadViewport(): HTMLElement | null {
+  return document.querySelector(VIEWPORT_SEL) as HTMLElement | null;
+}
+
+function forceViewportToBottom(el?: HTMLElement | null): void {
+  const node = el ?? getThreadViewport();
+  if (!node) return;
+  node.scrollTop = node.scrollHeight;
+}
+
+function isNearBottom(el: HTMLElement, threshold = NEAR_BOTTOM_PX): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+}
+
+/**
+ * Stick to bottom for the whole run while tools/markdown grow.
+ * - runStart → sticky on, jump bottom
+ * - content resize while sticky+running → stay bottom (fixes multi-tool jump-up)
+ * - user wheel up → sticky off until near-bottom again or next send
+ */
+const StickToBottomOnSend: FC = () => {
+  const isRunning = useAuiState((s) => s.thread.isRunning);
+  const messageCount = useAuiState((s) => s.thread.messages.length);
+  const stickyRef = useRef(true);
+  const forcingRef = useRef(false);
+  const prevRunning = useRef(false);
+  const isRunningRef = useRef(isRunning);
+  isRunningRef.current = isRunning;
+
+  const pinBottom = (el?: HTMLElement | null) => {
+    const node = el ?? getThreadViewport();
+    if (!node || !stickyRef.current) return;
+    forcingRef.current = true;
+    forceViewportToBottom(node);
+    requestAnimationFrame(() => {
+      forcingRef.current = false;
+    });
+  };
+
+  // Listen for intentional scroll-up / re-engage near bottom
+  useLayoutEffect(() => {
+    const el = getThreadViewport();
+    if (!el) return;
+
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < -2) {
+        stickyRef.current = false;
+      } else if (e.deltaY > 2 && isNearBottom(el)) {
+        stickyRef.current = true;
+      }
+    };
+    const onScroll = () => {
+      if (forcingRef.current) return;
+      if (isNearBottom(el, 48)) stickyRef.current = true;
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: true });
+    el.addEventListener("scroll", onScroll, { passive: true });
+
+    const ro = new ResizeObserver(() => {
+      if (!stickyRef.current) return;
+      if (isRunningRef.current || isNearBottom(el)) {
+        pinBottom(el);
+      }
+    });
+    ro.observe(el);
+    const inner = el.firstElementChild;
+    if (inner) ro.observe(inner);
+
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pinBottom stable enough via refs
+  }, []);
+
+  // runStart: force sticky + bottom
+  useLayoutEffect(() => {
+    const runJustStarted = isRunning && !prevRunning.current;
+    prevRunning.current = isRunning;
+    if (!runJustStarted) return;
+
+    stickyRef.current = true;
+    pinBottom();
+    const t0 = requestAnimationFrame(() => {
+      pinBottom();
+      requestAnimationFrame(() => pinBottom());
+    });
+    const t1 = window.setTimeout(() => pinBottom(), 50);
+    const t2 = window.setTimeout(() => pinBottom(), 180);
+    return () => {
+      cancelAnimationFrame(t0);
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRunning]);
+
+  // New messages/tools while sticky: re-pin (tool-card height spikes)
+  useLayoutEffect(() => {
+    if (!isRunning || !stickyRef.current) return;
+    pinBottom();
+    const id = requestAnimationFrame(() => pinBottom());
+    return () => cancelAnimationFrame(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messageCount, isRunning]);
+
+  return null;
+};
 
 export type ThreadGroupPart = MessagePrimitive.GroupedParts.GroupPart;
 
@@ -123,12 +239,16 @@ const ThreadRoot: FC<{ isEmpty: boolean }> = ({ isEmpty }) => {
       <ThreadPrimitive.Viewport
         // bottom + autoScroll: keep sticky to latest during stream
         // (turnAnchor="top" disables autoScroll by default — user had to wheel)
+        // Do NOT use CSS scroll-smooth here — it fights autoScroll mid-animation
+        // and can leave isAtBottom=false so Enter "jumps" to older context.
         turnAnchor="bottom"
         autoScroll
         scrollToBottomOnRunStart
+        scrollToBottomOnInitialize
         data-slot="aui_thread-viewport"
-        className="relative flex flex-1 flex-col overflow-x-auto overflow-y-scroll scroll-smooth"
+        className="relative flex flex-1 flex-col overflow-x-auto overflow-y-scroll"
       >
+        <StickToBottomOnSend />
         <div
           className={cn(
             "mx-auto flex w-full max-w-(--thread-max-width) flex-1 flex-col px-4 pt-4 max-md:max-w-full",
