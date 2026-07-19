@@ -23,10 +23,22 @@ const READISH = new Set([
   "web_search",
 ]);
 
-export type ToolSkin = "read" | "write" | "shell" | "generic";
+export type ToolSkin = "read" | "write" | "shell" | "spawn" | "generic";
+
+/** spawn_agent / spawn_background / code_review — full child text must not flood main chat. */
+export function isSpawnDelegationTool(toolName: string | undefined): boolean {
+  const n = (toolName ?? "").toLowerCase();
+  return (
+    n === "spawn_agent" ||
+    n === "spawn_background" ||
+    n === "code_review" ||
+    n.startsWith("spawn_")
+  );
+}
 
 export function toolSkin(toolName: string): ToolSkin {
   const n = toolName.toLowerCase();
+  if (isSpawnDelegationTool(n)) return "spawn";
   // Shell before write: names like run_shell must not hit write heuristics.
   if (SHELLISH.has(n) || n.includes("shell")) {
     return "shell";
@@ -38,6 +50,76 @@ export function toolSkin(toolName: string): ToolSkin {
     return "read";
   }
   return "generic";
+}
+
+/** Compact one-screen summary for delegation tool results (never dump full child report). */
+export function formatSpawnDelegationPreview(
+  toolName: string,
+  content: string,
+  argsJson?: string,
+): string {
+  let preset = "";
+  let jobId = "";
+  try {
+    if (argsJson?.trim()) {
+      const o = JSON.parse(argsJson) as { preset?: string; job_id?: string };
+      if (typeof o.preset === "string") preset = o.preset.trim();
+      if (typeof o.job_id === "string") jobId = o.job_id.trim();
+    }
+  } catch {
+    /* ignore */
+  }
+  const body = restorePreviewNewlines(content ?? "").trim();
+  const first = body.split("\n").find((l) => l.trim())?.trim() ?? "";
+  // spawn_background: started job_xxx (skeleton-reader)
+  const started = body.match(
+    /spawn_background:\s*(started|completed|failed)\s+(\S+)(?:\s*\(([^)]+)\))?/i,
+  );
+  if (started) {
+    const status = started[1]!;
+    const id = started[2]!;
+    const p = started[3] || preset;
+    return [
+      p ? `子任务 · ${p}` : "子任务",
+      `${status} ${id}`,
+      "（详情在 Jobs 面板 / report，默认不展开正文）",
+    ].join("\n");
+  }
+  const head =
+    first.length > 160 ? `${first.slice(0, 160)}…` : first || "(empty)";
+  const chars = body.length;
+  const lines = body ? body.split("\n").length : 0;
+  return [
+    preset ? `子 Agent · ${preset}` : `子 Agent · ${toolName}`,
+    jobId ? `job: ${jobId}` : null,
+    head.startsWith("error:") ? head : `摘要: ${head}`,
+    chars > 280
+      ? `… 共 ${lines} 行 / ${chars} 字（骨架类 preset 很啰嗦，点展开才看全文）`
+      : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** Prefer short chip under tool title (preset name). */
+export function inferSpawnPresetLabel(
+  content: string | undefined,
+  argsJson?: string,
+): string | undefined {
+  try {
+    if (argsJson?.trim()) {
+      const o = JSON.parse(argsJson) as { preset?: string };
+      if (typeof o.preset === "string" && o.preset.trim()) return o.preset.trim();
+    }
+  } catch {
+    /* ignore */
+  }
+  const c = content ?? "";
+  const m =
+    c.match(/\(([^)]*(?:reader|worker|review|agent)[^)]*)\)/i) ||
+    c.match(/preset[=:]\s*([A-Za-z0-9_-]+)/i);
+  if (m?.[1] && m[1].length < 48) return m[1].trim();
+  return undefined;
 }
 
 /** Prefer bridge tool_name; fall back to preview heuristics. */

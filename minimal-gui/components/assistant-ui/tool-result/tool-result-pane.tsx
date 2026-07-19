@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { ShellResultBody } from "./shell-result-body";
 import { WriteResultBody } from "./write-result-body";
 
-export type ToolSkin = "read" | "write" | "shell" | "generic";
+export type ToolSkin = "read" | "write" | "shell" | "spawn" | "generic";
 
 export interface ToolResultPayload {
   preview?: string;
@@ -69,7 +69,9 @@ function ReadOrGenericBody({
   const box =
     skin === "read"
       ? "border-border/70 bg-muted/40 text-foreground/90"
-      : "border-border/60 bg-muted/50 text-foreground/90";
+      : skin === "spawn"
+        ? "border-violet-500/25 bg-violet-500/5 text-foreground/90 max-h-48"
+        : "border-border/60 bg-muted/50 text-foreground/90";
   return (
     <pre
       className={cn(
@@ -128,6 +130,8 @@ export function ToolResultPane({
           argsText={argsText}
           open={open}
         />
+      ) : effectiveSkin === "spawn" ? (
+        <ReadOrGenericBody text={text} skin="spawn" />
       ) : (
         <ReadOrGenericBody text={text} skin={effectiveSkin} />
       )}

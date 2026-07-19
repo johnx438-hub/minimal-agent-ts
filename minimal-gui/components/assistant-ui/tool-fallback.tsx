@@ -135,7 +135,7 @@ function ToolFallbackTrigger({
 }: React.ComponentProps<typeof CollapsibleTrigger> & {
   toolName: string;
   path?: string;
-  skin?: "read" | "write" | "shell" | "generic";
+  skin?: "read" | "write" | "shell" | "spawn" | "generic";
   status?: ToolCallMessagePartStatus;
 }) {
   const statusType = status?.type ?? "complete";
@@ -145,6 +145,7 @@ function ToolFallbackTrigger({
 
   const Icon = statusIconMap[statusType];
   // Real tool name first; path as soft chip (Nice01 direction)
+  // spawn: path often holds preset → spawn_agent("skeleton-reader")
   const title =
     path && path.length < 80
       ? `${toolName}("${path}")`
@@ -156,6 +157,7 @@ function ToolFallbackTrigger({
       className={cn(
         "aui-tool-fallback-trigger group/trigger text-muted-foreground hover:text-foreground flex w-full origin-left items-center gap-2 py-1 text-sm transition-[color,scale] active:scale-[0.98]",
         skin === "write" && "text-foreground/90",
+        skin === "spawn" && "text-violet-800/90 dark:text-violet-200/90",
         className,
       )}
       {...props}
@@ -174,6 +176,10 @@ function ToolFallbackTrigger({
             !isRunning &&
             !isCancelled &&
             "text-sky-600 dark:text-sky-400",
+          skin === "spawn" &&
+            !isRunning &&
+            !isCancelled &&
+            "text-violet-600 dark:text-violet-400",
         )}
       />
       <span
@@ -279,7 +285,7 @@ function ToolFallbackResult({
   className,
 }: {
   result?: unknown;
-  skin?: "read" | "write" | "shell" | "generic";
+  skin?: "read" | "write" | "shell" | "spawn" | "generic";
   open?: boolean;
   argsText?: string;
   pathInTrigger?: boolean;
@@ -550,7 +556,7 @@ function ToolFallbackApproval({
 
 type ToolResultMeta = {
   preview?: unknown;
-  skin?: "read" | "write" | "shell" | "generic";
+  skin?: "read" | "write" | "shell" | "spawn" | "generic";
   path?: string;
   _expand?: boolean;
 };

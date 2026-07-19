@@ -13,7 +13,7 @@ import {
   preserveLiveMessageIds,
   projectAssistantFinal,
 } from "./convert";
-import { inferToolName } from "./tool-parse";
+import { inferToolName, isSpawnDelegationTool } from "./tool-parse";
 import type {
   ActiveSpawn,
   ConnectionState,
@@ -666,6 +666,8 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
       // Live tools open while run is active; real name via inferToolName.
       const name = inferToolName(toolName, content);
       const argsJson = typeof sm.args === "string" ? sm.args : undefined;
+      // spawn_* dumps can be huge — keep collapsed in the main timeline
+      const expand = !isSpawnDelegationTool(name);
       set((s) => ({
         messages: [
           ...s.messages,
@@ -679,7 +681,7 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
             status: s.isRunning ? ("running" as const) : ("complete" as const),
             source: "live" as const,
             viewKind: "tool" as const,
-            toolExpanded: true,
+            toolExpanded: expand,
           },
         ],
       }));

@@ -17,9 +17,12 @@ import {
   contentFromWriteArgs,
   diffFromEditArgs,
   formatReadTreePreview,
+  formatSpawnDelegationPreview,
   formatWriteCardPreview,
+  inferSpawnPresetLabel,
   inferToolName,
   inferToolPath,
+  isSpawnDelegationTool,
   restorePreviewNewlines,
   splitToolUiDisplay,
   toolSkin,
@@ -257,6 +260,10 @@ export function applyToolExpandPolicy(
 
   return messages.map((m, i) => {
     if (m.role === "tool") {
+      // spawn_* / code_review: never auto-expand — child reports can be huge
+      if (isSpawnDelegationTool(m.toolName)) {
+        return { ...m, toolExpanded: false };
+      }
       const inLatestTurn = lastUserIdx >= 0 && i > lastUserIdx;
       return {
         ...m,
@@ -270,8 +277,9 @@ export function applyToolExpandPolicy(
         ...m,
         toolParts: m.toolParts.map((p) => ({
           ...p,
-          toolExpanded:
-            p.status === "running"
+          toolExpanded: isSpawnDelegationTool(p.toolName)
+            ? false
+            : p.status === "running"
               ? true
               : inLatestTurn || p.toolExpanded === true,
         })),
@@ -383,6 +391,15 @@ function formatToolResultBody(part: ToolPart): string {
     return clip || "image registered for next model turn";
   }
 
+  // spawn_agent returns full child transcript — never dump into main timeline
+  if (isSpawnDelegationTool(part.toolName) || skin === "spawn") {
+    return formatSpawnDelegationPreview(
+      part.toolName,
+      body,
+      part.argsJson,
+    );
+  }
+
   // Real code/diff body — do not run through the short "ok: wrote" card clip
   if (resolved.kind === "diff" || resolved.kind === "code") {
     return body || "(empty)";
@@ -423,8 +440,17 @@ function toolPartToContent(part: ToolPart) {
     part.toolExpanded === true || part.status === "running";
   const running = part.status === "running";
   const resolved = resolveToolDisplayBody(part);
-  const path = resolved.path ?? part.path;
   const skin = part.skin ?? toolSkin(part.toolName);
+  const spawnLabel =
+    skin === "spawn" || isSpawnDelegationTool(part.toolName)
+      ? inferSpawnPresetLabel(part.content, part.argsJson)
+      : undefined;
+  const path = resolved.path ?? part.path ?? spawnLabel;
+  // Spawn reports default collapsed even mid-turn
+  const wantExpand =
+    isSpawnDelegationTool(part.toolName) || skin === "spawn"
+      ? false
+      : expand;
   let argsObj: Record<string, unknown> = {};
   if (part.argsJson) {
     try {
@@ -438,6 +464,17 @@ function toolPartToContent(part: ToolPart) {
     part.argsJson?.trim() ||
     (Object.keys(argsObj).length ? JSON.stringify(argsObj) : "");
 
+  const isSpawn = isSpawnDelegationTool(part.toolName) || skin === "spawn";
+  // Compact preview always; full child text only on user expand (capped)
+  let fullText: string | undefined;
+  if (isSpawn) {
+    const rawBody = restorePreviewNewlines(part.content ?? "");
+    fullText =
+      rawBody.length > 12_000
+        ? `${rawBody.slice(0, 12_000)}\n… [UI truncated; full text remains in agent context / job report]`
+        : rawBody || undefined;
+  }
+
   return {
     type: "tool-call" as const,
     toolCallId: part.callId,
@@ -449,7 +486,8 @@ function toolPartToContent(part: ToolPart) {
       skin,
       path,
       kind: resolved.kind,
-      _expand: expand,
+      fullText,
+      _expand: wantExpand,
     },
     status: running
       ? ({ type: "running" } as const)

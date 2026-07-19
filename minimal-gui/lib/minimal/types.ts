@@ -30,7 +30,7 @@ export interface ToolPart {
   status?: "running" | "complete" | "incomplete";
   toolExpanded?: boolean;
   path?: string;
-  skin?: "read" | "write" | "shell" | "generic";
+  skin?: "read" | "write" | "shell" | "spawn" | "generic";
   /** Raw tool args JSON when bridge provides it. */
   argsJson?: string;
 }
