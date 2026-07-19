@@ -9,6 +9,7 @@ import {
   fromHistoryDto,
   joinContent,
   newMsgId,
+  preferRicherToolMessages,
   projectAssistantFinal,
 } from "./convert";
 import { inferToolName } from "./tool-parse";
@@ -523,6 +524,7 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
       content?: string;
       tool_name?: string;
       call_id?: string;
+      args?: string;
     };
     const role = sm.role;
     if (!role || role === "user") {
@@ -655,6 +657,7 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
     if (role === "tool") {
       // Live tools open while run is active; real name via inferToolName.
       const name = inferToolName(toolName, content);
+      const argsJson = typeof sm.args === "string" ? sm.args : undefined;
       set((s) => ({
         messages: [
           ...s.messages,
@@ -664,6 +667,7 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
             content: content ?? "",
             toolName: name,
             callId,
+            argsJson,
             status: s.isRunning ? ("running" as const) : ("complete" as const),
             source: "live" as const,
             viewKind: "tool" as const,
@@ -1217,16 +1221,19 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
       session_id?: string;
       messages: SessionChatMessageDto[];
     }>(path, { token: get().token || getMinimalToken() });
-    // Only replace when we actually got history (or explicit empty after switch)
+    const incoming = applyToolExpandPolicy(
+      (res.messages ?? []).map(fromHistoryDto),
+    );
+    // Post-run sync must not clobber live write/edit diffs with bare "ok:" rows.
+    const merged = preferRicherToolMessages(get().messages, incoming);
     set({
       sessionId: res.session_id ?? get().sessionId,
-      messages: applyToolExpandPolicy(
-        (res.messages ?? []).map(fromHistoryDto),
-      ),
+      messages: applyToolExpandPolicy(merged),
     });
   },
 
   async syncSessionView() {
+    // Catalog (session list / preview) without trampling tool-card bodies first.
     await get().refreshCatalog();
     try {
       await get().loadHistory();

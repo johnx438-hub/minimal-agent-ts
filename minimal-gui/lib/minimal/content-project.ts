@@ -3,35 +3,110 @@
  * Keep in sync when server format changes.
  */
 
-const JSON_TAIL =
-  /\n*\{["']?pending_tasks["']?\s*:\s*\[[^\]]*\]\s*,\s*["']?current_work["']?\s*:\s*"[^"]*"\}$/i;
-
 export interface AgentSummaryFields {
   pending_tasks: string[];
   current_work: string;
 }
 
-export function extractCleanAnswer(finalAnswer: string): string {
-  const match = finalAnswer.match(JSON_TAIL);
-  if (match && match.index !== undefined) {
-    return finalAnswer.slice(0, match.index).trim();
+/**
+ * Locate trailing agent summary JSON. Models often wrap it in ```json fences
+ * or put newlines inside current_work — a single-line regex misses those and
+ * the raw JSON leaks into the chat as "plain text pending card".
+ */
+function findPendingSummaryTail(
+  finalAnswer: string,
+): { start: number; json: string } | null {
+  const text = finalAnswer ?? "";
+  if (!text.trim()) return null;
+
+  // Prefer last object that starts with pending_tasks key
+  const re = /\{\s*["']?pending_tasks["']?\s*:/gi;
+  let match: RegExpExecArray | null;
+  let lastIdx = -1;
+  while ((match = re.exec(text)) !== null) {
+    lastIdx = match.index;
   }
-  return finalAnswer.trim();
+  if (lastIdx < 0) return null;
+
+  const slice = text.slice(lastIdx);
+  let depth = 0;
+  let end = -1;
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < slice.length; i++) {
+    const ch = slice[i]!;
+    if (inStr) {
+      if (esc) {
+        esc = false;
+        continue;
+      }
+      if (ch === "\\") {
+        esc = true;
+        continue;
+      }
+      if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = true;
+      continue;
+    }
+    if (ch === "{") depth += 1;
+    else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        end = i + 1;
+        break;
+      }
+    }
+  }
+  if (end < 0) return null;
+  const json = slice.slice(0, end);
+
+  // Expand start leftward over optional ```json / whitespace
+  let start = lastIdx;
+  const before = text.slice(0, lastIdx);
+  const fenceOpen = before.match(/```(?:json)?[ \t]*\n?$/i);
+  if (fenceOpen) {
+    start = lastIdx - fenceOpen[0].length;
+  }
+
+  // Expand end rightward over optional closing ```
+  let afterEnd = lastIdx + end;
+  const after = text.slice(afterEnd);
+  const fenceClose = after.match(/^\s*```[ \t]*(?:\n|$)/);
+  if (fenceClose) {
+    afterEnd += fenceClose[0].length;
+  }
+
+  // Validate parseable
+  try {
+    const normalized = json.replace(/'/g, '"').replace(/(\w+)\s*:/g, '"$1":');
+    try {
+      JSON.parse(json);
+    } catch {
+      JSON.parse(normalized);
+    }
+  } catch {
+    return null;
+  }
+
+  return { start, json: text.slice(start, afterEnd) };
 }
 
-export function parseAgentSummary(finalAnswer: string): AgentSummaryFields {
-  const match = finalAnswer.match(JSON_TAIL);
-  if (!match) return { pending_tasks: [], current_work: "" };
+function parseSummaryObject(raw: string): AgentSummaryFields | null {
+  // Strip markdown fences if present
+  let body = raw.trim();
+  body = body.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
   try {
-    const raw = match[0];
     let parsed: { pending_tasks?: unknown; current_work?: unknown };
     try {
-      parsed = JSON.parse(raw) as {
+      parsed = JSON.parse(body) as {
         pending_tasks?: unknown;
         current_work?: unknown;
       };
     } catch {
-      const normalized = raw
+      const normalized = body
         .replace(/'/g, '"')
         .replace(/(\w+)\s*:/g, '"$1":');
       parsed = JSON.parse(normalized) as {
@@ -47,8 +122,23 @@ export function parseAgentSummary(finalAnswer: string): AgentSummaryFields {
         typeof parsed.current_work === "string" ? parsed.current_work : "",
     };
   } catch {
-    return { pending_tasks: [], current_work: "" };
+    return null;
   }
+}
+
+export function extractCleanAnswer(finalAnswer: string): string {
+  const tail = findPendingSummaryTail(finalAnswer);
+  if (tail) {
+    return finalAnswer.slice(0, tail.start).trim();
+  }
+  return finalAnswer.trim();
+}
+
+export function parseAgentSummary(finalAnswer: string): AgentSummaryFields {
+  const tail = findPendingSummaryTail(finalAnswer);
+  if (!tail) return { pending_tasks: [], current_work: "" };
+  const parsed = parseSummaryObject(tail.json);
+  return parsed ?? { pending_tasks: [], current_work: "" };
 }
 
 export function looksLikeArtifact(content: string): boolean {
@@ -153,7 +243,8 @@ export function formatPendingCardMarkdown(meta: {
   current_work?: string;
 }): string {
   const tasks = meta.pending_tasks ?? [];
-  const work = meta.current_work?.trim();
+  // Single-line for blockquote card (models sometimes put \n in current_work)
+  const work = meta.current_work?.trim().replace(/\s*\n+\s*/g, " ");
   if (!tasks.length && !work) return "";
   const lines = ["", "---", "", "> **📋 任务摘要**", ">"];
   if (work) {

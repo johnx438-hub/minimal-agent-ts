@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  attachToolDisplayForBridge,
   BridgeStepForwarder,
   DEFAULT_TOOL_BRIDGE_SUMMARY_CHARS,
   MIN_BRIDGE_SUMMARY_CHARS,
@@ -176,6 +177,44 @@ describe('BridgeStepForwarder (MB-2)', () => {
     assert.equal(bag.length, 1);
     assert.ok((bag[0]?.content?.length ?? 0) <= 41);
     assert.match(bag[0]?.content ?? '', /…$/);
+  });
+
+  it('reattaches write_file display block for Web tool cards', () => {
+    const bag: SessionMessage[] = [];
+    const bridge = createMessageBridge();
+    bridge.addSink(collect(bag));
+    const forwarder = new BridgeStepForwarder(bridge, () => 's');
+
+    forwarder.onStep({
+      type: 'tool_result',
+      turn: 1,
+      call_id: 'w1',
+      name: 'write_file',
+      args: '{"path":"a.ts","content":"x"}',
+      output: 'ok: wrote 1 bytes to a.ts (new file)',
+      preview: 'ok: wrote 1 bytes to a.ts (new file)',
+      display: '--- /dev/null\n+++ b/a.ts\n@@\n+x\n',
+    });
+
+    assert.equal(bag.length, 1);
+    assert.equal(bag[0]?.tool_name, 'write_file');
+    assert.equal(bag[0]?.args, '{"path":"a.ts","content":"x"}');
+    assert.match(bag[0]?.content ?? '', /\[write_display\]/);
+    assert.match(bag[0]?.content ?? '', /\+x/);
+    assert.match(bag[0]?.content ?? '', /ok: wrote/);
+  });
+});
+
+describe('attachToolDisplayForBridge', () => {
+  it('wraps edit display with edit markers', () => {
+    const out = attachToolDisplayForBridge(
+      'edit_file',
+      'ok: edited a.ts',
+      '-old\n+new',
+    );
+    assert.match(out, /\[edit_display\]/);
+    assert.match(out, /-old/);
+    assert.match(out, /\+new/);
   });
 });
 

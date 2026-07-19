@@ -16,7 +16,9 @@ export {
 } from './message-bridge.js';
 
 export {
+  attachToolDisplayForBridge,
   BridgeStepForwarder,
+  DEFAULT_TOOL_BRIDGE_DISPLAY_CHARS,
   DEFAULT_TOOL_BRIDGE_SUMMARY_CHARS,
   MIN_BRIDGE_SUMMARY_CHARS,
   summarizeToolResultForBridge,

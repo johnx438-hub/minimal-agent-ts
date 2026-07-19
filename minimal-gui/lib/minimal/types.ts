@@ -31,6 +31,8 @@ export interface ToolPart {
   toolExpanded?: boolean;
   path?: string;
   skin?: "read" | "write" | "shell" | "generic";
+  /** Raw tool args JSON when bridge provides it. */
+  argsJson?: string;
 }
 
 /** User-message file chip (gui-inbox path); rendered by UserMessageAttachments. */
@@ -57,6 +59,8 @@ export interface MinimalMessage {
   status?: "running" | "complete" | "incomplete";
   toolName?: string;
   callId?: string;
+  /** Raw tool args JSON (live WS). */
+  argsJson?: string;
   turn?: number;
   taskId?: string;
   source?: "transcript" | "in_flight" | "live";
@@ -143,6 +147,8 @@ export interface SessionChatMessageDto {
   task_id?: string;
   tool_name?: string;
   action_id?: string;
+  /** Present when history was enriched from action cold storage. */
+  args_json?: string;
   source?: "transcript" | "in_flight";
   meta?: MessageMeta;
   view_kind?: ViewKind;

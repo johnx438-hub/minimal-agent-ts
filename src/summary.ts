@@ -12,30 +12,93 @@ const DEFAULT_SUMMARY: AgentSummaryFields = {
   current_work: '',
 };
 
-// Regex to match JSON at the end of text (supports both inline and newline-separated)
-const JSON_TAIL_REGEX = /\{["']?pending_tasks["']?\s*:\s*\[[^\]]*\]\s*,\s*["']?current_work["']?\s*:\s*"[^"]*"\}$/i;
-
 /**
- * Parse Agent summary from final answer text.
- * Returns default values if no valid JSON found.
+ * Locate trailing agent summary JSON (brace-balanced).
+ * Handles ```json fences and multiline current_work — the old $ regex missed those
+ * and left raw JSON visible in Web pending cards.
  */
-export function parseAgentSummary(finalAnswer: string): AgentSummaryFields {
-  const match = finalAnswer.match(JSON_TAIL_REGEX);
-  if (!match) {
-    return DEFAULT_SUMMARY;
+function findPendingSummaryTail(
+  finalAnswer: string,
+): { start: number; end: number; object: string } | null {
+  const text = finalAnswer ?? '';
+  if (!text.trim()) return null;
+
+  const re = /\{\s*["']?pending_tasks["']?\s*:/gi;
+  let match: RegExpExecArray | null;
+  let lastIdx = -1;
+  while ((match = re.exec(text)) !== null) {
+    lastIdx = match.index;
   }
+  if (lastIdx < 0) return null;
+
+  const slice = text.slice(lastIdx);
+  let depth = 0;
+  let end = -1;
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < slice.length; i++) {
+    const ch = slice[i]!;
+    if (inStr) {
+      if (esc) {
+        esc = false;
+        continue;
+      }
+      if (ch === '\\') {
+        esc = true;
+        continue;
+      }
+      if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = true;
+      continue;
+    }
+    if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        end = i + 1;
+        break;
+      }
+    }
+  }
+  if (end < 0) return null;
+  const object = slice.slice(0, end);
+
+  let start = lastIdx;
+  const before = text.slice(0, lastIdx);
+  const fenceOpen = before.match(/```(?:json)?[ \t]*\n?$/i);
+  if (fenceOpen) start = lastIdx - fenceOpen[0].length;
+
+  let absEnd = lastIdx + end;
+  const after = text.slice(absEnd);
+  const fenceClose = after.match(/^\s*```[ \t]*(?:\n|$)/);
+  if (fenceClose) absEnd += fenceClose[0].length;
 
   try {
-    // Prefer strict JSON; also accept single-quoted keys/values from sloppy models.
-    const raw = match[0];
+    try {
+      JSON.parse(object);
+    } catch {
+      JSON.parse(object.replace(/'/g, '"').replace(/(\w+)\s*:/g, '"$1":'));
+    }
+  } catch {
+    return null;
+  }
+
+  return { start, end: absEnd, object };
+}
+
+function parseSummaryObject(object: string): AgentSummaryFields | null {
+  try {
     let parsed: { pending_tasks?: unknown; current_work?: unknown };
     try {
-      parsed = JSON.parse(raw) as {
+      parsed = JSON.parse(object) as {
         pending_tasks?: unknown;
         current_work?: unknown;
       };
     } catch {
-      const normalized = raw
+      const normalized = object
         .replace(/'/g, '"')
         .replace(/(\w+)\s*:/g, '"$1":');
       parsed = JSON.parse(normalized) as {
@@ -51,17 +114,27 @@ export function parseAgentSummary(finalAnswer: string): AgentSummaryFields {
         typeof parsed.current_work === 'string' ? parsed.current_work : '',
     };
   } catch {
-    return DEFAULT_SUMMARY;
+    return null;
   }
+}
+
+/**
+ * Parse Agent summary from final answer text.
+ * Returns default values if no valid JSON found.
+ */
+export function parseAgentSummary(finalAnswer: string): AgentSummaryFields {
+  const tail = findPendingSummaryTail(finalAnswer);
+  if (!tail) return DEFAULT_SUMMARY;
+  return parseSummaryObject(tail.object) ?? DEFAULT_SUMMARY;
 }
 
 /**
  * Extract clean answer text by removing the appended JSON summary.
  */
 export function extractCleanAnswer(finalAnswer: string): string {
-  const match = finalAnswer.match(/\n*\{["']?pending_tasks["']?\s*:\s*\[[^\]]*\]\s*,\s*["']?current_work["']?\s*:\s*"[^"]*"\}$/i);
-  if (match) {
-    return finalAnswer.slice(0, match.index).trim();
+  const tail = findPendingSummaryTail(finalAnswer);
+  if (tail) {
+    return finalAnswer.slice(0, tail.start).trim();
   }
   return finalAnswer.trim();
 }

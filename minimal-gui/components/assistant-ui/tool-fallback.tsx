@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { ToolResultPane } from "@/components/assistant-ui/tool-result/tool-result-pane";
 
 const ANIMATION_DURATION = 200;
 
@@ -272,43 +273,27 @@ function ToolFallbackArgs({
 function ToolFallbackResult({
   result,
   skin,
+  open,
+  argsText,
+  pathInTrigger,
   className,
-  ...props
-}: React.ComponentProps<"div"> & {
+}: {
   result?: unknown;
   skin?: "read" | "write" | "shell" | "generic";
+  open?: boolean;
+  argsText?: string;
+  pathInTrigger?: boolean;
+  className?: string;
 }) {
-  if (result === undefined || result === null || result === "") return null;
-
-  const text =
-    typeof result === "string" ? result : JSON.stringify(result, null, 2);
-
-  // write: soft emerald card (pending-style success)
-  // read/shell: bordered mono tree like Nice01
-  const shellClass =
-    skin === "write"
-      ? "border-emerald-500/25 bg-emerald-500/5 text-foreground/90 dark:border-emerald-400/20 dark:bg-emerald-500/10"
-      : skin === "read"
-        ? "border-border/70 bg-muted/40 text-foreground/90"
-        : skin === "shell"
-          ? "border-amber-500/20 bg-amber-500/5 text-foreground/90"
-          : "border-border/60 bg-muted/50 text-foreground/90";
-
   return (
-    <div
-      data-slot="tool-fallback-result"
-      className={cn("aui-tool-fallback-result", className)}
-      {...props}
-    >
-      <pre
-        className={cn(
-          "aui-tool-fallback-result-content max-h-72 overflow-auto rounded-lg border p-2.5 font-mono text-[12px] leading-relaxed whitespace-pre-wrap",
-          shellClass,
-        )}
-      >
-        {text}
-      </pre>
-    </div>
+    <ToolResultPane
+      skin={skin ?? "generic"}
+      result={result}
+      open={open}
+      argsText={argsText}
+      pathInTrigger={pathInTrigger}
+      className={className}
+    />
   );
 }
 
@@ -581,12 +566,6 @@ function resultWantsExpand(result: unknown): boolean {
   return Boolean(parseResultMeta(result)._expand);
 }
 
-function resultPreviewText(result: unknown): unknown {
-  const meta = parseResultMeta(result);
-  if (meta.preview !== undefined) return meta.preview;
-  return result;
-}
-
 const ToolFallbackImpl: ToolCallMessagePartComponent = ({
   toolName,
   argsText,
@@ -617,7 +596,6 @@ const ToolFallbackImpl: ToolCallMessagePartComponent = ({
     if (preferOpen) setOpen(true);
   }
 
-  const displayResult = resultPreviewText(result);
   // Path already shown in trigger title — skip raw args JSON noise
   const hasArgs =
     Boolean(argsText && String(argsText).trim()) &&
@@ -653,7 +631,13 @@ const ToolFallbackImpl: ToolCallMessagePartComponent = ({
           />
         )}
         {!isCancelled && (
-          <ToolFallbackResult result={displayResult} skin={skin} />
+          <ToolFallbackResult
+            result={result}
+            skin={skin}
+            open={open}
+            argsText={argsText}
+            pathInTrigger={Boolean(path && path.length < 80)}
+          />
         )}
       </ToolFallbackContent>
     </ToolFallbackRoot>

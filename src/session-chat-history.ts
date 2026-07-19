@@ -11,11 +11,13 @@ import {
   SYSTEM_EVENT_PROMPT_CLOSE,
   SYSTEM_EVENT_PROMPT_OPEN,
 } from './hooks/system-event.js';
+import { loadAction } from './action-store.js';
 import {
   listTranscriptTaskRecords,
   type TranscriptMessage,
 } from './session-transcript.js';
 import { extractCleanAnswer, parseAgentSummary } from './summary.js';
+import { enrichToolContentForUi } from './tools/tool-ui-display.js';
 import type { ChatMessage, MessageContent, SessionFile } from './types.js';
 
 export interface SessionChatMessageMeta {
@@ -32,6 +34,8 @@ export interface SessionChatMessage {
   task_id?: string;
   tool_name?: string;
   action_id?: string;
+  /** Raw tool args JSON (write/edit/shell recovery for Web UI). */
+  args_json?: string;
   /** transcript completed task | live current_messages */
   source: 'transcript' | 'in_flight';
   completed_at?: number;
@@ -41,6 +45,27 @@ export interface SessionChatMessage {
    * artifact = compacted/pointer stub.
    */
   view_kind?: 'chat' | 'tool' | 'task_summary' | 'artifact' | 'system_ui';
+}
+
+/** Attach action args + rebuild write/edit display for Web tool cards. */
+function enrichToolMessage(msg: SessionChatMessage): SessionChatMessage {
+  if (msg.role !== 'tool') return msg;
+  const actionId = msg.action_id?.trim();
+  const block = actionId ? loadAction(actionId) : null;
+  const toolName = msg.tool_name || block?.tool_name;
+  const argsJson = block?.args_json;
+  const content = enrichToolContentForUi({
+    toolName,
+    content: msg.content,
+    argsJson,
+    resultText: block?.result_text ?? msg.content,
+  });
+  return {
+    ...msg,
+    tool_name: toolName ?? msg.tool_name,
+    args_json: argsJson ?? msg.args_json,
+    content,
+  };
 }
 
 function contentToText(content: MessageContent): string {
@@ -193,7 +218,7 @@ function fromTranscriptMessage(
       view_kind: projected.view_kind,
     };
   }
-  return {
+  return enrichToolMessage({
     role: 'tool',
     content: msg.preview,
     turn: msg.turn,
@@ -203,7 +228,7 @@ function fromTranscriptMessage(
     source: 'transcript',
     completed_at: completedAt,
     view_kind: 'tool',
-  };
+  });
 }
 
 function fromChatMessage(msg: ChatMessage, taskId?: string): SessionChatMessage | null {
@@ -243,7 +268,7 @@ function fromChatMessage(msg: ChatMessage, taskId?: string): SessionChatMessage 
   }
   if (msg.role === 'tool') {
     const content = contentToText(msg.content);
-    return {
+    return enrichToolMessage({
       role: 'tool',
       content,
       turn: msg.turn,
@@ -253,7 +278,7 @@ function fromChatMessage(msg: ChatMessage, taskId?: string): SessionChatMessage 
       source: 'in_flight',
       view_kind: looksLikeArtifact(content) ? 'artifact' : 'tool',
       meta: looksLikeArtifact(content) ? { artifact: true } : undefined,
-    };
+    });
   }
   return null;
 }

@@ -14,10 +14,13 @@ import {
   projectUserDisplay,
 } from "./content-project";
 import {
+  contentFromWriteArgs,
+  diffFromEditArgs,
   formatReadTreePreview,
   formatWriteCardPreview,
   inferToolName,
   inferToolPath,
+  splitToolUiDisplay,
   toolSkin,
 } from "./tool-parse";
 import type {
@@ -145,7 +148,10 @@ export function coalesceToolsIntoAssistants(
     }
 
     const name = inferToolName(m.toolName, m.content);
-    const path = inferToolPath(m.content);
+    const path =
+      inferToolPath(m.content) ||
+      inferToolPath(m.argsJson) ||
+      undefined;
     const part: ToolPart = {
       toolName: name,
       callId: m.callId || m.id,
@@ -154,6 +160,7 @@ export function coalesceToolsIntoAssistants(
       toolExpanded: m.toolExpanded,
       path,
       skin: toolSkin(name),
+      argsJson: m.argsJson,
     };
 
     // Prefer previous assistant even if system notices sit between (vision inject)
@@ -251,10 +258,58 @@ export function collapseToolsExceptLatestTurn(
   });
 }
 
+/**
+ * Resolve the text that should appear in the tool card body.
+ * Prefer write/edit UI display blocks; fall back to args reconstruction.
+ */
+export function resolveToolDisplayBody(part: ToolPart): {
+  body: string;
+  kind?: "code" | "diff" | "log" | "mixed";
+  path?: string;
+  summary?: string;
+} {
+  const raw = part.content ?? "";
+  const split = splitToolUiDisplay(raw);
+  const path =
+    part.path ||
+    inferToolPath(split.summary) ||
+    inferToolPath(raw) ||
+    inferToolPath(part.argsJson);
+
+  if (split.display?.trim()) {
+    return {
+      body: split.display.trim(),
+      kind: "diff",
+      path,
+      summary: split.summary,
+    };
+  }
+
+  const skin = part.skin ?? toolSkin(part.toolName);
+  if (skin === "write" || part.toolName === "edit_file") {
+    if (part.toolName === "edit_file" || split.kind === "edit") {
+      const rebuilt = diffFromEditArgs(part.argsJson);
+      if (rebuilt) {
+        return { body: rebuilt, kind: "diff", path, summary: split.summary };
+      }
+    }
+    const written = contentFromWriteArgs(part.argsJson);
+    if (written) {
+      return { body: written, kind: "code", path, summary: split.summary };
+    }
+  }
+
+  return {
+    body: split.summary || raw,
+    path,
+    summary: split.summary,
+  };
+}
+
 function formatToolResultBody(part: ToolPart): string {
   const skin = part.skin ?? toolSkin(part.toolName);
-  // Title already on the trigger — body is content only (avoid double header)
-  let body = part.content?.trim() ?? "";
+  const resolved = resolveToolDisplayBody(part);
+  let body = resolved.body.trim();
 
   // Compact vision_attach tool results (JSON marker is agent-facing noise)
   if (
@@ -270,23 +325,36 @@ function formatToolResultBody(part: ToolPart): string {
     return clip || "image registered for next model turn";
   }
 
+  // Real code/diff body — do not run through the short "ok: wrote" card clip
+  if (resolved.kind === "diff" || resolved.kind === "code") {
+    return body || "(empty)";
+  }
+
   if (skin === "write") {
-    // write card: path line + clipped body (✓ toolName is in trigger)
-    return formatWriteCardPreview(part.toolName, body, part.path)
-      .split("\n")
-      .slice(1) // drop "✓ toolName"
-      .join("\n")
-      .trim() || body || "(empty)";
+    // Status-only fallback when display was stripped (history before bridge fix)
+    return (
+      formatWriteCardPreview(part.toolName, body, resolved.path ?? part.path)
+        .split("\n")
+        .slice(1)
+        .join("\n")
+        .trim() ||
+      body ||
+      "(empty)"
+    );
   }
   if (skin === "read") {
-    // tree lines only — toolName("path") is trigger title
-    const tree = formatReadTreePreview(part.toolName, body, part.path);
+    const tree = formatReadTreePreview(
+      part.toolName,
+      body,
+      resolved.path ?? part.path,
+    );
     const lines = tree.split("\n");
     return lines.length > 1 ? lines.slice(1).join("\n") : body || "(empty)";
   }
   if (skin === "shell") {
+    // Keep fuller shell body for log pane (card has its own scroll)
     const clip =
-      body.length > 400 ? `${body.slice(0, 400).trim()}…` : body;
+      body.length > 12_000 ? `${body.slice(0, 12_000).trim()}…` : body;
     return clip || "(empty)";
   }
   return body || "(empty)";
@@ -296,16 +364,33 @@ function toolPartToContent(part: ToolPart) {
   const expand =
     part.toolExpanded === true || part.status === "running";
   const running = part.status === "running";
+  const resolved = resolveToolDisplayBody(part);
+  const path = resolved.path ?? part.path;
+  const skin = part.skin ?? toolSkin(part.toolName);
+  let argsObj: Record<string, unknown> = {};
+  if (part.argsJson) {
+    try {
+      argsObj = JSON.parse(part.argsJson) as Record<string, unknown>;
+    } catch {
+      argsObj = {};
+    }
+  }
+  if (path && !argsObj.path) argsObj.path = path;
+  const argsText =
+    part.argsJson?.trim() ||
+    (Object.keys(argsObj).length ? JSON.stringify(argsObj) : "");
+
   return {
     type: "tool-call" as const,
     toolCallId: part.callId,
     toolName: part.toolName,
-    args: part.path ? { path: part.path } : {},
-    argsText: part.path ? JSON.stringify({ path: part.path }) : "",
+    args: argsObj,
+    argsText,
     result: {
       preview: formatToolResultBody(part),
-      skin: part.skin ?? toolSkin(part.toolName),
-      path: part.path,
+      skin,
+      path,
+      kind: resolved.kind,
       _expand: expand,
     },
     status: running
@@ -329,7 +414,10 @@ export function convertMessage(message: MinimalMessage): ThreadMessageLike {
   if (message.role === "tool") {
     // Fallback if coalesce was skipped
     const name = inferToolName(message.toolName, message.content);
-    const path = inferToolPath(message.content);
+    const path =
+      inferToolPath(message.content) ||
+      inferToolPath(message.argsJson) ||
+      undefined;
     const part: ToolPart = {
       toolName: name,
       callId: message.callId || message.id,
@@ -338,6 +426,7 @@ export function convertMessage(message: MinimalMessage): ThreadMessageLike {
       toolExpanded: message.toolExpanded,
       path,
       skin: toolSkin(name),
+      argsJson: message.argsJson,
     };
     return {
       id: message.id,
@@ -415,6 +504,72 @@ export function convertMessage(message: MinimalMessage): ThreadMessageLike {
   };
 }
 
+/** True if tool body carries write/edit UI display (or is clearly longer). */
+export function toolBodyRichness(content: string | undefined): number {
+  const c = content ?? "";
+  if (c.includes("[write_display]") || c.includes("[edit_display]")) return 1000 + c.length;
+  if (c.includes("\n+") || c.includes("\n-") || c.includes("@@")) return 500 + c.length;
+  return c.length;
+}
+
+function toolMergeKey(m: MinimalMessage): string | null {
+  if (m.role !== "tool") return null;
+  const name = m.toolName || inferToolName(undefined, m.content) || "tool";
+  const path = inferToolPath(m.content) || inferToolPath(m.argsJson) || "";
+  // Match live WS tools to history rows: call_id ≠ action_id, so use summary+path.
+  const summary = (m.content ?? "")
+    .split("\n[write_display]")[0]
+    ?.split("\n[edit_display]")[0]
+    ?.split("\n")[0]
+    ?.trim()
+    .slice(0, 120) ?? "";
+  if (path || summary.startsWith("ok:") || summary.startsWith("error:")) {
+    return `${name}|${path}|${summary}`;
+  }
+  if (m.callId) return `id:${m.callId}`;
+  return `h:${name}|${summary}`;
+}
+
+/**
+ * When reloading history after a run, prefer live (or richer) tool bodies so
+ * write/edit diffs are not replaced by transcript "ok: wrote…" stubs.
+ */
+export function preferRicherToolMessages(
+  prev: MinimalMessage[],
+  incoming: MinimalMessage[],
+): MinimalMessage[] {
+  if (!prev.length) return incoming;
+  const rich = new Map<string, MinimalMessage>();
+  for (const m of prev) {
+    const k = toolMergeKey(m);
+    if (!k) continue;
+    const cur = rich.get(k);
+    if (!cur || toolBodyRichness(m.content) > toolBodyRichness(cur.content)) {
+      rich.set(k, m);
+    }
+  }
+  if (rich.size === 0) return incoming;
+
+  return incoming.map((m) => {
+    if (m.role !== "tool") return m;
+    const k = toolMergeKey(m);
+    if (!k) return m;
+    const better = rich.get(k);
+    if (!better) return m;
+    if (toolBodyRichness(better.content) <= toolBodyRichness(m.content)) {
+      return m;
+    }
+    return {
+      ...m,
+      content: better.content,
+      argsJson: better.argsJson ?? m.argsJson,
+      toolName: better.toolName || m.toolName,
+      // Keep expand flag from incoming (latest-turn policy)
+      toolExpanded: m.toolExpanded || better.toolExpanded,
+    };
+  });
+}
+
 export function fromHistoryDto(row: SessionChatMessageDto): MinimalMessage {
   const raw = row.content ?? "";
   if (row.role === "assistant") {
@@ -453,10 +608,12 @@ export function fromHistoryDto(row: SessionChatMessageDto): MinimalMessage {
       status: "complete",
       toolName: name,
       callId: row.action_id,
+      argsJson: row.args_json,
       turn: row.turn,
       taskId: row.task_id,
       source: row.source,
       viewKind: "tool",
+      // Latest-turn expand applied by applyToolExpandPolicy after map
       toolExpanded: false,
     };
   }

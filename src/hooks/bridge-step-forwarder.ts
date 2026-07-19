@@ -20,6 +20,17 @@ export const DEFAULT_TOOL_BRIDGE_SUMMARY_CHARS = 400;
 /** Floor for summary clip length (avoid zero/negative maxChars). */
 export const MIN_BRIDGE_SUMMARY_CHARS = 32;
 
+/**
+ * UI-only write/edit diff blocks (agent loop strips these via split*ToolOutput).
+ * Cap keeps WS frames reasonable while still showing real code in Web tool cards.
+ */
+export const DEFAULT_TOOL_BRIDGE_DISPLAY_CHARS = 16_000;
+
+const WRITE_DISPLAY_START = '\n[write_display]\n';
+const WRITE_DISPLAY_END = '\n[/write_display]';
+const EDIT_DISPLAY_START = '\n[edit_display]\n';
+const EDIT_DISPLAY_END = '\n[/edit_display]';
+
 export interface BridgeStepForwarderOptions {
   /** Default main session source. */
   source?: SessionMessageSource;
@@ -163,9 +174,17 @@ export class BridgeStepForwarder {
     event: Extract<AgentStepEvent, { type: 'tool_result' }>,
   ): void {
     const maxChars = this.opts?.toolSummaryMaxChars ?? DEFAULT_TOOL_BRIDGE_SUMMARY_CHARS;
-    const content = summarizeToolResultForBridge(
+    const summary = summarizeToolResultForBridge(
       { name: event.name, output: event.output, preview: event.preview },
       maxChars,
+    );
+    // Re-attach UI display block so Web can show write/edit diffs (TUI already
+    // receives display on the step event; the bridge used to drop it).
+    const content = attachToolDisplayForBridge(
+      event.name,
+      summary,
+      event.display,
+      DEFAULT_TOOL_BRIDGE_DISPLAY_CHARS,
     );
 
     this.bridge.emit({
@@ -179,6 +198,33 @@ export class BridgeStepForwarder {
       source: this.opts?.source ?? 'main',
       source_id: this.opts?.source_id,
       task_id: this.opts?.task_id,
+      // Shell command / write content recovery when display missing
+      args: typeof event.args === 'string' ? event.args : undefined,
     });
   }
+}
+
+/** Re-wrap agent-facing summary + optional UI display for MessageBridge. */
+export function attachToolDisplayForBridge(
+  toolName: string,
+  summary: string,
+  display: string | undefined,
+  maxDisplayChars: number = DEFAULT_TOOL_BRIDGE_DISPLAY_CHARS,
+): string {
+  const body = display?.trim();
+  if (!body) return summary;
+
+  const clipped =
+    body.length > maxDisplayChars
+      ? `${body.slice(0, maxDisplayChars)}\n… [display truncated]`
+      : body;
+
+  if (toolName === 'edit_file') {
+    return `${summary}${EDIT_DISPLAY_START}${clipped}${EDIT_DISPLAY_END}`;
+  }
+  if (toolName === 'write_file' || toolName === 'apply_patch') {
+    return `${summary}${WRITE_DISPLAY_START}${clipped}${WRITE_DISPLAY_END}`;
+  }
+  // Unknown tools with display: plain append under write markers (GUI still parses)
+  return `${summary}${WRITE_DISPLAY_START}${clipped}${WRITE_DISPLAY_END}`;
 }

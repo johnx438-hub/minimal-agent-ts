@@ -68,6 +68,42 @@ export function inferToolName(
   return t || "tool";
 }
 
+const WRITE_DISPLAY_START = "\n[write_display]\n";
+const WRITE_DISPLAY_END = "\n[/write_display]";
+const EDIT_DISPLAY_START = "\n[edit_display]\n";
+const EDIT_DISPLAY_END = "\n[/edit_display]";
+
+/** Split agent summary from UI-only display block (mirrors server write/edit-display). */
+export function splitToolUiDisplay(raw: string): {
+  summary: string;
+  display?: string;
+  kind?: "write" | "edit";
+} {
+  const trySplit = (
+    start: string,
+    end: string,
+    kind: "write" | "edit",
+  ): { summary: string; display?: string; kind?: "write" | "edit" } | null => {
+    const s = raw.indexOf(start);
+    if (s < 0) return null;
+    const e = raw.indexOf(end, s + start.length);
+    if (e < 0) return null;
+    return {
+      summary: raw.slice(0, s).trimEnd(),
+      display: raw.slice(s + start.length, e),
+      kind,
+    };
+  };
+  return (
+    trySplit(EDIT_DISPLAY_START, EDIT_DISPLAY_END, "edit") ??
+    trySplit(WRITE_DISPLAY_START, WRITE_DISPLAY_END, "write") ??
+    trySplit("[write_display]\n", "\n[/write_display]", "write") ??
+    trySplit("[edit_display]\n", "\n[/edit_display]", "edit") ?? {
+      summary: raw,
+    }
+  );
+}
+
 /** Best-effort path for title chip. */
 export function inferToolPath(content: string | undefined): string | undefined {
   const c = content ?? "";
@@ -77,11 +113,60 @@ export function inferToolPath(content: string | undefined): string | undefined {
   );
   if (visionPath?.[1] && visionPath[1].length < 200) return visionPath[1];
 
+  // ok: wrote N bytes to /abs/or/rel/path (new file)
+  const wrote = c.match(
+    /ok:\s*wrote\s+\d+\s+bytes\s+to\s+(\S+?)(?:\s+\(|$)/i,
+  );
+  if (wrote?.[1] && wrote[1].length < 240) return wrote[1];
+
+  // ok: edited /path/file.ts (
+  const edited = c.match(/ok:\s*edited\s+(\S+?)(?:\s+\(|$)/i);
+  if (edited?.[1] && edited[1].length < 240) return edited[1];
+
   const quoted = c.match(/["'`]([^"'`\n]+\.[a-zA-Z0-9]{1,8})["'`]/);
   if (quoted?.[1] && quoted[1].length < 120) return quoted[1];
   const pathy = c.match(/(?:^|\s)([\w./-]+\.[a-zA-Z0-9]{1,8})(?:\s|$|:)/);
   if (pathy?.[1] && pathy[1].length < 120 && !pathy[1].startsWith("http")) {
     return pathy[1];
+  }
+  return undefined;
+}
+
+/** Rebuild a minimal unified diff from edit args when display was stripped. */
+export function diffFromEditArgs(argsJson?: string): string | undefined {
+  if (!argsJson?.trim()) return undefined;
+  try {
+    const o = JSON.parse(argsJson) as {
+      path?: string;
+      old_string?: string;
+      new_string?: string;
+    };
+    const oldS = o.old_string ?? "";
+    const newS = o.new_string ?? "";
+    if (!oldS && !newS) return undefined;
+    const path = o.path?.trim() || "file";
+    const oldLines = oldS.replace(/\r\n/g, "\n").split("\n");
+    const newLines = newS.replace(/\r\n/g, "\n").split("\n");
+    return [
+      `--- a/${path}`,
+      `+++ b/${path}`,
+      `@@ -1,${oldLines.length} +1,${newLines.length} @@`,
+      ...oldLines.map((l) => `-${l}`),
+      ...newLines.map((l) => `+${l}`),
+    ].join("\n");
+  } catch {
+    return undefined;
+  }
+}
+
+/** Prefer write content from args when result is only an ok: summary. */
+export function contentFromWriteArgs(argsJson?: string): string | undefined {
+  if (!argsJson?.trim()) return undefined;
+  try {
+    const o = JSON.parse(argsJson) as { content?: string };
+    if (typeof o.content === "string" && o.content.length > 0) return o.content;
+  } catch {
+    /* ignore */
   }
   return undefined;
 }

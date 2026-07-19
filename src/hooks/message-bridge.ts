@@ -23,6 +23,8 @@ export interface SessionMessage {
   tool_name?: string;
   call_id?: string;
   task_id?: string;
+  /** Raw tool args JSON when available (shell command / write content fallback). */
+  args?: string;
 
   source?: SessionMessageSource;
   /** spawn preset name or job_id for threading */
