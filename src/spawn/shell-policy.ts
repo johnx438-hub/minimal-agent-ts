@@ -189,14 +189,31 @@ export const DEFAULT_SPAWN_SHELL_DENY: string[] = [
   String.raw`\bdd\s+if=`,
 ];
 
-/** Sensible allowlist for dev-worker style agents. */
+/**
+ * Sensible allowlist for dev-worker style agents.
+ * Prefer git_* / list_files / grep_search / test_run tools over free-form shell;
+ * these prefixes cover residual habits (ls/find/rg, pnpm/yarn) without opening
+ * interpreters or unrestricted write tools.
+ */
 export const DEFAULT_DEV_WORKER_SHELL_ALLOW: string[] = [
   'npm test',
   'npm run',
   'npm ',
   'npx ',
   'node ',
+  'pnpm ',
+  'yarn ',
+  'bun ',
   'git ',
   'tsc',
   'tsx ',
+  // read-only probes (list_files / grep_search still preferred)
+  'ls ',
+  'find ',
+  'head ',
+  'wc ',
+  'rg ',
+  'fd ',
+  'pwd',
+  'echo ',
 ];

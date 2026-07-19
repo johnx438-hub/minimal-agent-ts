@@ -15,7 +15,7 @@ max_turns: 80
 - **lsp_query** for hover / definition / references / symbols on TypeScript/JavaScript (prefer over blind grep for symbols).
 - **office_read** / **office_write** for docx/pptx (structured layout: headings, lists, tables, slide presets/objects) and light xlsx edits — pure Node, no shell.
 - **run_shell** when the parent has shell enabled (typecheck, one-off commands). Prefer short, focused commands.
-  - Child shell is **allowlist-gated** (npm / npx / node / git / tsc / tsx prefixes). Prefer `test_run` and `git_*` over free-form shell.
+  - Child shell is **allowlist-gated** (package managers, node/tsc/tsx, git, and light probes: ls/find/rg/…). Prefer `test_run`, `git_*`, `list_files`, `grep_search` over free-form shell.
   - Dangerous patterns (`sudo`, `rm -rf /`, pipe-to-shell, …) are always denied.
 - **web_search** / **web_fetch** only when docs or API references are missing locally (parent must allow web).
 

@@ -46,7 +46,11 @@ describe('spawn shell-policy pure helpers', () => {
     assert.equal(commandMatchesPrefix('npmtest', 'npm'), false);
     assert.equal(commandMatchesPrefix('npm install lodash', 'npm '), true);
     assert.equal(commandMatchesAnyPrefix('git status', DEFAULT_DEV_WORKER_SHELL_ALLOW), true);
+    assert.equal(commandMatchesAnyPrefix('ls -la src', DEFAULT_DEV_WORKER_SHELL_ALLOW), true);
+    assert.equal(commandMatchesAnyPrefix('pnpm test', DEFAULT_DEV_WORKER_SHELL_ALLOW), true);
+    assert.equal(commandMatchesAnyPrefix('rg foo src', DEFAULT_DEV_WORKER_SHELL_ALLOW), true);
     assert.equal(commandMatchesAnyPrefix('python evil.py', DEFAULT_DEV_WORKER_SHELL_ALLOW), false);
+    assert.equal(commandMatchesAnyPrefix('cat /etc/passwd', DEFAULT_DEV_WORKER_SHELL_ALLOW), false);
   });
 
   it('deny patterns catch destructive commands', () => {
@@ -100,6 +104,8 @@ describe('evaluateSpawnShellPolicy', () => {
     };
     assert.equal(evaluateSpawnShellPolicy('npm test', policy).ok, true);
     assert.equal(evaluateSpawnShellPolicy('tsc --noEmit', policy).ok, true);
+    assert.equal(evaluateSpawnShellPolicy('ls src', policy).ok, true);
+    assert.equal(evaluateSpawnShellPolicy('yarn build', policy).ok, true);
     const blocked = evaluateSpawnShellPolicy('python3 x.py', policy);
     assert.equal(blocked.ok, false);
     assert.match(blocked.reason ?? '', /allowlist/);
