@@ -475,12 +475,19 @@ export async function handleApiRoute(
     }
     const session = ctx.runtime.session!;
     const messages = buildSessionChatHistory(session, { limit: 500 });
+    // Session-scoped llm_override restored by attachSession — push to all UIs (TUI parity)
+    const llm = llmStatus(ctx.runtime);
+    broadcastLlm(ctx.hub, ctx.runtime);
     sendJson(res, 200, {
       ok: true,
       session_id: session.session_id,
       /** Include history so clients can hydrate chat without a second round-trip. */
       messages,
       message_count: messages.length,
+      profile: llm.profile ?? null,
+      profile_display: llm.profile_display ?? null,
+      model: llm.model ?? null,
+      llm_override: ctx.runtime.getSessionLlmOverride(),
     });
     return true;
   }

@@ -429,14 +429,25 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
           return;
         }
         case "llm": {
-          set({
-            profile: frame.profile ?? get().profile,
-            model: frame.model ?? get().model,
+          // Session switch /profile /model — keep dropdown active flags in sync
+          const nextProfile = frame.profile ?? get().profile;
+          const nextModel = frame.model ?? get().model;
+          set((s) => ({
+            profile: nextProfile,
+            model: nextModel,
             armedWorkflow:
               frame.armed_workflow !== undefined
                 ? frame.armed_workflow
-                : get().armedWorkflow,
-          });
+                : s.armedWorkflow,
+            profiles: s.profiles.map((p) => ({
+              ...p,
+              active: p.name === nextProfile,
+            })),
+            models: s.models.map((m) => ({
+              ...m,
+              active: m.model === nextModel,
+            })),
+          }));
           return;
         }
         case "skills": {
@@ -795,11 +806,25 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
       const res = await minimalFetch<{
         session_id: string;
         messages?: SessionChatMessageDto[];
+        profile?: string | null;
+        model?: string | null;
+        llm_override?: {
+          profileName?: string;
+          model?: string;
+          reasoningLevel?: string;
+        };
       }>(`/v1/sessions/${encodeURIComponent(id)}/switch`, {
         method: "POST",
         body: "{}",
         token: get().token || getMinimalToken(),
       });
+      // Profile/model follow the session file (llm_override), same as TUI resume
+      const nextProfile =
+        res.profile ??
+        res.llm_override?.profileName ??
+        get().profile;
+      const nextModel =
+        res.model ?? res.llm_override?.model ?? get().model;
       set({
         sessionId: res.session_id || id,
         messages: applyToolExpandPolicy(
@@ -807,6 +832,8 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
         ),
         workflowSteps: [],
         lastError: undefined,
+        profile: nextProfile ?? null,
+        model: nextModel ?? null,
         sessions: get().sessions.map((s) =>
           s.session_id === (res.session_id || id) ? { ...s } : s,
         ),
@@ -814,6 +841,8 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
       if (!res.messages?.length) {
         await get().loadHistory(res.session_id || id);
       }
+      // Refresh profile/model dropdowns so active flags match this session
+      await get().refreshCatalog();
     } catch (e) {
       set({
         lastError: e instanceof Error ? e.message : String(e),
