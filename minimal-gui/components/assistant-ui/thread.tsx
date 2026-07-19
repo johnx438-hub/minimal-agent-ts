@@ -41,6 +41,7 @@ import {
   ChevronRightIcon,
   CopyIcon,
   DownloadIcon,
+  Loader2Icon,
   MicIcon,
   MoreHorizontalIcon,
   PencilIcon,
@@ -117,7 +118,11 @@ const ThreadRoot: FC<{ isEmpty: boolean }> = ({ isEmpty }) => {
       }}
     >
       <ThreadPrimitive.Viewport
-        turnAnchor="top"
+        // bottom + autoScroll: keep sticky to latest during stream
+        // (turnAnchor="top" disables autoScroll by default — user had to wheel)
+        turnAnchor="bottom"
+        autoScroll
+        scrollToBottomOnRunStart
         data-slot="aui_thread-viewport"
         className="relative flex flex-1 flex-col overflow-x-auto overflow-y-scroll scroll-smooth"
       >
@@ -138,6 +143,16 @@ const ThreadRoot: FC<{ isEmpty: boolean }> = ({ isEmpty }) => {
             <ThreadPrimitive.Messages>
               {() => <ThreadMessage />}
             </ThreadPrimitive.Messages>
+            {/* Silent spinner while run is active — no text */}
+            <AuiIf condition={(s) => s.thread.isRunning}>
+              <div
+                className="text-muted-foreground flex items-center gap-2 px-2 py-2"
+                aria-label="生成中"
+                role="status"
+              >
+                <Loader2Icon className="size-4 animate-spin opacity-70" />
+              </div>
+            </AuiIf>
           </div>
 
           <ThreadPrimitive.ViewportFooter

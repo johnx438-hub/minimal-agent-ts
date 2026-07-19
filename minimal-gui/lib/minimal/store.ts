@@ -505,23 +505,45 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
           ? sm.source_id || "spawn"
           : sm.source_id || spawnKey;
 
+      // Background jobs: only touch jobs panel (never stream previews into the
+      // top strip — multi-job preview thrash was causing layout / scroll shake).
       if (bridgeSource === "job" && sm.source_id) {
-        set((s) => {
-          const jobs = [...s.jobs];
-          const id = sm.source_id!;
-          const i = jobs.findIndex((j) => j.id === id);
-          const row = {
-            id,
-            status: "running",
-            label: jobs[i]?.label ?? id.slice(0, 14),
-          };
-          if (i >= 0) jobs[i] = { ...jobs[i]!, ...row, status: "running" };
-          else jobs.unshift(row);
-          return { jobs };
-        });
+        if (role === "tool" || (role === "assistant" && sm.content)) {
+          set((s) => {
+            const jobs = [...s.jobs];
+            const id = sm.source_id!;
+            const i = jobs.findIndex((j) => j.id === id);
+            const tool =
+              role === "tool"
+                ? inferToolName(sm.tool_name, sm.content)
+                : undefined;
+            const row = {
+              id,
+              status: "running" as const,
+              label:
+                jobs[i]?.label ||
+                tool ||
+                id.slice(0, 14),
+            };
+            if (i >= 0) {
+              jobs[i] = {
+                ...jobs[i]!,
+                status: "running",
+                // keep stable label after first set
+                label: jobs[i]!.label || row.label,
+              };
+            } else jobs.unshift(row);
+            return { jobs: jobs.slice(0, 20) };
+          });
+        }
+        return;
       }
 
-      // Update spawn activity strip (throttled by delta batch still helps)
+      // Sync spawn: strip shows name + last tool only — ignore token deltas
+      if (role === "assistant" && sm.delta) {
+        return;
+      }
+
       set((s) => {
         const list = [...s.activeSpawns];
         let row = list.find(
@@ -537,24 +559,25 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
           list.unshift(row);
         }
         const idx = list.findIndex((x) => x.id === row!.id);
-        let preview = row.preview;
         let lastTool = row.lastTool;
-        if (role === "assistant") {
-          const piece = sm.delta || sm.content || "";
-          if (piece) {
-            preview = (preview + piece).slice(-240);
-          }
-        } else if (role === "tool") {
+        if (role === "tool") {
           lastTool = inferToolName(sm.tool_name, sm.content);
-          const tip = (sm.content ?? "").slice(0, 80);
-          if (tip) preview = `${lastTool}: ${tip}`.slice(0, 240);
+        }
+        // Skip update if nothing meaningful changed (fewer re-renders)
+        if (
+          row.status === "running" &&
+          row.lastTool === lastTool &&
+          row.preset === (row.preset || presetLabel)
+        ) {
+          return s;
         }
         list[idx] = {
           ...row,
           status: "running",
-          preview,
           lastTool,
           preset: row.preset || presetLabel,
+          // keep preview empty — top bar is compact only
+          preview: "",
         };
         return { activeSpawns: list.slice(0, 6) };
       });
