@@ -21,6 +21,7 @@ import type {
   ProfileMeta,
   SessionChatMessageDto,
   SessionMeta,
+  RuntimeCapabilities,
   SkillMeta,
   WorkflowConfirmPending,
   WorkflowMeta,
@@ -64,6 +65,9 @@ export interface MinimalStore {
   /** Sync spawn_agent activity (child stream not mixed into main bubbles). */
   activeSpawns: ActiveSpawn[];
 
+  /** Shell / web process flags (Settings + optional WS sync). */
+  capabilities: RuntimeCapabilities | null;
+
   setToken: (token: string) => void;
   setConnection: (c: ConnectionState, err?: string) => void;
   setMessages: (messages: MinimalMessage[]) => void;
@@ -94,6 +98,11 @@ export interface MinimalStore {
   refreshCatalog: () => Promise<void>;
   loadHistory: (sessionId?: string) => Promise<void>;
   respondWorkflowConfirm: (approved: boolean) => Promise<void>;
+  refreshCapabilities: () => Promise<void>;
+  setCapability: (
+    kind: "shell" | "web",
+    on: boolean,
+  ) => Promise<{ ok: boolean; message?: string }>;
 }
 
 function appendAssistantDelta(
@@ -213,6 +222,7 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
   workflowConfirm: null,
   workflowConfirmBusy: false,
   activeSpawns: [],
+  capabilities: null,
 
   setToken(token) {
     rememberToken(token);
@@ -455,6 +465,19 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
         }
         case "skills": {
           set({ loadedSkills: frame.loaded ?? [] });
+          return;
+        }
+        case "capabilities": {
+          set({
+            capabilities: {
+              shell: frame.shell,
+              web: frame.web,
+              session_grants: frame.session_grants,
+              always_grants: frame.always_grants,
+              auth_open: frame.auth_open,
+              hot_toggle: frame.hot_toggle ?? true,
+            },
+          });
           return;
         }
         default:
@@ -1135,6 +1158,8 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
     } catch {
       /* ignore */
     }
+
+    void get().refreshCapabilities();
   },
 
   async loadHistory(sessionId?: string) {
@@ -1153,5 +1178,53 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
         (res.messages ?? []).map(fromHistoryDto),
       ),
     });
+  },
+
+  async refreshCapabilities() {
+    try {
+      const caps = await minimalFetch<RuntimeCapabilities>(
+        "/v1/runtime/capabilities",
+        { token: get().token || getMinimalToken() },
+      );
+      set({ capabilities: caps, lastError: undefined });
+    } catch (e) {
+      set({
+        lastError: e instanceof Error ? e.message : String(e),
+      });
+    }
+  },
+
+  async setCapability(kind, on) {
+    if (get().isRunning) {
+      return { ok: false, message: "agent is running — abort first" };
+    }
+    try {
+      const body =
+        kind === "shell" ? { shell: on } : { web: on };
+      const caps = await minimalFetch<RuntimeCapabilities & { ok?: boolean }>(
+        "/v1/runtime/capabilities",
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+          token: get().token || getMinimalToken(),
+        },
+      );
+      set({
+        capabilities: {
+          shell: caps.shell,
+          web: caps.web,
+          session_grants: caps.session_grants,
+          always_grants: caps.always_grants,
+          auth_open: caps.auth_open,
+          hot_toggle: caps.hot_toggle ?? true,
+        },
+        lastError: undefined,
+      });
+      return { ok: true };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      set({ lastError: message });
+      return { ok: false, message };
+    }
   },
 }));

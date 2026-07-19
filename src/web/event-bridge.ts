@@ -8,6 +8,7 @@ import type { AgentRuntime } from '../runner.js';
 import { listSpawnJobs } from '../spawn/job-query.js';
 import type { WsHub } from './ws-hub.js';
 import type {
+  WebCapabilitiesFrame,
   WebJobFrame,
   WebRunStateFrame,
   WebSpawnFrame,
@@ -142,6 +143,15 @@ export function attachRuntimeEventBridge(
           preset: event.preset,
           ok: event.ok,
           detail: event.detail,
+        };
+        hub.broadcast(frame);
+        break;
+      }
+      case 'runtime': {
+        const frame: WebCapabilitiesFrame = {
+          type: 'capabilities',
+          shell: event.shell,
+          web: event.web,
         };
         hub.broadcast(frame);
         break;

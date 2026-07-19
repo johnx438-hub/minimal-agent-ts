@@ -95,6 +95,16 @@ export interface SessionMeta {
   last_user_preview?: string;
 }
 
+/** Process-level shell/web capabilities (Settings S2). */
+export interface RuntimeCapabilities {
+  shell: boolean;
+  web: boolean;
+  session_grants?: { shell: boolean; web: boolean };
+  always_grants?: { shell: boolean; web: boolean };
+  auth_open?: boolean;
+  hot_toggle?: boolean;
+}
+
 export interface WorkflowMeta {
   name: string;
   path?: string;
@@ -187,6 +197,15 @@ export type WsFrame =
       armed_workflow?: string | null;
     }
   | { type: "skills"; loaded: string[] }
+  | {
+      type: "capabilities";
+      shell: boolean;
+      web: boolean;
+      session_grants?: { shell: boolean; web: boolean };
+      always_grants?: { shell: boolean; web: boolean };
+      auth_open?: boolean;
+      hot_toggle?: boolean;
+    }
   | {
       type: "spawn";
       phase: "start" | "end";

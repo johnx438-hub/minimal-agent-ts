@@ -20,8 +20,28 @@ import {
   GUI_UPLOAD_MAX_BYTES,
   saveGuiUpload,
 } from './uploads.js';
+import { isWebAuthDisabled } from './auth.js';
 
 import type { WebWorkflowConfirmController } from './workflow-confirm.js';
+
+function capabilitiesSnapshot(runtime: import('../runner.js').AgentRuntime) {
+  const gate = runtime.permissionGate;
+  return {
+    shell: Boolean(runtime.config.allowShell),
+    web: Boolean(runtime.config.allowWeb),
+    session_grants: {
+      shell: gate.hasSessionGrant('shell'),
+      web: gate.hasSessionGrant('web'),
+    },
+    always_grants: {
+      shell: gate.hasAlwaysGrant('shell'),
+      web: gate.hasAlwaysGrant('web'),
+    },
+    auth_open: isWebAuthDisabled(),
+    /** Local web UI may hot-toggle; still refuse while agent is running. */
+    hot_toggle: true,
+  };
+}
 
 export interface RouteContext {
   runtime: AgentRuntime;
@@ -82,6 +102,7 @@ export async function handleApiRoute(
   if (path === '/health' && method === 'GET') {
     const session = ctx.runtime.session;
     const st = llmStatus(ctx.runtime);
+    const caps = capabilitiesSnapshot(ctx.runtime);
     sendJson(res, 200, {
       ok: true,
       running: ctx.runtime.isRunning(),
@@ -89,7 +110,82 @@ export async function handleApiRoute(
       model: st.model,
       profile: st.profile,
       armed_workflow: st.armed_workflow,
+      shell: caps.shell,
+      web: caps.web,
+      auth_open: caps.auth_open,
     });
+    return true;
+  }
+
+  // ── Spawn presets (Settings S3, readonly) ────────────────────────────
+  if (path === '/v1/spawn/presets' && method === 'GET') {
+    const { presets, orphans } = ctx.runtime.listSpawnCatalog();
+    sendJson(res, 200, {
+      presets: presets.map((p) => {
+        const tools = p.tools ?? [];
+        const needs_shell = tools.some(
+          (t) => t === 'run_shell' || t.startsWith('run_shell'),
+        );
+        const needs_web = tools.some(
+          (t) =>
+            t === 'web_fetch' ||
+            t === 'web_search' ||
+            t.startsWith('web_'),
+        );
+        return {
+          name: p.name,
+          description: p.description,
+          tools,
+          max_turns: p.maxTurns,
+          prompt_file: p.promptFile,
+          api_profile: p.apiProfile ?? null,
+          model: p.model ?? null,
+          needs_shell,
+          needs_web,
+          registered: p.registered,
+        };
+      }),
+      orphans: orphans.map((o) => ({
+        path: o.relativePath,
+        description: o.description ?? null,
+      })),
+      invoke_hint:
+        'spawn_agent(preset=…) for sync · spawn_background(preset=…) for jobs',
+    });
+    return true;
+  }
+
+  // ── Runtime capabilities (shell / web) ───────────────────────────────
+  if (path === '/v1/runtime/capabilities' && method === 'GET') {
+    sendJson(res, 200, capabilitiesSnapshot(ctx.runtime));
+    return true;
+  }
+
+  if (path === '/v1/runtime/capabilities' && method === 'POST') {
+    if (ctx.runtime.isRunning()) {
+      sendJson(res, 409, { error: 'agent_running' });
+      return true;
+    }
+    let body: Record<string, unknown>;
+    try {
+      body = await parseJsonBody(req);
+    } catch (e) {
+      sendJson(res, 400, {
+        error: 'bad_body',
+        detail: e instanceof Error ? e.message : String(e),
+      });
+      return true;
+    }
+    if (typeof body.shell === 'boolean') {
+      ctx.runtime.setAllowShell(body.shell);
+    }
+    if (typeof body.web === 'boolean') {
+      ctx.runtime.setAllowWeb(body.web);
+    }
+    const caps = capabilitiesSnapshot(ctx.runtime);
+    // runtime event also broadcasts; send explicit frame for full grants snapshot
+    ctx.hub.broadcast({ type: 'capabilities', ...caps });
+    sendJson(res, 200, { ok: true, ...caps });
     return true;
   }
 

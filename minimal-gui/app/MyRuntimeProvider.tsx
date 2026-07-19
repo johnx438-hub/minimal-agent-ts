@@ -5,8 +5,9 @@ import {
   AssistantRuntimeProvider,
   useExternalStoreRuntime,
 } from "@assistant-ui/react";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Loader2Icon } from "lucide-react";
+import { Loader2Icon, SettingsIcon } from "lucide-react";
 
 import {
   createPathInboxAttachmentAdapter,
@@ -203,15 +204,28 @@ export function MyRuntimeProvider({
       <AssistantRuntimeProvider runtime={runtime}>
         <div className="flex h-dvh flex-col">
           {/* Thin status only — profile/model/skills live under the composer */}
-          <div className="border-border/60 text-muted-foreground flex h-7 shrink-0 flex-wrap items-center gap-x-2 overflow-hidden border-b px-3 text-[11px]">
-            <span className="font-medium text-foreground/80">minimal</span>
+          <div className="border-border/60 text-muted-foreground flex h-7 shrink-0 items-center gap-x-2 overflow-hidden border-b px-3 text-[11px]">
+            <Link
+              href="/"
+              className="text-foreground/80 shrink-0 font-medium hover:underline"
+            >
+              minimal
+            </Link>
             <span className="opacity-40">·</span>
             <span className="min-w-0 flex-1 truncate">{banner}</span>
             {tokenHint && (
-              <span className="text-red-500">
+              <span className="shrink-0 text-red-500">
                 请设置 NEXT_PUBLIC_MINIMAL_TOKEN 或 URL ?token=
               </span>
             )}
+            <Link
+              href="/settings"
+              className="text-muted-foreground hover:text-foreground hover:bg-muted/50 inline-flex size-6 shrink-0 items-center justify-center rounded-md"
+              title="Settings"
+              aria-label="Settings"
+            >
+              <SettingsIcon className="size-3.5" />
+            </Link>
           </div>
           {/* Fixed single-line height — never wrap / resize (avoids viewport thrash) */}
           {activityStrip && (

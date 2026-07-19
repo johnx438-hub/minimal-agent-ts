@@ -78,6 +78,17 @@ export interface WebSkillsFrame {
   loaded: string[];
 }
 
+/** Process-level shell/web capability snapshot. */
+export interface WebCapabilitiesFrame {
+  type: 'capabilities';
+  shell: boolean;
+  web: boolean;
+  session_grants?: { shell: boolean; web: boolean };
+  always_grants?: { shell: boolean; web: boolean };
+  auth_open?: boolean;
+  hot_toggle?: boolean;
+}
+
 /** Sync spawn_agent lifecycle (child stream stays on MessageBridge with source=spawn). */
 export interface WebSpawnFrame {
   type: 'spawn';
@@ -113,6 +124,7 @@ export type WebControlFrame =
   | WebLlmFrame
   | WebWorkflowArmedFrame
   | WebSkillsFrame
+  | WebCapabilitiesFrame
   | WebSpawnFrame
   | WebWorkflowConfirmFrame;
 
