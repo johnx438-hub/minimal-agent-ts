@@ -17,10 +17,14 @@ import type { WsHub } from './ws-hub.js';
 import type { WebRunStateFrame } from './types.js';
 import { snapshotJobs } from './event-bridge.js';
 
+import type { WebWorkflowConfirmController } from './workflow-confirm.js';
+
 export interface RouteContext {
   runtime: AgentRuntime;
   hub: WsHub;
   cwd: string;
+  /** Strict workflow entry gate (TUI overlay parity). */
+  workflowConfirm?: WebWorkflowConfirmController;
 }
 
 function readBody(req: IncomingMessage, maxBytes = 1_000_000): Promise<string> {
@@ -492,8 +496,59 @@ export async function handleApiRoute(
       return true;
     }
     ctx.runtime.abort();
+    // Abort also resolves any pending workflow confirm via AbortSignal
     broadcastRunState(ctx.hub, 'aborted');
     sendJson(res, 200, { ok: true, aborted: true });
+    return true;
+  }
+
+  // GET pending workflow checkpoint (reconnect / poll)
+  if (path === '/v1/workflow/confirm' && method === 'GET') {
+    const pending = ctx.workflowConfirm?.getPending() ?? null;
+    sendJson(res, 200, { pending });
+    return true;
+  }
+
+  // POST approve/deny — same strict gate as TUI overlay (no always-remember)
+  if (path === '/v1/workflow/confirm' && method === 'POST') {
+    if (!ctx.workflowConfirm) {
+      sendJson(res, 503, { error: 'workflow_confirm_unavailable' });
+      return true;
+    }
+    let body: Record<string, unknown>;
+    try {
+      body = await parseJsonBody(req);
+    } catch (e) {
+      sendJson(res, 400, {
+        error: 'bad_body',
+        detail: e instanceof Error ? e.message : String(e),
+      });
+      return true;
+    }
+    const approved =
+      body.approved === true ||
+      body.approve === true ||
+      body.decision === 'approve' ||
+      body.decision === 'yes';
+    const denied =
+      body.approved === false ||
+      body.approve === false ||
+      body.decision === 'deny' ||
+      body.decision === 'no' ||
+      body.decision === 'cancel';
+    if (!approved && !denied) {
+      sendJson(res, 400, {
+        error: 'approved_required',
+        detail: 'body.approved must be true or false',
+      });
+      return true;
+    }
+    const ok = ctx.workflowConfirm.respond(approved);
+    if (!ok) {
+      sendJson(res, 409, { error: 'no_pending_confirm' });
+      return true;
+    }
+    sendJson(res, 200, { ok: true, approved });
     return true;
   }
 

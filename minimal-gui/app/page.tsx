@@ -3,6 +3,7 @@
 import { Thread } from "@/components/assistant-ui/thread";
 import { ComposerChrome } from "@/components/minimal/composer-chrome";
 import { MinimalSidebar } from "@/components/minimal/sidebar";
+import { WorkflowConfirmDialog } from "@/components/minimal/workflow-confirm-dialog";
 import { AuiProvider, Suggestions, useAui } from "@assistant-ui/react";
 
 function ThreadWithSuggestions() {
@@ -48,6 +49,7 @@ export default function Home() {
         </div>
         <ComposerChrome />
       </div>
+      <WorkflowConfirmDialog />
     </main>
   );
 }

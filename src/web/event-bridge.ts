@@ -10,6 +10,7 @@ import type { WsHub } from './ws-hub.js';
 import type {
   WebJobFrame,
   WebRunStateFrame,
+  WebSpawnFrame,
   WebWorkflowStepFrame,
 } from './types.js';
 
@@ -100,6 +101,47 @@ export function attachRuntimeEventBridge(
           status: event.status,
           label: event.preset,
           stale: event.stale,
+        };
+        hub.broadcast(frame);
+        break;
+      }
+      case 'system_event': {
+        // Job settle notices also refresh the jobs panel (backup for job-ui-notify)
+        if (event.job_id) {
+          const status =
+            event.kind === 'job_complete'
+              ? 'completed'
+              : event.kind === 'job_failed'
+                ? 'failed'
+                : event.kind === 'job_cancelled'
+                  ? 'cancelled'
+                  : String(event.kind).replace(/^job_/, '') || 'settled';
+          const frame: WebJobFrame = {
+            type: 'job',
+            id: event.job_id,
+            status,
+            label: event.summary?.slice(0, 48),
+          };
+          hub.broadcast(frame);
+        }
+        break;
+      }
+      case 'spawn_start': {
+        const frame: WebSpawnFrame = {
+          type: 'spawn',
+          phase: 'start',
+          preset: event.preset,
+        };
+        hub.broadcast(frame);
+        break;
+      }
+      case 'spawn_end': {
+        const frame: WebSpawnFrame = {
+          type: 'spawn',
+          phase: 'end',
+          preset: event.preset,
+          ok: event.ok,
+          detail: event.detail,
         };
         hub.broadcast(frame);
         break;

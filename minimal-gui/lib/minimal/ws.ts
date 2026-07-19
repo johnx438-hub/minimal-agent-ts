@@ -1,6 +1,12 @@
 "use client";
 
 import { getMinimalToken, wsUrl } from "./client";
+import {
+  configureDeltaBatch,
+  enqueueWsFrame,
+  flushDeltaBatch,
+  resetDeltaBatch,
+} from "./delta-batch";
 import { useMinimalStore } from "./store";
 import type { WsFrame } from "./types";
 
@@ -8,6 +14,15 @@ let socket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectMs = 1200;
 let intentionalClose = false;
+let batchWired = false;
+
+function ensureDeltaBatch(): void {
+  if (batchWired) return;
+  batchWired = true;
+  configureDeltaBatch((frame) => {
+    useMinimalStore.getState().applyWsFrame(frame);
+  });
+}
 
 export function connectMinimalWs(token?: string): void {
   const t = token ?? getMinimalToken();
@@ -25,6 +40,7 @@ export function connectMinimalWs(token?: string): void {
   }
 
   intentionalClose = false;
+  ensureDeltaBatch();
   useMinimalStore.getState().setConnection("connecting");
   useMinimalStore.getState().setToken(t);
 
@@ -44,7 +60,8 @@ export function connectMinimalWs(token?: string): void {
   ws.onmessage = (ev) => {
     try {
       const frame = JSON.parse(String(ev.data)) as WsFrame;
-      useMinimalStore.getState().applyWsFrame(frame);
+      // Assistant deltas batched (~50ms); other frames flush pending then apply
+      enqueueWsFrame(frame);
     } catch {
       /* ignore */
     }
@@ -55,6 +72,7 @@ export function connectMinimalWs(token?: string): void {
   };
 
   ws.onclose = () => {
+    flushDeltaBatch();
     socket = null;
     useMinimalStore.getState().setConnection("closed");
     if (!intentionalClose) {
@@ -69,6 +87,8 @@ export function connectMinimalWs(token?: string): void {
 
 export function disconnectMinimalWs(): void {
   intentionalClose = true;
+  flushDeltaBatch();
+  resetDeltaBatch();
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;

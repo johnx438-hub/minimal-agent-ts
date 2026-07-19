@@ -18,8 +18,9 @@ export interface WebHelloFrame {
     note?: string;
   }>;
   jobs?: WebJobFrame[];
+  /** Reconnect while a workflow entry gate is waiting. */
+  workflow_confirm?: WebWorkflowConfirmFrame | null;
 }
-
 export interface WebRunStateFrame {
   type: 'run_state';
   state: WebRunState;
@@ -77,6 +78,32 @@ export interface WebSkillsFrame {
   loaded: string[];
 }
 
+/** Sync spawn_agent lifecycle (child stream stays on MessageBridge with source=spawn). */
+export interface WebSpawnFrame {
+  type: 'spawn';
+  phase: 'start' | 'end';
+  preset: string;
+  ok?: boolean;
+  detail?: string;
+}
+
+/** TUI workflow checkpoint overlay → browser modal (strict entry gate). */
+export interface WebWorkflowConfirmFrame {
+  type: 'workflow_confirm';
+  status: 'pending' | 'approved' | 'denied' | 'aborted';
+  workflow: string;
+  path?: string;
+  needs_shell?: boolean;
+  needs_web?: boolean;
+  roles?: Array<{
+    name: string;
+    tools: string[];
+    needs_shell: boolean;
+    needs_web: boolean;
+  }>;
+  summary?: string;
+}
+
 export type WebControlFrame =
   | WebHelloFrame
   | WebRunStateFrame
@@ -85,7 +112,9 @@ export type WebControlFrame =
   | WebWorkflowHandbackFrame
   | WebLlmFrame
   | WebWorkflowArmedFrame
-  | WebSkillsFrame;
+  | WebSkillsFrame
+  | WebSpawnFrame
+  | WebWorkflowConfirmFrame;
 
 export interface WebUiServerOptions {
   /** Default 127.0.0.1 — never bind public without explicit opt-in later. */

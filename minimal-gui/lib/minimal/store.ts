@@ -7,10 +7,13 @@ import {
   applyToolExpandPolicy,
   collapseToolsExceptLatestTurn,
   fromHistoryDto,
+  joinContent,
   newMsgId,
   projectAssistantFinal,
 } from "./convert";
+import { inferToolName } from "./tool-parse";
 import type {
+  ActiveSpawn,
   ConnectionState,
   JobMeta,
   MinimalMessage,
@@ -19,6 +22,7 @@ import type {
   SessionChatMessageDto,
   SessionMeta,
   SkillMeta,
+  WorkflowConfirmPending,
   WorkflowMeta,
   WsFrame,
 } from "./types";
@@ -53,6 +57,13 @@ export interface MinimalStore {
     status?: string;
   }>;
 
+  /** Strict workflow entry gate (TUI overlay parity). */
+  workflowConfirm: WorkflowConfirmPending | null;
+  workflowConfirmBusy: boolean;
+
+  /** Sync spawn_agent activity (child stream not mixed into main bubbles). */
+  activeSpawns: ActiveSpawn[];
+
   setToken: (token: string) => void;
   setConnection: (c: ConnectionState, err?: string) => void;
   setMessages: (messages: MinimalMessage[]) => void;
@@ -72,6 +83,7 @@ export interface MinimalStore {
   clearWorkflowSteps: () => void;
   refreshCatalog: () => Promise<void>;
   loadHistory: (sessionId?: string) => Promise<void>;
+  respondWorkflowConfirm: (approved: boolean) => Promise<void>;
 }
 
 function appendAssistantDelta(
@@ -81,56 +93,93 @@ function appendAssistantDelta(
   const next = [...messages];
   const last = next[next.length - 1];
   if (last?.role === "assistant" && last.status === "running") {
+    // Append chunk without mutating prior state snapshots (new array each time).
+    // join at display time — avoids O(n²) full-string copy of the answer body.
+    const chunks = last.contentChunks?.length
+      ? last.contentChunks.concat(delta)
+      : last.content
+        ? [last.content, delta]
+        : [delta];
     next[next.length - 1] = {
       ...last,
-      content: last.content + delta,
+      contentChunks: chunks,
+      content: "",
     };
     return next;
   }
   next.push({
     id: newMsgId("a"),
     role: "assistant",
-    content: delta,
+    content: "",
+    contentChunks: [delta],
     status: "running",
     source: "live",
   });
   return next;
 }
 
+/**
+ * Close a streaming assistant, or append a non-stream final.
+ *
+ * Critical: run_state idle/aborted also calls this with no content. Must NOT
+ * re-append when the WS final already completed the bubble — that was the
+ * classic “assistant message appears twice” bug (K3 HTML + Route A store).
+ */
 function finalizeAssistant(
   messages: MinimalMessage[],
   content?: string,
 ): MinimalMessage[] {
   const next = [...messages];
   const last = next[next.length - 1];
-  const projected =
-    content != null && content !== ""
-      ? projectAssistantFinal(content)
-      : last?.role === "assistant"
-        ? projectAssistantFinal(last.content)
-        : null;
+  const hasExplicit =
+    content != null && content !== "";
 
+  // Still streaming → seal the same bubble (optional replace with full final text)
   if (last?.role === "assistant" && last.status === "running") {
+    const live = joinContent(last);
+    const projected = hasExplicit
+      ? projectAssistantFinal(content!)
+      : projectAssistantFinal(live);
     next[next.length - 1] = {
       ...last,
-      content: projected?.content ?? last.content,
-      meta: projected?.meta ?? last.meta,
-      viewKind: projected?.viewKind ?? last.viewKind,
+      content: projected.content,
+      contentChunks: undefined,
+      meta: projected.meta ?? last.meta,
+      viewKind: projected.viewKind ?? last.viewKind,
       status: "complete",
     };
     return next;
   }
-  if (projected && projected.content) {
-    next.push({
-      id: newMsgId("a"),
-      role: "assistant",
-      content: projected.content,
-      meta: projected.meta,
-      viewKind: projected.viewKind,
+
+  // run_end / collapse path with no new body: do not invent a second message
+  if (!hasExplicit) return next;
+
+  const projected = projectAssistantFinal(content!);
+  if (!projected.content) return next;
+
+  // Same final delivered twice (or final after already-complete bubble)
+  if (
+    last?.role === "assistant" &&
+    last.content === projected.content
+  ) {
+    next[next.length - 1] = {
+      ...last,
+      meta: projected.meta ?? last.meta,
+      viewKind: projected.viewKind ?? last.viewKind,
       status: "complete",
-      source: "live",
-    });
+    };
+    return next;
   }
+
+  next.push({
+    id: newMsgId("a"),
+    role: "assistant",
+    content: projected.content,
+    meta: projected.meta,
+    viewKind: projected.viewKind,
+    status: "complete",
+    source: "live",
+  });
   return next;
 }
 
@@ -151,6 +200,9 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
   loadedSkills: [],
   jobs: [],
   workflowSteps: [],
+  workflowConfirm: null,
+  workflowConfirmBusy: false,
+  activeSpawns: [],
 
   setToken(token) {
     rememberToken(token);
@@ -176,6 +228,7 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
     if (frame && typeof frame === "object" && "type" in frame && frame.type) {
       switch (frame.type) {
         case "hello": {
+          const wc = frame.workflow_confirm;
           set({
             sessionId: frame.session_id ?? get().sessionId,
             model: frame.model ?? get().model,
@@ -194,6 +247,17 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
                   label: j.label,
                 }))
               : get().jobs,
+            workflowConfirm:
+              wc && (wc.status === "pending" || !wc.status)
+                ? {
+                    workflow: wc.workflow,
+                    path: wc.path,
+                    needs_shell: wc.needs_shell,
+                    needs_web: wc.needs_web,
+                    roles: wc.roles,
+                    summary: wc.summary,
+                  }
+                : get().workflowConfirm,
           });
           return;
         }
@@ -215,6 +279,10 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
               sessionId: frame.session_id ?? s.sessionId,
               model: frame.model ?? s.model,
               messages,
+              // Gate only lives while a workflow is waiting — clear on terminal states
+              workflowConfirm: ending ? null : s.workflowConfirm,
+              workflowConfirmBusy: ending ? false : s.workflowConfirmBusy,
+              activeSpawns: ending ? [] : s.activeSpawns,
               lastError:
                 frame.state === "error" ? frame.detail : s.lastError,
             };
@@ -290,6 +358,69 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
           }));
           return;
         }
+        case "workflow_confirm": {
+          if (frame.status === "pending") {
+            set({
+              workflowConfirm: {
+                workflow: frame.workflow,
+                path: frame.path,
+                needs_shell: frame.needs_shell,
+                needs_web: frame.needs_web,
+                roles: frame.roles,
+                summary: frame.summary,
+              },
+              workflowConfirmBusy: false,
+            });
+          } else {
+            set({
+              workflowConfirm: null,
+              workflowConfirmBusy: false,
+            });
+          }
+          return;
+        }
+        case "spawn": {
+          if (frame.phase === "start") {
+            set((s) => {
+              const id = frame.preset;
+              const rest = s.activeSpawns.filter((x) => x.id !== id);
+              return {
+                activeSpawns: [
+                  {
+                    id,
+                    preset: frame.preset,
+                    status: "running" as const,
+                    preview: "",
+                  },
+                  ...rest,
+                ].slice(0, 6),
+              };
+            });
+          } else {
+            set((s) => ({
+              activeSpawns: s.activeSpawns.map((x) =>
+                x.preset === frame.preset || x.id === frame.preset
+                  ? {
+                      ...x,
+                      status: frame.ok === false ? "failed" : "done",
+                      preview: frame.detail
+                        ? frame.detail.slice(0, 160)
+                        : x.preview,
+                    }
+                  : x,
+              ),
+            }));
+            // Drop finished spawns shortly so banner does not stick forever
+            setTimeout(() => {
+              useMinimalStore.setState((s) => ({
+                activeSpawns: s.activeSpawns.filter(
+                  (x) => x.status === "running",
+                ),
+              }));
+            }, 4000);
+          }
+          return;
+        }
         case "llm": {
           set({
             profile: frame.profile ?? get().profile,
@@ -312,16 +443,107 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
 
     // SessionMessage (no discriminant `type`)
     if (!frame || typeof frame !== "object" || !("role" in frame)) return;
-    const role = (frame as { role?: string }).role;
+    const sm = frame as {
+      role?: string;
+      session_id?: string;
+      source?: string;
+      source_id?: string;
+      delta?: string;
+      content?: string;
+      tool_name?: string;
+      call_id?: string;
+    };
+    const role = sm.role;
     if (!role || role === "user") {
       // Local onNew already appended user; skip bridge echo to avoid duplicates
       return;
     }
 
-    const delta = (frame as { delta?: string }).delta;
-    const content = (frame as { content?: string }).content;
-    const toolName = (frame as { tool_name?: string }).tool_name;
-    const callId = (frame as { call_id?: string }).call_id;
+    // Child spawn/job agents use a different session_id on the same WS hub.
+    // Keep them out of main bubbles (avoid TUI-era main/child text merge),
+    // but feed activeSpawns so the UI is not silent during sync spawn_agent.
+    const frameSession = sm.session_id;
+    const currentSession = get().sessionId;
+    const bridgeSource = sm.source;
+    const isChildAgentStream =
+      bridgeSource === "job" ||
+      bridgeSource === "spawn" ||
+      (Boolean(frameSession) &&
+        Boolean(currentSession) &&
+        frameSession !== currentSession);
+
+    // Settlement notices are tagged source=job but use parent session_id —
+    // still allow system_notice onto the main timeline.
+    if (isChildAgentStream && role !== "system_notice") {
+      const spawnKey =
+        sm.source_id ||
+        frameSession ||
+        (bridgeSource === "spawn" ? "spawn" : "job");
+      const presetLabel =
+        bridgeSource === "spawn"
+          ? sm.source_id || "spawn"
+          : sm.source_id || spawnKey;
+
+      if (bridgeSource === "job" && sm.source_id) {
+        set((s) => {
+          const jobs = [...s.jobs];
+          const id = sm.source_id!;
+          const i = jobs.findIndex((j) => j.id === id);
+          const row = {
+            id,
+            status: "running",
+            label: jobs[i]?.label ?? id.slice(0, 14),
+          };
+          if (i >= 0) jobs[i] = { ...jobs[i]!, ...row, status: "running" };
+          else jobs.unshift(row);
+          return { jobs };
+        });
+      }
+
+      // Update spawn activity strip (throttled by delta batch still helps)
+      set((s) => {
+        const list = [...s.activeSpawns];
+        let row = list.find(
+          (x) => x.id === spawnKey || x.preset === presetLabel,
+        );
+        if (!row) {
+          row = {
+            id: spawnKey,
+            preset: presetLabel,
+            status: "running",
+            preview: "",
+          };
+          list.unshift(row);
+        }
+        const idx = list.findIndex((x) => x.id === row!.id);
+        let preview = row.preview;
+        let lastTool = row.lastTool;
+        if (role === "assistant") {
+          const piece = sm.delta || sm.content || "";
+          if (piece) {
+            preview = (preview + piece).slice(-240);
+          }
+        } else if (role === "tool") {
+          lastTool = inferToolName(sm.tool_name, sm.content);
+          const tip = (sm.content ?? "").slice(0, 80);
+          if (tip) preview = `${lastTool}: ${tip}`.slice(0, 240);
+        }
+        list[idx] = {
+          ...row,
+          status: "running",
+          preview,
+          lastTool,
+          preset: row.preset || presetLabel,
+        };
+        return { activeSpawns: list.slice(0, 6) };
+      });
+      return;
+    }
+
+    const delta = sm.delta;
+    const content = sm.content;
+    const toolName = sm.tool_name;
+    const callId = sm.call_id;
 
     if (role === "assistant") {
       if (delta) {
@@ -337,17 +559,16 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
     }
 
     if (role === "tool") {
-      // Live tools open while run is active; expand flag true until run ends.
+      // Live tools open while run is active; real name via inferToolName.
+      const name = inferToolName(toolName, content);
       set((s) => ({
         messages: [
-          ...s.messages.filter(
-            (m) => !(m.role === "assistant" && m.status === "running" && !m.content),
-          ),
+          ...s.messages,
           {
             id: newMsgId("t"),
             role: "tool" as const,
             content: content ?? "",
-            toolName,
+            toolName: name,
             callId,
             status: s.isRunning ? ("running" as const) : ("complete" as const),
             source: "live" as const,
@@ -514,8 +735,32 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
         body: "{}",
         token: get().token || getMinimalToken(),
       });
+      set({ workflowConfirm: null, workflowConfirmBusy: false });
     } catch (e) {
       set({
+        lastError: e instanceof Error ? e.message : String(e),
+      });
+    }
+  },
+
+  async respondWorkflowConfirm(approved: boolean) {
+    if (get().workflowConfirmBusy) return;
+    set({ workflowConfirmBusy: true });
+    try {
+      await minimalFetch("/v1/workflow/confirm", {
+        method: "POST",
+        body: JSON.stringify({ approved }),
+        token: get().token || getMinimalToken(),
+      });
+      // WS will clear pending; optimistically dismiss modal
+      if (!approved) {
+        set({ workflowConfirm: null, workflowConfirmBusy: false });
+      } else {
+        set({ workflowConfirm: null, workflowConfirmBusy: false });
+      }
+    } catch (e) {
+      set({
+        workflowConfirmBusy: false,
         lastError: e instanceof Error ? e.message : String(e),
       });
     }

@@ -6,8 +6,20 @@ import {
   formatPendingCardMarkdown,
   looksLikeArtifact,
   parseAgentSummary,
+  projectUserDisplay,
 } from "./content-project";
-import type { MinimalMessage, SessionChatMessageDto } from "./types";
+import {
+  formatReadTreePreview,
+  formatWriteCardPreview,
+  inferToolName,
+  inferToolPath,
+  toolSkin,
+} from "./tool-parse";
+import type {
+  MinimalMessage,
+  SessionChatMessageDto,
+  ToolPart,
+} from "./types";
 
 let idSeq = 0;
 export function newMsgId(prefix = "m"): string {
@@ -15,7 +27,120 @@ export function newMsgId(prefix = "m"): string {
   return `${prefix}_${Date.now().toString(36)}_${idSeq}`;
 }
 
-/** After history load: only tools after the last user message stay expanded. */
+/** Prefer contentChunks (streaming) then content string. */
+export function joinContent(m: Pick<MinimalMessage, "content" | "contentChunks">): string {
+  if (m.contentChunks?.length) return m.contentChunks.join("");
+  return m.content ?? "";
+}
+
+/** Cache for delta-only updates: avoid O(messages) coalesce per token. */
+let coalesceCache: {
+  inputs: MinimalMessage[];
+  output: MinimalMessage[];
+} | null = null;
+
+function messagesPrefixSame(
+  a: MinimalMessage[],
+  b: MinimalMessage[],
+): boolean {
+  if (a.length !== b.length) return false;
+  // Prior messages keep object identity under appendAssistantDelta
+  for (let i = 0; i < a.length - 1; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+/** Fold consecutive tool rows into the previous assistant (or a tools-only assistant). */
+export function coalesceToolsIntoAssistants(
+  messages: MinimalMessage[],
+): MinimalMessage[] {
+  // Fast path: only the last assistant bubble grew (stream delta)
+  if (
+    coalesceCache &&
+    messagesPrefixSame(messages, coalesceCache.inputs) &&
+    messages.length > 0
+  ) {
+    const lastIn = messages[messages.length - 1]!;
+    const lastPrev = coalesceCache.inputs[coalesceCache.inputs.length - 1];
+    if (lastIn === lastPrev) {
+      return coalesceCache.output;
+    }
+    if (
+      lastIn.role === "assistant" &&
+      lastPrev?.role === "assistant" &&
+      lastIn.id === lastPrev.id &&
+      lastIn.toolParts === lastPrev.toolParts &&
+      lastPrev.role === "assistant"
+    ) {
+      const out = coalesceCache.output.slice();
+      const lastOut = out[out.length - 1];
+      if (lastOut?.role === "assistant" && lastOut.id === lastIn.id) {
+        out[out.length - 1] = {
+          ...lastOut,
+          content: joinContent(lastIn),
+          contentChunks: undefined,
+          status: lastIn.status,
+          meta: lastIn.meta,
+          viewKind: lastIn.viewKind,
+        };
+        coalesceCache = { inputs: messages, output: out };
+        return out;
+      }
+    }
+  }
+
+  const out: MinimalMessage[] = [];
+
+  for (const m of messages) {
+    if (m.role !== "tool") {
+      const content = joinContent(m);
+      out.push({
+        ...m,
+        content,
+        contentChunks: undefined,
+        toolParts: m.toolParts ? [...m.toolParts] : undefined,
+      });
+      continue;
+    }
+
+    const name = inferToolName(m.toolName, m.content);
+    const path = inferToolPath(m.content);
+    const part: ToolPart = {
+      toolName: name,
+      callId: m.callId || m.id,
+      content: m.content ?? "",
+      status: m.status === "running" ? "running" : "complete",
+      toolExpanded: m.toolExpanded,
+      path,
+      skin: toolSkin(name),
+    };
+
+    const last = out[out.length - 1];
+    if (last?.role === "assistant") {
+      last.toolParts = [...(last.toolParts ?? []), part];
+      if (part.status === "running") last.status = "running";
+    } else {
+      out.push({
+        id: newMsgId("at"),
+        role: "assistant",
+        content: "",
+        status: part.status === "running" ? "running" : "complete",
+        source: m.source,
+        viewKind: "chat",
+        toolParts: [part],
+        /** tighter chrome for tool-only bubbles */
+        toolsOnly: true,
+      });
+    }
+  }
+
+  const result = applyToolExpandPolicy(out);
+  coalesceCache = { inputs: messages, output: result };
+  return result;
+}
+
+/** After history load: tools after last user stay expanded. */
 export function applyToolExpandPolicy(
   messages: MinimalMessage[],
 ): MinimalMessage[] {
@@ -23,21 +148,33 @@ export function applyToolExpandPolicy(
   for (let i = 0; i < messages.length; i++) {
     if (messages[i]?.role === "user") lastUserIdx = i;
   }
+
   return messages.map((m, i) => {
-    if (m.role !== "tool") return m;
-    const inLatestTurn = lastUserIdx >= 0 && i > lastUserIdx;
-    const expanded =
-      m.status === "running" || m.toolExpanded === true
-        ? true
-        : inLatestTurn;
-    return { ...m, toolExpanded: expanded };
+    if (m.role === "tool") {
+      const inLatestTurn = lastUserIdx >= 0 && i > lastUserIdx;
+      return {
+        ...m,
+        toolExpanded:
+          m.status === "running" ? true : inLatestTurn || m.toolExpanded === true,
+      };
+    }
+    if (m.role === "assistant" && m.toolParts?.length) {
+      const inLatestTurn = lastUserIdx >= 0 && i > lastUserIdx;
+      return {
+        ...m,
+        toolParts: m.toolParts.map((p) => ({
+          ...p,
+          toolExpanded:
+            p.status === "running"
+              ? true
+              : inLatestTurn || p.toolExpanded === true,
+        })),
+      };
+    }
+    return m;
   });
 }
 
-/**
- * When a run ends, collapse tools not in the latest user turn.
- * Keep latest-turn tools expanded.
- */
 export function collapseToolsExceptLatestTurn(
   messages: MinimalMessage[],
 ): MinimalMessage[] {
@@ -46,23 +183,82 @@ export function collapseToolsExceptLatestTurn(
     if (messages[i]?.role === "user") lastUserIdx = i;
   }
   return messages.map((m, i) => {
-    if (m.role !== "tool") {
-      if (m.role === "assistant" && m.status === "running") {
-        return { ...m, status: "complete" as const };
-      }
-      return m;
+    if (m.role === "tool") {
+      const inLatestTurn = lastUserIdx >= 0 && i > lastUserIdx;
+      return {
+        ...m,
+        status: m.status === "running" ? ("complete" as const) : m.status,
+        toolExpanded: inLatestTurn,
+      };
     }
-    const inLatestTurn = lastUserIdx >= 0 && i > lastUserIdx;
-    return {
-      ...m,
-      status: m.status === "running" ? ("complete" as const) : m.status,
-      toolExpanded: inLatestTurn,
-    };
+    if (m.role === "assistant") {
+      const inLatestTurn = lastUserIdx >= 0 && i > lastUserIdx;
+      const toolParts = m.toolParts?.map((p) => ({
+        ...p,
+        status:
+          p.status === "running" ? ("complete" as const) : p.status,
+        toolExpanded: inLatestTurn,
+      }));
+      return {
+        ...m,
+        status: m.status === "running" ? ("complete" as const) : m.status,
+        toolParts,
+      };
+    }
+    return m;
   });
 }
 
+function formatToolResultBody(part: ToolPart): string {
+  const skin = part.skin ?? toolSkin(part.toolName);
+  // Title already on the trigger — body is content only (avoid double header)
+  const body = part.content?.trim() ?? "";
+  if (skin === "write") {
+    // write card: path line + clipped body (✓ toolName is in trigger)
+    return formatWriteCardPreview(part.toolName, body, part.path)
+      .split("\n")
+      .slice(1) // drop "✓ toolName"
+      .join("\n")
+      .trim() || body || "(empty)";
+  }
+  if (skin === "read") {
+    // tree lines only — toolName("path") is trigger title
+    const tree = formatReadTreePreview(part.toolName, body, part.path);
+    const lines = tree.split("\n");
+    return lines.length > 1 ? lines.slice(1).join("\n") : body || "(empty)";
+  }
+  if (skin === "shell") {
+    const clip =
+      body.length > 400 ? `${body.slice(0, 400).trim()}…` : body;
+    return clip || "(empty)";
+  }
+  return body || "(empty)";
+}
+
+function toolPartToContent(part: ToolPart) {
+  const expand =
+    part.toolExpanded === true || part.status === "running";
+  const running = part.status === "running";
+  return {
+    type: "tool-call" as const,
+    toolCallId: part.callId,
+    toolName: part.toolName,
+    args: part.path ? { path: part.path } : {},
+    argsText: part.path ? JSON.stringify({ path: part.path }) : "",
+    result: {
+      preview: formatToolResultBody(part),
+      skin: part.skin ?? toolSkin(part.toolName),
+      path: part.path,
+      _expand: expand,
+    },
+    status: running
+      ? ({ type: "running" } as const)
+      : ({ type: "complete", reason: "stop" } as const),
+  };
+}
+
 function buildAssistantDisplayText(message: MinimalMessage): string {
-  let body = message.content ?? "";
+  const body = joinContent(message);
   if (message.viewKind === "artifact" || message.meta?.artifact) {
     return formatArtifactMarkdown(body);
   }
@@ -74,51 +270,22 @@ function buildAssistantDisplayText(message: MinimalMessage): string {
 /** Store message → assistant-ui ThreadMessageLike */
 export function convertMessage(message: MinimalMessage): ThreadMessageLike {
   if (message.role === "tool") {
-    const toolName = message.toolName || "tool";
-    const toolCallId = message.callId || message.id;
-    const expand =
-      message.toolExpanded === true || message.status === "running";
-    const running = message.status === "running";
+    // Fallback if coalesce was skipped
+    const name = inferToolName(message.toolName, message.content);
+    const path = inferToolPath(message.content);
+    const part: ToolPart = {
+      toolName: name,
+      callId: message.callId || message.id,
+      content: message.content ?? "",
+      status: message.status === "running" ? "running" : "complete",
+      toolExpanded: message.toolExpanded,
+      path,
+      skin: toolSkin(name),
+    };
     return {
       id: message.id,
       role: "assistant",
-      content: [
-        {
-          type: "tool-call",
-          toolCallId,
-          toolName,
-          args: {},
-          argsText: "",
-          result: {
-            preview: message.content || "(empty)",
-            // Consumed by ToolFallback expand policy
-            _expand: expand,
-          },
-          // running keeps ToolFallback spinner + default open behavior we add
-          status: running
-            ? { type: "running" }
-            : { type: "complete", reason: "stop" },
-        } as never,
-      ],
-      status: running
-        ? { type: "running" }
-        : { type: "complete", reason: "stop" },
-    };
-  }
-
-  if (message.role === "system") {
-    return {
-      id: message.id,
-      role: "system",
-      content: [{ type: "text", text: message.content }],
-    };
-  }
-
-  if (message.role === "assistant") {
-    return {
-      id: message.id,
-      role: "assistant",
-      content: [{ type: "text", text: buildAssistantDisplayText(message) }],
+      content: [toolPartToContent(part) as never],
       status:
         message.status === "running"
           ? { type: "running" }
@@ -126,10 +293,49 @@ export function convertMessage(message: MinimalMessage): ThreadMessageLike {
     };
   }
 
+  if (message.role === "system") {
+    // Thread only paints user/assistant — render system notices as a muted assistant card
+    const body = (message.content ?? "").trim();
+    const md = body
+      ? ["> **〔系统〕**", ...body.split("\n").map((l) => `> ${l}`)].join("\n")
+      : "> **〔系统〕**";
+    return {
+      id: message.id,
+      role: "assistant",
+      content: [{ type: "text", text: md }],
+      status: { type: "complete", reason: "stop" },
+    };
+  }
+
+  if (message.role === "assistant") {
+    const parts: unknown[] = [];
+    const text = buildAssistantDisplayText(message).trim();
+    if (text) {
+      parts.push({ type: "text", text: buildAssistantDisplayText(message) });
+    }
+    for (const tp of message.toolParts ?? []) {
+      parts.push(toolPartToContent(tp));
+    }
+    if (parts.length === 0) {
+      parts.push({ type: "text", text: "" });
+    }
+    const running =
+      message.status === "running" ||
+      message.toolParts?.some((p) => p.status === "running");
+    return {
+      id: message.id,
+      role: "assistant",
+      content: parts as never,
+      status: running
+        ? { type: "running" }
+        : { type: "complete", reason: "stop" },
+    };
+  }
+
   return {
     id: message.id,
     role: "user",
-    content: [{ type: "text", text: message.content }],
+    content: [{ type: "text", text: joinContent(message) }],
   };
 }
 
@@ -163,30 +369,48 @@ export function fromHistoryDto(row: SessionChatMessageDto): MinimalMessage {
   }
 
   if (row.role === "tool") {
+    const name = inferToolName(row.tool_name, raw);
     return {
       id: newMsgId("hist"),
       role: "tool",
       content: raw,
       status: "complete",
-      toolName: row.tool_name,
+      toolName: name,
       callId: row.action_id,
       turn: row.turn,
       taskId: row.task_id,
       source: row.source,
       viewKind: "tool",
-      toolExpanded: false, // policy applied later
+      toolExpanded: false,
     };
   }
 
+  // Server may already project user→system for synthetic job merges;
+  // client still unwraps Working directory / system_event as a safety net.
+  if (row.role === "system" || row.view_kind === "system_ui") {
+    const projected = projectUserDisplay(raw);
+    return {
+      id: newMsgId("hist"),
+      role: "system",
+      content: projected.content || raw,
+      status: "complete",
+      turn: row.turn,
+      taskId: row.task_id,
+      source: row.source,
+      viewKind: "system_ui",
+    };
+  }
+
+  const projected = projectUserDisplay(raw);
   return {
     id: newMsgId("hist"),
-    role: row.role === "system" ? "system" : "user",
-    content: raw,
+    role: projected.role,
+    content: projected.content,
     status: "complete",
     turn: row.turn,
     taskId: row.task_id,
     source: row.source,
-    viewKind: row.role === "system" ? "system_ui" : "chat",
+    viewKind: projected.viewKind,
   };
 }
 
@@ -199,7 +423,6 @@ export function textFromAppendContent(
     : "";
 }
 
-/** Project live assistant final text: clean + meta. */
 export function projectAssistantFinal(raw: string): {
   content: string;
   meta?: MinimalMessage["meta"];

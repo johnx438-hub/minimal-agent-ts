@@ -22,11 +22,27 @@ export interface MessageMeta {
   artifact?: boolean;
 }
 
+/** Tool call attached to an assistant bubble (after coalesce). */
+export interface ToolPart {
+  toolName: string;
+  callId: string;
+  content: string;
+  status?: "running" | "complete" | "incomplete";
+  toolExpanded?: boolean;
+  path?: string;
+  skin?: "read" | "write" | "shell" | "generic";
+}
+
 /** GUI-side message (store format, before convertMessage). */
 export interface MinimalMessage {
   id: string;
   role: "user" | "assistant" | "system" | "tool";
   content: string;
+  /**
+   * Streaming accumulation (O(1) push). Prefer joinContent() at display time
+   * instead of content += delta every token (O(n²) copy).
+   */
+  contentChunks?: string[];
   /** streaming | complete */
   status?: "running" | "complete" | "incomplete";
   toolName?: string;
@@ -41,6 +57,20 @@ export interface MinimalMessage {
    * Older tools stay collapsed.
    */
   toolExpanded?: boolean;
+  /** Tools merged into this assistant message (display). */
+  toolParts?: ToolPart[];
+  /** Assistant bubble that only holds tools — tighter spacing. */
+  toolsOnly?: boolean;
+}
+
+/** Live sync-spawn / job child activity (not mixed into main bubbles). */
+export interface ActiveSpawn {
+  id: string;
+  preset: string;
+  status: "running" | "done" | "failed";
+  /** Throttled preview of child stream */
+  preview: string;
+  lastTool?: string;
 }
 
 export interface SessionMeta {
@@ -104,6 +134,10 @@ export type WsFrame =
       jobs?: Array<{ id: string; status: string; label?: string }>;
       armed_workflow?: string | null;
       loaded_skills?: string[];
+      workflow_confirm?: WorkflowConfirmPending & {
+        type?: "workflow_confirm";
+        status?: string;
+      } | null;
     }
   | {
       type: "run_state";
@@ -137,6 +171,28 @@ export type WsFrame =
     }
   | { type: "skills"; loaded: string[] }
   | {
+      type: "spawn";
+      phase: "start" | "end";
+      preset: string;
+      ok?: boolean;
+      detail?: string;
+    }
+  | {
+      type: "workflow_confirm";
+      status: "pending" | "approved" | "denied" | "aborted";
+      workflow: string;
+      path?: string;
+      needs_shell?: boolean;
+      needs_web?: boolean;
+      roles?: Array<{
+        name: string;
+        tools: string[];
+        needs_shell: boolean;
+        needs_web: boolean;
+      }>;
+      summary?: string;
+    }
+  | {
       role: "user" | "assistant" | "tool" | "system_notice";
       session_id?: string;
       turn?: number;
@@ -145,5 +201,23 @@ export type WsFrame =
       tool_name?: string;
       call_id?: string;
       task_id?: string;
+      /** main | spawn | job | workflow | system — child job streams use spawn session_id */
+      source?: "main" | "spawn" | "job" | "workflow" | "system";
+      source_id?: string;
       type?: undefined;
     };
+
+/** Pending workflow entry checkpoint (TUI overlay parity). */
+export interface WorkflowConfirmPending {
+  workflow: string;
+  path?: string;
+  needs_shell?: boolean;
+  needs_web?: boolean;
+  roles?: Array<{
+    name: string;
+    tools: string[];
+    needs_shell: boolean;
+    needs_web: boolean;
+  }>;
+  summary?: string;
+}

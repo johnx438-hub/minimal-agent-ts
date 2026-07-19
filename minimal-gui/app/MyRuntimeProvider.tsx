@@ -8,7 +8,11 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import { getMinimalToken } from "@/lib/minimal/client";
-import { convertMessage, textFromAppendContent } from "@/lib/minimal/convert";
+import {
+  coalesceToolsIntoAssistants,
+  convertMessage,
+  textFromAppendContent,
+} from "@/lib/minimal/convert";
 import { useMinimalStore } from "@/lib/minimal/store";
 import { connectMinimalWs } from "@/lib/minimal/ws";
 
@@ -26,6 +30,7 @@ export function MyRuntimeProvider({
   const armedWorkflow = useMinimalStore((s) => s.armedWorkflow);
   const model = useMinimalStore((s) => s.model);
   const lastError = useMinimalStore((s) => s.lastError);
+  const activeSpawns = useMinimalStore((s) => s.activeSpawns);
 
   // Avoid SSR/client mismatch: token may live in localStorage / ?query only on client.
   const [tokenHint, setTokenHint] = useState(false);
@@ -38,6 +43,12 @@ export function MyRuntimeProvider({
       connectMinimalWs(token);
     }
   }, []);
+
+  // Merge tool rows into assistant content parts → single layer, less whitespace
+  const displayMessages = useMemo(
+    () => coalesceToolsIntoAssistants(messages),
+    [messages],
+  );
 
   const onNew = async (message: AppendMessage) => {
     const text = textFromAppendContent(
@@ -55,7 +66,7 @@ export function MyRuntimeProvider({
   };
 
   const runtime = useExternalStoreRuntime({
-    messages,
+    messages: displayMessages,
     isRunning,
     onNew,
     onCancel,
@@ -74,6 +85,20 @@ export function MyRuntimeProvider({
       .join(" · ");
   }, [connection, sessionId, model, armedWorkflow, lastError]);
 
+  const spawnLine = useMemo(() => {
+    const running = activeSpawns.filter((s) => s.status === "running");
+    if (!running.length) return null;
+    return running
+      .map((s) => {
+        const tip = s.lastTool
+          ? `${s.preset}→${s.lastTool}`
+          : s.preset;
+        const pv = s.preview.trim().replace(/\s+/g, " ").slice(0, 72);
+        return pv ? `⏳ ${tip}: ${pv}` : `⏳ spawn ${tip}`;
+      })
+      .join(" · ");
+  }, [activeSpawns]);
+
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <div className="flex h-dvh flex-col">
@@ -88,6 +113,12 @@ export function MyRuntimeProvider({
             </span>
           )}
         </div>
+        {spawnLine && (
+          <div className="border-border/50 bg-amber-500/10 text-amber-950 dark:text-amber-100 border-b px-3 py-1 font-mono text-[11px] leading-snug">
+            <span className="opacity-70">子 agent 运行中（与主时间线隔离）· </span>
+            <span className="truncate">{spawnLine}</span>
+          </div>
+        )}
         <div className="min-h-0 flex-1">{children}</div>
       </div>
     </AssistantRuntimeProvider>

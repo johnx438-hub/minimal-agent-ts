@@ -15,6 +15,7 @@ import { clearCancelRequested, pollJobCancel } from './job-cancel.js';
 import { jobReportPath, relativeJobFile } from './job-paths.js';
 import { runSpawnAgent, type RunSpawnOptions } from './runner.js';
 import type { ResolvedSpawnPreset } from './types.js';
+import { notifyJobUi } from './job-ui-notify.js';
 
 const SHORT_REPORT_MAX_CHARS = 8_000;
 
@@ -106,6 +107,12 @@ export async function runSpawnJob(opts: RunSpawnJobOptions): Promise<SpawnJobRes
 
   patchJobMeta(jobId, { status: 'running' });
   appendJobEvent(jobId, { t: 'spawn_start', preset: preset.name });
+  notifyJobUi({
+    id: jobId,
+    status: 'running',
+    label: preset.name,
+    parent_session_id: parentSessionId,
+  });
 
   const jobOnStep = (event: AgentStepEvent): void => {
     if (pollJobCancel(jobId, abortController)) {

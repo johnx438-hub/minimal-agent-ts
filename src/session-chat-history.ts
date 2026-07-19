@@ -6,6 +6,12 @@
  */
 
 import {
+  isSyntheticSystemEventPrompt,
+  SYSTEM_EVENT_AUTO_RUN_INSTRUCTIONS,
+  SYSTEM_EVENT_PROMPT_CLOSE,
+  SYSTEM_EVENT_PROMPT_OPEN,
+} from './hooks/system-event.js';
+import {
   listTranscriptTaskRecords,
   type TranscriptMessage,
 } from './session-transcript.js';
@@ -85,20 +91,73 @@ function projectAssistantBody(raw: string): {
   };
 }
 
+/** Match harness storage wrapper from buildUserTaskMessageWithVision. */
+const WD_TASK_RE = /^Working directory:\s*[^\n]+\n\nTask:\n([\s\S]*)$/;
+const WD_WORKFLOW_RE = /^Working directory task \(workflow\):\n?([\s\S]*)$/i;
+
+/**
+ * Display projection for user rows:
+ * - strip Working directory / Task envelope (LLM context only)
+ * - auto_run / job-merge synthetic prompts → system_ui (not a human bubble)
+ */
+export function projectUserBody(raw: string): {
+  content: string;
+  role: 'user' | 'system';
+  view_kind: SessionChatMessage['view_kind'];
+} {
+  let body = (raw ?? '').replace(/\r\n/g, '\n');
+  const wd = body.match(WD_TASK_RE);
+  if (wd) body = wd[1] ?? body;
+
+  const wf = body.match(WD_WORKFLOW_RE);
+  if (wf) {
+    return {
+      content: (wf[1] ?? body).trim(),
+      role: 'system',
+      view_kind: 'system_ui',
+    };
+  }
+
+  if (
+    isSyntheticSystemEventPrompt(body) ||
+    body.includes('[system_event · not a user message]')
+  ) {
+    let display = body
+      .replace(SYSTEM_EVENT_PROMPT_OPEN, '')
+      .replace(SYSTEM_EVENT_PROMPT_CLOSE, '')
+      .replace(SYSTEM_EVENT_AUTO_RUN_INSTRUCTIONS, '')
+      .trim();
+    // Collapse extra blank lines from stripped markers
+    display = display.replace(/\n{3,}/g, '\n\n').trim();
+    return {
+      content: display || body.trim(),
+      role: 'system',
+      view_kind: 'system_ui',
+    };
+  }
+
+  return {
+    content: body.trim(),
+    role: 'user',
+    view_kind: 'chat',
+  };
+}
+
 function fromTranscriptMessage(
   msg: TranscriptMessage,
   taskId: string,
   completedAt: number,
 ): SessionChatMessage {
   if (msg.role === 'user') {
+    const projected = projectUserBody(msg.content);
     return {
-      role: 'user',
-      content: msg.content,
+      role: projected.role,
+      content: projected.content,
       turn: msg.turn,
       task_id: taskId,
       source: 'transcript',
       completed_at: completedAt,
-      view_kind: 'chat',
+      view_kind: projected.view_kind,
     };
   }
   if (msg.role === 'assistant') {
@@ -139,13 +198,14 @@ function fromChatMessage(msg: ChatMessage, taskId?: string): SessionChatMessage 
     };
   }
   if (msg.role === 'user') {
+    const projected = projectUserBody(contentToText(msg.content));
     return {
-      role: 'user',
-      content: contentToText(msg.content),
+      role: projected.role,
+      content: projected.content,
       turn: msg.turn,
       task_id: taskId,
       source: 'in_flight',
-      view_kind: 'chat',
+      view_kind: projected.view_kind,
     };
   }
   if (msg.role === 'assistant') {

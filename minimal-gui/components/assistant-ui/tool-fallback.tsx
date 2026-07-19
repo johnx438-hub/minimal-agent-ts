@@ -126,11 +126,15 @@ function ToolFallbackDuration({
 
 function ToolFallbackTrigger({
   toolName,
+  path,
+  skin,
   status,
   className,
   ...props
 }: React.ComponentProps<typeof CollapsibleTrigger> & {
   toolName: string;
+  path?: string;
+  skin?: "read" | "write" | "shell" | "generic";
   status?: ToolCallMessagePartStatus;
 }) {
   const statusType = status?.type ?? "complete";
@@ -139,13 +143,18 @@ function ToolFallbackTrigger({
     status?.type === "incomplete" && status.reason === "cancelled";
 
   const Icon = statusIconMap[statusType];
-  const label = isCancelled ? "Cancelled tool" : "Used tool";
+  // Real tool name first; path as soft chip (Nice01 direction)
+  const title =
+    path && path.length < 80
+      ? `${toolName}("${path}")`
+      : toolName || "tool";
 
   return (
     <CollapsibleTrigger
       data-slot="tool-fallback-trigger"
       className={cn(
-        "aui-tool-fallback-trigger group/trigger text-muted-foreground hover:text-foreground flex w-fit origin-left items-center gap-2 py-1.5 text-sm transition-[color,scale] active:scale-[0.98]",
+        "aui-tool-fallback-trigger group/trigger text-muted-foreground hover:text-foreground flex w-full origin-left items-center gap-2 py-1 text-sm transition-[color,scale] active:scale-[0.98]",
+        skin === "write" && "text-foreground/90",
         className,
       )}
       {...props}
@@ -153,20 +162,29 @@ function ToolFallbackTrigger({
       <Icon
         data-slot="tool-fallback-trigger-icon"
         className={cn(
-          "aui-tool-fallback-trigger-icon size-4 shrink-0",
+          "aui-tool-fallback-trigger-icon size-3.5 shrink-0",
           isCancelled && "text-muted-foreground",
           isRunning && "animate-spin [animation-duration:0.6s]",
+          skin === "write" &&
+            !isRunning &&
+            !isCancelled &&
+            "text-emerald-600 dark:text-emerald-400",
+          skin === "read" &&
+            !isRunning &&
+            !isCancelled &&
+            "text-sky-600 dark:text-sky-400",
         )}
       />
       <span
         data-slot="tool-fallback-trigger-label"
         className={cn(
-          "aui-tool-fallback-trigger-label-wrapper relative inline-block text-start leading-none",
+          "aui-tool-fallback-trigger-label-wrapper relative min-w-0 flex-1 truncate text-start font-mono text-[13px] leading-snug",
           isCancelled && "text-muted-foreground line-through",
         )}
       >
-        <span>
-          {label}: <b>{toolName}</b>
+        <span className="truncate">
+          {isCancelled ? "Cancelled · " : null}
+          <b className="font-semibold text-foreground/90">{title}</b>
         </span>
         {isRunning && (
           <span
@@ -174,7 +192,7 @@ function ToolFallbackTrigger({
             data-slot="tool-fallback-trigger-shimmer"
             className="aui-tool-fallback-trigger-shimmer shimmer pointer-events-none absolute inset-0 motion-reduce:animate-none"
           >
-            {label}: <b>{toolName}</b>
+            <b>{title}</b>
           </span>
         )}
       </span>
@@ -182,7 +200,7 @@ function ToolFallbackTrigger({
       <ChevronDownIcon
         data-slot="tool-fallback-trigger-chevron"
         className={cn(
-          "aui-tool-fallback-trigger-chevron size-4 shrink-0",
+          "aui-tool-fallback-trigger-chevron size-3.5 shrink-0 opacity-70",
           "transition-transform duration-(--animation-duration) ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
           "-rotate-90",
           "group-data-open/trigger:rotate-0",
@@ -216,9 +234,10 @@ function ToolFallbackContent({
     >
       <div
         className={cn(
-          "flex flex-col gap-2 ps-6 pt-1 pb-2 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:animate-none",
-          "group-data-open/collapsible-content:animate-in group-data-open/collapsible-content:fade-in-0 group-data-open/collapsible-content:blur-in-[2px] group-data-open/collapsible-content:slide-in-from-top-1",
-          "group-data-closed/collapsible-content:animate-out group-data-closed/collapsible-content:fade-out-0 group-data-closed/collapsible-content:blur-out-[2px] group-data-closed/collapsible-content:slide-out-to-top-1",
+          // Compact: less left pad / vertical gap than default assistant-ui
+          "flex flex-col gap-1.5 ps-0.5 pt-0.5 pb-1 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:animate-none",
+          "group-data-open/collapsible-content:animate-in group-data-open/collapsible-content:fade-in-0 group-data-open/collapsible-content:slide-in-from-top-1",
+          "group-data-closed/collapsible-content:animate-out group-data-closed/collapsible-content:fade-out-0 group-data-closed/collapsible-content:slide-out-to-top-1",
           "group-data-closed/collapsible-content:duration-(--animation-duration) group-data-open/collapsible-content:duration-(--animation-duration)",
         )}
       >
@@ -252,12 +271,28 @@ function ToolFallbackArgs({
 
 function ToolFallbackResult({
   result,
+  skin,
   className,
   ...props
 }: React.ComponentProps<"div"> & {
   result?: unknown;
+  skin?: "read" | "write" | "shell" | "generic";
 }) {
-  if (result === undefined) return null;
+  if (result === undefined || result === null || result === "") return null;
+
+  const text =
+    typeof result === "string" ? result : JSON.stringify(result, null, 2);
+
+  // write: soft emerald card (pending-style success)
+  // read/shell: bordered mono tree like Nice01
+  const shellClass =
+    skin === "write"
+      ? "border-emerald-500/25 bg-emerald-500/5 text-foreground/90 dark:border-emerald-400/20 dark:bg-emerald-500/10"
+      : skin === "read"
+        ? "border-border/70 bg-muted/40 text-foreground/90"
+        : skin === "shell"
+          ? "border-amber-500/20 bg-amber-500/5 text-foreground/90"
+          : "border-border/60 bg-muted/50 text-foreground/90";
 
   return (
     <div
@@ -265,11 +300,13 @@ function ToolFallbackResult({
       className={cn("aui-tool-fallback-result", className)}
       {...props}
     >
-      <p className="aui-tool-fallback-result-header text-muted-foreground text-xs font-medium">
-        Result:
-      </p>
-      <pre className="aui-tool-fallback-result-content bg-muted/50 text-foreground/90 mt-1 rounded-md p-2.5 text-xs whitespace-pre-wrap">
-        {typeof result === "string" ? result : JSON.stringify(result, null, 2)}
+      <pre
+        className={cn(
+          "aui-tool-fallback-result-content max-h-72 overflow-auto rounded-lg border p-2.5 font-mono text-[12px] leading-relaxed whitespace-pre-wrap",
+          shellClass,
+        )}
+      >
+        {text}
       </pre>
     </div>
   );
@@ -526,17 +563,27 @@ function ToolFallbackApproval({
   );
 }
 
-function resultWantsExpand(result: unknown): boolean {
-  if (result && typeof result === "object" && "_expand" in result) {
-    return Boolean((result as { _expand?: boolean })._expand);
+type ToolResultMeta = {
+  preview?: unknown;
+  skin?: "read" | "write" | "shell" | "generic";
+  path?: string;
+  _expand?: boolean;
+};
+
+function parseResultMeta(result: unknown): ToolResultMeta {
+  if (result && typeof result === "object" && !Array.isArray(result)) {
+    return result as ToolResultMeta;
   }
-  return false;
+  return {};
+}
+
+function resultWantsExpand(result: unknown): boolean {
+  return Boolean(parseResultMeta(result)._expand);
 }
 
 function resultPreviewText(result: unknown): unknown {
-  if (result && typeof result === "object" && "preview" in result) {
-    return (result as { preview?: unknown }).preview;
-  }
+  const meta = parseResultMeta(result);
+  if (meta.preview !== undefined) return meta.preview;
   return result;
 }
 
@@ -555,6 +602,9 @@ const ToolFallbackImpl: ToolCallMessagePartComponent = ({
     status?.type === "incomplete" && status.reason === "cancelled";
   const isRequiresAction = status?.type === "requires-action";
   const isRunning = status?.type === "running";
+  const meta = parseResultMeta(result);
+  const skin = meta.skin ?? "generic";
+  const path = meta.path;
   // Expanding: generating, approval, or latest-turn flag from ExternalStore convert
   const preferOpen =
     isRunning || isRequiresAction || resultWantsExpand(result);
@@ -568,11 +618,23 @@ const ToolFallbackImpl: ToolCallMessagePartComponent = ({
   }
 
   const displayResult = resultPreviewText(result);
-  const hasArgs = Boolean(argsText && String(argsText).trim());
+  // Path already shown in trigger title — skip raw args JSON noise
+  const hasArgs =
+    Boolean(argsText && String(argsText).trim()) &&
+    !(path && argsText && argsText.includes(path));
 
   return (
-    <ToolFallbackRoot open={open} onOpenChange={setOpen}>
-      <ToolFallbackTrigger toolName={toolName} status={status} />
+    <ToolFallbackRoot
+      open={open}
+      onOpenChange={setOpen}
+      className="my-0.5 rounded-lg border border-border/50 bg-background/40 px-2.5 py-1"
+    >
+      <ToolFallbackTrigger
+        toolName={toolName}
+        path={path}
+        skin={skin}
+        status={status}
+      />
       <ToolFallbackContent>
         <ToolFallbackError status={status} />
         {hasArgs && (
@@ -590,7 +652,9 @@ const ToolFallbackImpl: ToolCallMessagePartComponent = ({
             respondToApproval={respondToApproval}
           />
         )}
-        {!isCancelled && <ToolFallbackResult result={displayResult} />}
+        {!isCancelled && (
+          <ToolFallbackResult result={displayResult} skin={skin} />
+        )}
       </ToolFallbackContent>
     </ToolFallbackRoot>
   );

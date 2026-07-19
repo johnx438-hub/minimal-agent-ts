@@ -23,8 +23,10 @@ import {
   sendFile,
 } from './static.js';
 import { llmStatus } from '../slash/index.js';
+import { subscribeJobUi } from '../spawn/job-ui-notify.js';
 import { attachRuntimeEventBridge, snapshotJobs } from './event-bridge.js';
 import type { WebHelloFrame, WebUiHandle, WebUiServerOptions } from './types.js';
+import { createWebWorkflowConfirm } from './workflow-confirm.js';
 import { WsHub } from './ws-hub.js';
 import { createWsMessageSink } from './ws-sink.js';
 
@@ -56,6 +58,19 @@ export async function startWebUi(opts: StartWebUiOptions): Promise<WebUiHandle> 
     .getMessageBridge()
     .addSink(createWsMessageSink(hub));
   const unsubEvents = attachRuntimeEventBridge(opts.runtime, hub);
+  // Live job rows without waiting for catalog refresh / listBackgroundJobs
+  const unsubJobs = subscribeJobUi((u) => {
+    hub.broadcast({
+      type: 'job',
+      id: u.id,
+      status: u.status,
+      label: u.label,
+      stale: u.stale,
+    });
+  });
+  // Strict workflow entry (same gate as TUI overlay — no always-remember)
+  const workflowConfirm = createWebWorkflowConfirm(hub);
+  opts.runtime.setWorkflowConfirmFn(workflowConfirm.confirmFn);
 
   const server: Server = createServer((req, res) => {
     void handleHttp(req, res);
@@ -104,6 +119,7 @@ export async function startWebUi(opts: StartWebUiOptions): Promise<WebUiHandle> 
       profile: (llm.profile as string | null) ?? undefined,
       armed_workflow: (llm.armed_workflow as string | null) ?? undefined,
       loaded_skills: llm.loaded_skills as string[] | undefined,
+      workflow_confirm: workflowConfirm.getPending(),
     };
     try {
       ws.send(JSON.stringify(hello));
@@ -152,6 +168,7 @@ export async function startWebUi(opts: StartWebUiOptions): Promise<WebUiHandle> 
           runtime: opts.runtime,
           hub,
           cwd,
+          workflowConfirm,
         })
       ) {
         return;
@@ -204,6 +221,9 @@ export async function startWebUi(opts: StartWebUiOptions): Promise<WebUiHandle> 
     async close() {
       unsubSink();
       unsubEvents();
+      unsubJobs();
+      workflowConfirm.dispose();
+      opts.runtime.setWorkflowConfirmFn(undefined);
       hub.closeAll();
       await new Promise<void>((resolveClose, reject) => {
         wss.close(() => {

@@ -60,6 +60,53 @@ export function looksLikeArtifact(content: string): boolean {
   return false;
 }
 
+/** Mirror of server session-chat-history projectUserBody (display only). */
+const WD_TASK_RE = /^Working directory:\s*[^\n]+\n\nTask:\n([\s\S]*)$/;
+const WD_WORKFLOW_RE = /^Working directory task \(workflow\):\n?([\s\S]*)$/i;
+const SYSTEM_EVENT_OPEN = '<system_event not_user_message="true">';
+const SYSTEM_EVENT_CLOSE = "</system_event>";
+
+export function projectUserDisplay(raw: string): {
+  content: string;
+  role: "user" | "system";
+  viewKind: "chat" | "system_ui";
+} {
+  let body = (raw ?? "").replace(/\r\n/g, "\n");
+  const wd = body.match(WD_TASK_RE);
+  if (wd) body = wd[1] ?? body;
+
+  const wf = body.match(WD_WORKFLOW_RE);
+  if (wf) {
+    return {
+      content: (wf[1] ?? body).trim(),
+      role: "system",
+      viewKind: "system_ui",
+    };
+  }
+
+  const looksSynthetic =
+    body.trimStart().startsWith(SYSTEM_EVENT_OPEN) ||
+    body.includes("[system_event · not a user message]");
+  if (looksSynthetic) {
+    let display = body
+      .replace(SYSTEM_EVENT_OPEN, "")
+      .replace(SYSTEM_EVENT_CLOSE, "")
+      .replace(
+        /You are the main agent\. This is NOT a human user message\.[\s\S]*$/m,
+        "",
+      )
+      .trim()
+      .replace(/\n{3,}/g, "\n\n");
+    return {
+      content: display || body.trim(),
+      role: "system",
+      viewKind: "system_ui",
+    };
+  }
+
+  return { content: body.trim(), role: "user", viewKind: "chat" };
+}
+
 /** Markdown block visually distinct from body (blockquote + bold header). */
 export function formatPendingCardMarkdown(meta: {
   pending_tasks?: string[];

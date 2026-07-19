@@ -22,6 +22,7 @@ import {
   type SystemEvent,
   type SystemEventKind,
 } from '../hooks/system-event.js';
+import { notifyJobUi } from './job-ui-notify.js';
 
 function mapSpawnResultToJobEvent(result: SpawnJobResult): {
   kind: SystemEventKind;
@@ -90,6 +91,13 @@ class JobRegistry {
       preset: opts.preset.name,
       status: meta.status,
       created_at: meta.created_at,
+    });
+    // Live job panel (Web UI) — do not wait for /v1/jobs refresh
+    notifyJobUi({
+      id: jobId,
+      status: meta.status,
+      label: opts.preset.name,
+      parent_session_id: parentSessionId,
     });
 
     const promise = runSpawnJob({
@@ -183,6 +191,12 @@ class JobRegistry {
       still_running_ids: stillIds,
     };
     notifySystemEvent(ev);
+    notifyJobUi({
+      id: jobId,
+      status,
+      label: preset,
+      parent_session_id: parentSessionId,
+    });
 
     if (still === 0) {
       notifySystemEvent({

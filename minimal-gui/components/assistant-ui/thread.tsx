@@ -15,11 +15,6 @@ import {
   ReasoningTrigger,
 } from "@/components/assistant-ui/reasoning";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
-import {
-  ToolGroupContent,
-  ToolGroupRoot,
-  ToolGroupTrigger,
-} from "@/components/assistant-ui/tool-group";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -137,7 +132,7 @@ const ThreadRoot: FC<{ isEmpty: boolean }> = ({ isEmpty }) => {
 
           <div
             data-slot="aui_message-group"
-            className="mb-14 flex flex-col gap-y-6 empty:hidden"
+            className="mb-14 flex flex-col gap-y-4 empty:hidden"
           >
             <ThreadPrimitive.Messages>
               {() => <ThreadMessage />}
@@ -332,19 +327,18 @@ const MessageError: FC = () => {
 const AssistantMessage: FC = () => {
   const {
     ToolFallback: ToolFallbackComponent = ToolFallback,
-    ToolGroup,
     ReasoningGroup,
   } = useContext(ThreadComponentsContext);
 
-  const ACTION_BAR_PT = "pt-1.5";
+  const ACTION_BAR_PT = "pt-1";
   // Keep the action bar inside the contained root's paint box, then cancel its reserved space in flow.
-  const ACTION_BAR_HEIGHT = `min-h-7.5 ${ACTION_BAR_PT}`;
+  const ACTION_BAR_HEIGHT = `min-h-7 ${ACTION_BAR_PT}`;
 
   return (
     <MessagePrimitive.Root
       data-slot="aui_assistant-message-root"
       data-role="assistant"
-      className="fade-in slide-in-from-bottom-1 animate-in relative -mb-7.5 pb-7.5 duration-150 [contain-intrinsic-size:auto_200px] [content-visibility:auto]"
+      className="fade-in slide-in-from-bottom-1 animate-in relative mb-0.5 pb-0.5 duration-150"
     >
       <div
         data-slot="aui_assistant-message-content"
@@ -353,7 +347,8 @@ const AssistantMessage: FC = () => {
         <MessagePrimitive.GroupedParts
           groupBy={groupPartByType({
             reasoning: ["group-chainOfThought", "group-reasoning"],
-            "tool-call": ["group-chainOfThought", "group-tool"],
+            // No outer "1 tool call" shell — single-click ToolFallback only
+            "tool-call": [],
             "standalone-tool-call": [],
           })}
         >
@@ -362,17 +357,14 @@ const AssistantMessage: FC = () => {
               case "group-chainOfThought":
                 return <div data-slot="aui_chain-of-thought">{children}</div>;
               case "group-tool":
-                if (ToolGroup) {
-                  return <ToolGroup group={part}>{children}</ToolGroup>;
-                }
+                // Flat list: never nest a second collapsible group
                 return (
-                  <ToolGroupRoot variant="ghost">
-                    <ToolGroupTrigger
-                      count={part.indices.length}
-                      active={part.status.type === "running"}
-                    />
-                    <ToolGroupContent>{children}</ToolGroupContent>
-                  </ToolGroupRoot>
+                  <div
+                    data-slot="aui_tool-stack"
+                    className="aui-tool-stack my-0.5 flex flex-col gap-0.5"
+                  >
+                    {children}
+                  </div>
                 );
               case "group-reasoning": {
                 if (ReasoningGroup) {
