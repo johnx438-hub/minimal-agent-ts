@@ -5,11 +5,15 @@ import { cn } from "@/lib/utils";
 export function DiffPane({
   code,
   className,
+  showLineNumbers = true,
 }: {
   code: string;
   className?: string;
+  /** Soft gutter (1-based). Default on — review feedback asked for line numbers. */
+  showLineNumbers?: boolean;
 }) {
   const lines = code.replace(/\r\n/g, "\n").split("\n");
+  const gutterW = String(Math.max(lines.length, 1)).length;
   return (
     <pre
       className={cn(
@@ -29,8 +33,23 @@ export function DiffPane({
           rowClass = "bg-red-500/10 text-red-800 dark:text-red-300";
         }
         return (
-          <div key={i} className={cn("whitespace-pre-wrap break-all", rowClass)}>
-            {line.length ? line : " "}
+          <div
+            key={i}
+            className={cn(
+              "flex whitespace-pre-wrap break-all",
+              rowClass,
+            )}
+          >
+            {showLineNumbers && (
+              <span
+                className="text-muted-foreground/50 shrink-0 select-none pe-3 text-right tabular-nums"
+                style={{ minWidth: `${gutterW + 1}ch` }}
+                aria-hidden
+              >
+                {i + 1}
+              </span>
+            )}
+            <span className="min-w-0 flex-1">{line.length ? line : " "}</span>
           </div>
         );
       })}

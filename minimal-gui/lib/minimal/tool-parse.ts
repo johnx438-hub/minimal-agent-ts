@@ -171,13 +171,31 @@ export function contentFromWriteArgs(argsJson?: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Undo live-preview flattening that turned real newlines into the two-char
+ * sequence "\\n" (see formatLiveToolPreview history). Heuristic: many escaped
+ * newlines and almost no real ones → restore. Avoids mangling source that only
+ * contains a few intentional \\n string literals in multi-line files.
+ */
+export function restorePreviewNewlines(text: string): string {
+  if (!text || !text.includes("\\n")) return text;
+  const realNl = (text.match(/\n/g) ?? []).length;
+  const escNl = (text.match(/\\n/g) ?? []).length;
+  if (escNl < 2) return text;
+  if (realNl >= 3 && escNl <= realNl) return text;
+  return text
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t");
+}
+
 /** Compact tree-ish preview for read tools (Nice01 direction). */
 export function formatReadTreePreview(
   toolName: string,
   content: string,
   path?: string,
 ): string {
-  const lines = content
+  const lines = restorePreviewNewlines(content)
     .replace(/\r\n/g, "\n")
     .split("\n")
     .map((l) => l.trimEnd())

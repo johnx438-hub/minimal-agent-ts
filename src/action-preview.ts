@@ -66,7 +66,12 @@ function parseArgsJson(argsJson: string): Record<string, unknown> {
 }
 
 /** Step 1 (A): ratio-based head/tail excerpt. */
-/** One-line preview for live tool_result events (before ActionBlock exists). */
+/**
+ * Preview for live tool_result events (before ActionBlock exists).
+ * Keeps real newlines so Web tool cards (read_file tree, shell log) render
+ * multi-line instead of literal "\\n" glyphs. TUI one-liners can flatten at
+ * the presenter edge if needed.
+ */
 export function formatLiveToolPreview(
   toolName: string,
   _argsJson: string,
@@ -76,12 +81,12 @@ export function formatLiveToolPreview(
   const flat = output.replace(/\r\n/g, '\n').trim();
   const max = Math.min(400, policy.preview_max_chars);
   if (flat.length <= max) {
-    return flat.replace(/\n/g, '\\n');
+    return flat;
   }
   if (toolName === 'grep_search' && flat.startsWith('(no matches)')) {
     return flat;
   }
-  const head = flat.slice(0, Math.ceil(max * 0.75)).replace(/\n/g, '\\n');
+  const head = flat.slice(0, Math.ceil(max * 0.75));
   return `${head}…`;
 }
 

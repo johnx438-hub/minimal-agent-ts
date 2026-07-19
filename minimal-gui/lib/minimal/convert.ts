@@ -20,6 +20,7 @@ import {
   formatWriteCardPreview,
   inferToolName,
   inferToolPath,
+  restorePreviewNewlines,
   splitToolUiDisplay,
   toolSkin,
 } from "./tool-parse";
@@ -309,7 +310,8 @@ export function resolveToolDisplayBody(part: ToolPart): {
 function formatToolResultBody(part: ToolPart): string {
   const skin = part.skin ?? toolSkin(part.toolName);
   const resolved = resolveToolDisplayBody(part);
-  let body = resolved.body.trim();
+  // Live previews used to flatten newlines to literal "\n" — restore for UI.
+  let body = restorePreviewNewlines(resolved.body.trim());
 
   // Compact vision_attach tool results (JSON marker is agent-facing noise)
   if (
