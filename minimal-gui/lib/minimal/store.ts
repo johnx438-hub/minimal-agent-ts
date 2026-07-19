@@ -10,6 +10,7 @@ import {
   joinContent,
   newMsgId,
   preferRicherToolMessages,
+  preserveLiveMessageIds,
   projectAssistantFinal,
 } from "./convert";
 import { inferToolName } from "./tool-parse";
@@ -68,6 +69,12 @@ export interface MinimalStore {
 
   /** Shell / web process flags (Settings + optional WS sync). */
   capabilities: RuntimeCapabilities | null;
+
+  /**
+   * Bumps after loadHistory/sync so the thread can re-pin scroll without
+   * remount thrash (post-run delayed refresh on slower machines).
+   */
+  historySyncGen: number;
 
   setToken: (token: string) => void;
   setConnection: (c: ConnectionState, err?: string) => void;
@@ -251,6 +258,7 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
   workflowConfirmBusy: false,
   activeSpawns: [],
   capabilities: null,
+  historySyncGen: 0,
 
   setToken(token) {
     rememberToken(token);
@@ -1230,14 +1238,19 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
       session_id?: string;
       messages: SessionChatMessageDto[];
     }>(path, { token: get().token || getMinimalToken() });
+    const prev = get().messages;
     const incoming = applyToolExpandPolicy(
       (res.messages ?? []).map(fromHistoryDto),
     );
     // Post-run sync must not clobber live write/edit diffs with bare "ok:" rows.
-    const merged = preferRicherToolMessages(get().messages, incoming);
+    const richer = preferRicherToolMessages(prev, incoming);
+    // Keep live React keys when logical messages still match — stops delayed
+    // "顶飞" when post-run history reload remounts the whole thread.
+    const merged = preserveLiveMessageIds(prev, richer);
     set({
       sessionId: res.session_id ?? get().sessionId,
       messages: applyToolExpandPolicy(merged),
+      historySyncGen: get().historySyncGen + 1,
     });
   },
 

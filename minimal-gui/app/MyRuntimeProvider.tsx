@@ -24,18 +24,13 @@ import {
   textFromAppendContent,
 } from "@/lib/minimal/convert";
 import { useTheme } from "@/components/minimal/theme-provider";
+import { POST_RUN_SYNC_MS } from "@/lib/minimal/post-run-sync";
 import { useMinimalStore } from "@/lib/minimal/store";
 import { connectMinimalWs } from "@/lib/minimal/ws";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 /** Cap visible history after coalesce (older messages stay on server). */
 const MESSAGE_DISPLAY_CAP = 80;
-/**
- * After run ends, wait for action cold-storage settle then refresh list+history.
- * History now rehydrates write/edit diffs from args — keep a beat so the latest
- * turn stays visible expanded before catalog/history re-render.
- */
-const POST_RUN_SYNC_MS = 4000;
 
 export function MyRuntimeProvider({
   children,

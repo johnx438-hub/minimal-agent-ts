@@ -59,6 +59,7 @@ import {
   type PropsWithChildren,
 } from "react";
 import { pickWelcomeGreeting } from "@/content/greetings";
+import { POST_RUN_STICKY_HOLD_MS } from "@/lib/minimal/post-run-sync";
 import { useMinimalStore } from "@/lib/minimal/store";
 
 const VIEWPORT_SEL = '[data-slot="aui_thread-viewport"]';
@@ -87,11 +88,18 @@ function isNearBottom(el: HTMLElement, threshold = NEAR_BOTTOM_PX): boolean {
 const StickToBottomOnSend: FC = () => {
   const isRunning = useAuiState((s) => s.thread.isRunning);
   const messageCount = useAuiState((s) => s.thread.messages.length);
+  const historySyncGen = useMinimalStore((s) => s.historySyncGen);
   const stickyRef = useRef(true);
   const forcingRef = useRef(false);
   const prevRunning = useRef(false);
   const isRunningRef = useRef(isRunning);
+  /** Hold sticky after run ends through post-run sync + pending card paint. */
+  const postRunHoldUntilRef = useRef(0);
   isRunningRef.current = isRunning;
+
+  const shouldPin = () =>
+    stickyRef.current &&
+    (isRunningRef.current || Date.now() < postRunHoldUntilRef.current);
 
   const pinBottom = (el?: HTMLElement | null) => {
     const node = el ?? getThreadViewport();
@@ -111,6 +119,7 @@ const StickToBottomOnSend: FC = () => {
     const onWheel = (e: WheelEvent) => {
       if (e.deltaY < -2) {
         stickyRef.current = false;
+        postRunHoldUntilRef.current = 0;
       } else if (e.deltaY > 2 && isNearBottom(el)) {
         stickyRef.current = true;
       }
@@ -124,10 +133,8 @@ const StickToBottomOnSend: FC = () => {
     el.addEventListener("scroll", onScroll, { passive: true });
 
     const ro = new ResizeObserver(() => {
-      if (!stickyRef.current) return;
-      if (isRunningRef.current || isNearBottom(el)) {
-        pinBottom(el);
-      }
+      if (!shouldPin() && !(stickyRef.current && isNearBottom(el))) return;
+      pinBottom(el);
     });
     ro.observe(el);
     const inner = el.firstElementChild;
@@ -138,39 +145,72 @@ const StickToBottomOnSend: FC = () => {
       el.removeEventListener("scroll", onScroll);
       ro.disconnect();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- pinBottom stable enough via refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // runStart: force sticky + bottom
+  // runStart / runEnd: pin through stream and delayed post-run history sync
   useLayoutEffect(() => {
     const runJustStarted = isRunning && !prevRunning.current;
+    const runJustEnded = !isRunning && prevRunning.current;
     prevRunning.current = isRunning;
-    if (!runJustStarted) return;
 
+    if (runJustStarted) {
+      stickyRef.current = true;
+      postRunHoldUntilRef.current = 0;
+      pinBottom();
+      const t0 = requestAnimationFrame(() => {
+        pinBottom();
+        requestAnimationFrame(() => pinBottom());
+      });
+      const t1 = window.setTimeout(() => pinBottom(), 50);
+      const t2 = window.setTimeout(() => pinBottom(), 180);
+      return () => {
+        cancelAnimationFrame(t0);
+        window.clearTimeout(t1);
+        window.clearTimeout(t2);
+      };
+    }
+
+    if (runJustEnded) {
+      // pending 卡高度 + ~4s loadHistory：笔记本上更晚更抖
+      stickyRef.current = true;
+      postRunHoldUntilRef.current = Date.now() + POST_RUN_STICKY_HOLD_MS;
+      const delays = [0, 40, 120, 400, 1000, 2500, 4000, 4600, 5200];
+      const timers = delays.map((ms) =>
+        window.setTimeout(() => {
+          if (stickyRef.current) pinBottom();
+        }, ms),
+      );
+      return () => timers.forEach((t) => window.clearTimeout(t));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRunning]);
+
+  // New messages/tools while sticky: re-pin (tool-card height spikes)
+  useLayoutEffect(() => {
+    if (!shouldPin()) return;
+    pinBottom();
+    const id = requestAnimationFrame(() => pinBottom());
+    return () => cancelAnimationFrame(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messageCount, isRunning]);
+
+  // Post-run loadHistory finished → list may repaint; re-pin if still sticky
+  useLayoutEffect(() => {
+    if (historySyncGen === 0) return;
+    if (!stickyRef.current && !shouldPin()) return;
     stickyRef.current = true;
     pinBottom();
-    const t0 = requestAnimationFrame(() => {
-      pinBottom();
-      requestAnimationFrame(() => pinBottom());
-    });
-    const t1 = window.setTimeout(() => pinBottom(), 50);
-    const t2 = window.setTimeout(() => pinBottom(), 180);
+    const t0 = requestAnimationFrame(() => pinBottom());
+    const t1 = window.setTimeout(() => pinBottom(), 80);
+    const t2 = window.setTimeout(() => pinBottom(), 240);
     return () => {
       cancelAnimationFrame(t0);
       window.clearTimeout(t1);
       window.clearTimeout(t2);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRunning]);
-
-  // New messages/tools while sticky: re-pin (tool-card height spikes)
-  useLayoutEffect(() => {
-    if (!isRunning || !stickyRef.current) return;
-    pinBottom();
-    const id = requestAnimationFrame(() => pinBottom());
-    return () => cancelAnimationFrame(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messageCount, isRunning]);
+  }, [historySyncGen]);
 
   return null;
 };

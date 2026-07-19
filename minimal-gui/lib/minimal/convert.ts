@@ -628,6 +628,92 @@ export function preferRicherToolMessages(
   });
 }
 
+/** Deterministic id so post-run loadHistory does not remount every bubble. */
+function stableHistoryId(row: SessionChatMessageDto, contentKey: string): string {
+  if (row.action_id) return `hist_act_${row.action_id}`;
+  const task = row.task_id ?? "t";
+  const turn = row.turn ?? 0;
+  const role = row.role ?? "x";
+  // Short content fingerprint for multi-msg same turn
+  let h = 0;
+  const s = contentKey.slice(0, 240);
+  for (let i = 0; i < s.length; i++) h = (h * 33 + s.charCodeAt(i)) | 0;
+  return `hist_${role}_${task}_${turn}_${(h >>> 0).toString(36)}`;
+}
+
+/**
+ * After history reload, keep live React keys when the same logical messages
+ * are still present — avoids full-thread remount scroll jumps on post-run sync.
+ */
+export function preserveLiveMessageIds(
+  prev: MinimalMessage[],
+  next: MinimalMessage[],
+): MinimalMessage[] {
+  if (!prev.length || !next.length) return next;
+  const used = new Set<string>();
+
+  const take = (pred: (p: MinimalMessage) => boolean): MinimalMessage | undefined => {
+    for (const p of prev) {
+      if (used.has(p.id)) continue;
+      if (pred(p)) {
+        used.add(p.id);
+        return p;
+      }
+    }
+    return undefined;
+  };
+
+  return next.map((m) => {
+    let match: MinimalMessage | undefined;
+    if (m.role === "tool" && (m.callId || m.id.startsWith("hist_act_"))) {
+      const cid = m.callId;
+      match = take(
+        (p) =>
+          p.role === "tool" &&
+          ((cid && p.callId === cid) ||
+            (cid && p.id === `at_${cid}`) ||
+            p.content === m.content),
+      );
+    } else if (
+      (m.role === "assistant" || m.role === "user") &&
+      m.taskId != null &&
+      m.turn != null
+    ) {
+      match = take(
+        (p) =>
+          p.role === m.role &&
+          p.taskId === m.taskId &&
+          p.turn === m.turn &&
+          // prefer exact content match when multiple assistants in a turn
+          (p.content === m.content ||
+            joinContent(p).slice(0, 80) === m.content.slice(0, 80)),
+      );
+      if (!match) {
+        match = take(
+          (p) =>
+            p.role === m.role && p.taskId === m.taskId && p.turn === m.turn,
+        );
+      }
+    } else {
+      match = take(
+        (p) =>
+          p.role === m.role &&
+          (p.content === m.content ||
+            joinContent(p) === m.content),
+      );
+    }
+    if (!match) return m;
+    return {
+      ...m,
+      id: match.id,
+      // Keep live toolParts / richer body when history stub is thinner
+      toolParts: match.toolParts?.length ? match.toolParts : m.toolParts,
+      argsJson: m.argsJson ?? match.argsJson,
+      meta: m.meta ?? match.meta,
+    };
+  });
+}
+
 export function fromHistoryDto(row: SessionChatMessageDto): MinimalMessage {
   const raw = row.content ?? "";
   if (row.role === "assistant") {
@@ -638,7 +724,7 @@ export function fromHistoryDto(row: SessionChatMessageDto): MinimalMessage {
       row.meta?.artifact ||
       looksLikeArtifact(clean);
     return {
-      id: newMsgId("hist"),
+      id: stableHistoryId(row, clean),
       role: "assistant",
       content: clean,
       status: "complete",
@@ -660,7 +746,7 @@ export function fromHistoryDto(row: SessionChatMessageDto): MinimalMessage {
   if (row.role === "tool") {
     const name = inferToolName(row.tool_name, raw);
     return {
-      id: newMsgId("hist"),
+      id: stableHistoryId(row, raw),
       role: "tool",
       content: raw,
       status: "complete",
@@ -680,10 +766,11 @@ export function fromHistoryDto(row: SessionChatMessageDto): MinimalMessage {
   // client still unwraps Working directory / system_event as a safety net.
   if (row.role === "system" || row.view_kind === "system_ui") {
     const projected = projectUserDisplay(raw);
+    const content = projected.content || raw;
     return {
-      id: newMsgId("hist"),
+      id: stableHistoryId(row, content),
       role: "system",
-      content: projected.content || raw,
+      content,
       status: "complete",
       turn: row.turn,
       taskId: row.task_id,
@@ -699,11 +786,12 @@ export function fromHistoryDto(row: SessionChatMessageDto): MinimalMessage {
     projected.role === "user" && paths.length
       ? attachmentsFromPaths(paths)
       : undefined;
+  const content = attachments ? displayText : projected.content;
 
   return {
-    id: newMsgId("hist"),
+    id: stableHistoryId({ ...row, role: projected.role }, content),
     role: projected.role,
-    content: attachments ? displayText : projected.content,
+    content,
     status: "complete",
     turn: row.turn,
     taskId: row.task_id,
