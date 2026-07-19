@@ -55,7 +55,7 @@ export function deriveRunActivity(
         m.status === "running" ||
         Boolean(m.contentChunks?.length && m.status !== "complete");
       if (streaming) {
-        return { phase: "streaming", label: "忙着呢…" };
+        return { phase: "streaming", label: "running" };
       }
       break;
     }
@@ -63,5 +63,5 @@ export function deriveRunActivity(
   }
 
   // Waiting on API / between tools / after tool_result before next tokens.
-  return { phase: "thinking", label: "琢磨一下…" };
+  return { phase: "thinking", label: "thinking" };
 }

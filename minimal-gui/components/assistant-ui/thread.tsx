@@ -91,7 +91,7 @@ const RunningStatusRow: FC = () => {
   const messages = useMinimalStore((s) => s.messages);
   const isRunning = useMinimalStore((s) => s.isRunning);
   const label = useMemo(
-    () => deriveRunActivity(messages, isRunning).label ?? "琢磨一下…",
+    () => deriveRunActivity(messages, isRunning).label ?? "thinking",
     [messages, isRunning],
   );
 
