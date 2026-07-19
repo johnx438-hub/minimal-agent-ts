@@ -1,6 +1,6 @@
 "use client";
 
-import { getMinimalToken, wsUrl } from "./client";
+import { getMinimalToken, isMinimalAuthOptional, wsUrl } from "./client";
 import {
   configureDeltaBatch,
   enqueueWsFrame,
@@ -26,7 +26,7 @@ function ensureDeltaBatch(): void {
 
 export function connectMinimalWs(token?: string): void {
   const t = token ?? getMinimalToken();
-  if (!t) {
+  if (!t && !isMinimalAuthOptional()) {
     useMinimalStore.getState().setConnection("error", "missing token");
     return;
   }

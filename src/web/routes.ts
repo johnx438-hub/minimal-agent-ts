@@ -394,9 +394,115 @@ export async function handleApiRoute(
         updated_at: m.updated_at,
         task_count: m.task_count,
         note: m.note,
+        // Secondary line: prefer current_work / pending (not raw task title)
+        preview: m.last_task_summary,
+        last_user_preview: m.last_user_preview,
       })),
       current: ctx.runtime.session?.session_id ?? null,
     });
+    return true;
+  }
+
+  // POST /v1/sessions — create empty session (TUI /new)
+  if (path === '/v1/sessions' && method === 'POST') {
+    if (ctx.runtime.isRunning()) {
+      sendJson(res, 409, { error: 'agent_running' });
+      return true;
+    }
+    let body: Record<string, unknown> = {};
+    try {
+      body = await parseJsonBody(req);
+    } catch {
+      body = {};
+    }
+    ctx.runtime.newSession();
+    const note = typeof body.note === 'string' ? body.note : undefined;
+    if (note?.trim() && ctx.runtime.session) {
+      ctx.runtime.setSessionNote(ctx.runtime.session.session_id, note);
+    }
+    const llm = llmStatus(ctx.runtime);
+    broadcastLlm(ctx.hub, ctx.runtime);
+    sendJson(res, 200, {
+      ok: true,
+      session_id: ctx.runtime.session?.session_id ?? null,
+      messages: [],
+      profile: llm.profile ?? null,
+      model: llm.model ?? null,
+    });
+    return true;
+  }
+
+  // DELETE /v1/sessions/:id
+  if (
+    path.startsWith('/v1/sessions/') &&
+    method === 'DELETE' &&
+    !path.endsWith('/messages') &&
+    !path.endsWith('/switch') &&
+    !path.endsWith('/note')
+  ) {
+    const id = decodeURIComponent(path.slice('/v1/sessions/'.length));
+    if (!id || id.includes('/')) {
+      sendJson(res, 400, { error: 'missing_session_id' });
+      return true;
+    }
+    if (ctx.runtime.isRunning()) {
+      sendJson(res, 409, { error: 'agent_running' });
+      return true;
+    }
+    const result = ctx.runtime.deleteSession(id);
+    if (!result.ok) {
+      sendJson(res, 400, {
+        ok: false,
+        error: 'delete_failed',
+        detail: result.reason,
+      });
+      return true;
+    }
+    const llm = llmStatus(ctx.runtime);
+    broadcastLlm(ctx.hub, ctx.runtime);
+    sendJson(res, 200, {
+      ok: true,
+      deleted: id,
+      session_id: ctx.runtime.session?.session_id ?? null,
+      profile: llm.profile ?? null,
+      model: llm.model ?? null,
+    });
+    return true;
+  }
+
+  // PATCH/POST /v1/sessions/:id/note  { note: string | null }
+  if (
+    path.startsWith('/v1/sessions/') &&
+    path.endsWith('/note') &&
+    (method === 'POST' || method === 'PATCH')
+  ) {
+    const id = decodeURIComponent(
+      path.slice('/v1/sessions/'.length, -'/note'.length),
+    );
+    if (!id) {
+      sendJson(res, 400, { error: 'missing_session_id' });
+      return true;
+    }
+    let body: Record<string, unknown>;
+    try {
+      body = await parseJsonBody(req);
+    } catch (e) {
+      sendJson(res, 400, {
+        error: 'bad_body',
+        detail: e instanceof Error ? e.message : String(e),
+      });
+      return true;
+    }
+    const note =
+      body.note === null || body.note === undefined
+        ? null
+        : String(body.note);
+    const ok = ctx.runtime.setSessionNote(id, note);
+    if (!ok) {
+      sendJson(res, 404, { error: 'session_not_found', session_id: id });
+      return true;
+    }
+    sendJson(res, 200, { ok: true, session_id: id, note: note?.trim() || null });
     return true;
   }
 

@@ -108,7 +108,8 @@ const ThreadRoot: FC<{ isEmpty: boolean }> = ({ isEmpty }) => {
     <ThreadPrimitive.Root
       className="aui-root aui-thread-root bg-background @container flex h-full flex-col"
       style={{
-        ["--thread-max-width" as string]: "44rem",
+        // Wide on large screens, still fluid on narrow (not fixed phone column)
+        ["--thread-max-width" as string]: "min(64rem, calc(100vw - 20rem))",
         ["--composer-bg" as string]:
           "color-mix(in oklab, var(--color-muted) 30%, var(--color-background))",
         ["--composer-radius" as string]: "1.5rem",
@@ -122,7 +123,7 @@ const ThreadRoot: FC<{ isEmpty: boolean }> = ({ isEmpty }) => {
       >
         <div
           className={cn(
-            "mx-auto flex w-full max-w-(--thread-max-width) flex-1 flex-col px-4 pt-4",
+            "mx-auto flex w-full max-w-(--thread-max-width) flex-1 flex-col px-4 pt-4 max-md:max-w-full",
             isEmpty && "justify-center",
           )}
         >

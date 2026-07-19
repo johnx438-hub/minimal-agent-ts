@@ -11,6 +11,7 @@ import type { AgentRuntime } from '../runner.js';
 import {
   checkToken,
   extractRequestToken,
+  isWebAuthDisabled,
   resolveWebUiToken,
 } from './auth.js';
 import { handleApiRoute } from './routes.js';
@@ -107,6 +108,7 @@ export async function startWebUi(opts: StartWebUiOptions): Promise<WebUiHandle> 
       updated_at: m.updated_at,
       task_count: m.task_count,
       note: m.note,
+      preview: m.last_task_summary,
     }));
     const llm = llmStatus(opts.runtime);
     const hello: WebHelloFrame = {
@@ -211,7 +213,9 @@ export async function startWebUi(opts: StartWebUiOptions): Promise<WebUiHandle> 
     server.listen(port, host, () => resolveListen());
   });
 
-  const url = `http://${host}:${port}/?token=${encodeURIComponent(token)}`;
+  const url = isWebAuthDisabled()
+    ? `http://${host}:${port}/`
+    : `http://${host}:${port}/?token=${encodeURIComponent(token)}`;
 
   return {
     host,
@@ -280,8 +284,15 @@ async function handleWsClientMessage(
 export function printWebUiBanner(handle: WebUiHandle): void {
   console.error('');
   console.error('── Web UI ──────────────────────────────────────');
-  console.error(`  ${handle.url}`);
-  console.error(`  token: ${handle.token}`);
+  if (isWebAuthDisabled()) {
+    // Prefer open URL without token clutter in intranet dogfood
+    const openUrl = handle.url.replace(/[?&]token=[^&]*/, '').replace(/\?$/, '');
+    console.error(`  ${openUrl}`);
+    console.error('  auth:  OFF (MINIMAL_WEB_NO_AUTH / --no-auth) · intranet only');
+  } else {
+    console.error(`  ${handle.url}`);
+    console.error(`  token: ${handle.token}`);
+  }
   console.error('  bind:  local only · open URL above in a browser');
   console.error('────────────────────────────────────────────────');
   console.error('');

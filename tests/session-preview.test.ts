@@ -119,7 +119,7 @@ describe('lastTaskSummaryPreview', () => {
     assert.equal(lastTaskSummaryPreview(session), 'Implemented allowlist shell policy');
   });
 
-  it('uses in-flight user message when present', () => {
+  it('prefers completed current_work over in-flight user text', () => {
     const session: Pick<SessionFile, 'current_messages' | 'tasks'> = {
       current_messages: [{ role: 'user', content: 'still working on X' }],
       tasks: [
@@ -138,7 +138,37 @@ describe('lastTaskSummaryPreview', () => {
         },
       ],
     };
+    assert.equal(lastTaskSummaryPreview(session), 'old work');
+  });
+
+  it('uses in-flight user when no completed progress card', () => {
+    const session: Pick<SessionFile, 'current_messages' | 'tasks'> = {
+      current_messages: [{ role: 'user', content: 'still working on X' }],
+      tasks: [],
+    };
     assert.equal(lastTaskSummaryPreview(session), 'still working on X');
+  });
+
+  it('prefers pending_tasks over user_intent', () => {
+    const session: Pick<SessionFile, 'current_messages' | 'tasks'> = {
+      current_messages: [],
+      tasks: [
+        {
+          task_id: 't1',
+          session_id: 's1',
+          turn_range: [1, 2],
+          action_count: 0,
+          user_intent: 'big task title',
+          user_messages: ['big task title'],
+          files_touched: [],
+          tech_concepts: [],
+          tools_used: [],
+          pending_tasks: ['wire session list preview'],
+          current_work: '',
+        },
+      ],
+    };
+    assert.equal(lastTaskSummaryPreview(session), 'wire session list preview');
   });
 });
 

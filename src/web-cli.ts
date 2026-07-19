@@ -20,6 +20,7 @@ function parseArgs(argv: string[]): {
   allowWeb: boolean;
   resumeSessionId?: string;
   resumeLatest: boolean;
+  noAuth: boolean;
 } {
   let cwd = process.cwd();
   let port = 7788;
@@ -29,6 +30,7 @@ function parseArgs(argv: string[]): {
   let allowWeb = false;
   let resumeSessionId: string | undefined;
   let resumeLatest = false;
+  let noAuth = false;
 
   const next = [...argv];
   for (let i = 0; i < next.length; i++) {
@@ -45,6 +47,9 @@ function parseArgs(argv: string[]): {
       allowShell = true;
     } else if (a === '--allow-web') {
       allowWeb = true;
+    } else if (a === '--no-auth' || a === '--web-no-auth') {
+      // Intranet dogfood: skip bearer/query token (also: MINIMAL_WEB_NO_AUTH=1)
+      noAuth = true;
     } else if (a === '--resume' && next[i + 1] && !next[i + 1]!.startsWith('-')) {
       resumeSessionId = next[++i];
     } else if (a === '--resume-last') {
@@ -63,11 +68,16 @@ function parseArgs(argv: string[]): {
     allowWeb,
     resumeSessionId,
     resumeLatest,
+    noAuth,
   };
 }
 
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2));
+
+  if (opts.noAuth) {
+    process.env.MINIMAL_WEB_NO_AUTH = '1';
+  }
 
   const runtime = new AgentRuntime({
     cwd: opts.cwd,

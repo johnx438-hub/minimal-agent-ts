@@ -82,6 +82,9 @@ export interface MinimalStore {
   sendCommand: (line: string) => Promise<void>;
   abort: () => Promise<void>;
   switchSession: (id: string) => Promise<void>;
+  createSession: (note?: string) => Promise<void>;
+  deleteSession: (id: string) => Promise<void>;
+  setSessionNote: (id: string, note: string) => Promise<void>;
   armWorkflow: (name: string | null) => Promise<void>;
   setProfile: (name: string) => Promise<void>;
   setModel: (model: string) => Promise<void>;
@@ -850,6 +853,98 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
     }
   },
 
+  async createSession(note?: string) {
+    if (get().isRunning) {
+      set({ lastError: "agent is running — abort first" });
+      return;
+    }
+    try {
+      const res = await minimalFetch<{
+        session_id?: string;
+        profile?: string | null;
+        model?: string | null;
+      }>("/v1/sessions", {
+        method: "POST",
+        body: JSON.stringify(note?.trim() ? { note: note.trim() } : {}),
+        token: get().token || getMinimalToken(),
+      });
+      set({
+        sessionId: res.session_id ?? null,
+        messages: [],
+        workflowSteps: [],
+        profile: res.profile ?? get().profile,
+        model: res.model ?? get().model,
+        lastError: undefined,
+      });
+      await get().refreshCatalog();
+    } catch (e) {
+      set({ lastError: e instanceof Error ? e.message : String(e) });
+    }
+  },
+
+  async deleteSession(id: string) {
+    if (get().isRunning) {
+      set({ lastError: "agent is running — abort first" });
+      return;
+    }
+    try {
+      const res = await minimalFetch<{
+        ok?: boolean;
+        session_id?: string | null;
+        profile?: string | null;
+        model?: string | null;
+      }>(`/v1/sessions/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        token: get().token || getMinimalToken(),
+      });
+      const wasCurrent = id === get().sessionId;
+      set({
+        sessions: get().sessions.filter((s) => s.session_id !== id),
+        lastError: undefined,
+      });
+      if (wasCurrent) {
+        set({
+          sessionId: res.session_id ?? null,
+          messages: [],
+          workflowSteps: [],
+          profile: res.profile ?? get().profile,
+          model: res.model ?? get().model,
+        });
+        if (res.session_id) {
+          await get().loadHistory(res.session_id).catch(() => {
+            set({ messages: [] });
+          });
+        }
+      }
+      await get().refreshCatalog();
+    } catch (e) {
+      set({ lastError: e instanceof Error ? e.message : String(e) });
+    }
+  },
+
+  async setSessionNote(id: string, note: string) {
+    try {
+      const res = await minimalFetch<{ note?: string | null }>(
+        `/v1/sessions/${encodeURIComponent(id)}/note`,
+        {
+          method: "POST",
+          body: JSON.stringify({ note: note.trim() || null }),
+          token: get().token || getMinimalToken(),
+        },
+      );
+      set({
+        sessions: get().sessions.map((s) =>
+          s.session_id === id
+            ? { ...s, note: res.note ?? undefined }
+            : s,
+        ),
+        lastError: undefined,
+      });
+    } catch (e) {
+      set({ lastError: e instanceof Error ? e.message : String(e) });
+    }
+  },
+
   async armWorkflow(name: string | null) {
     const res = await minimalFetch<{
       armed?: string | null;
@@ -991,7 +1086,10 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
         current?: string | null;
       }>("/v1/sessions", { token });
       set({
-        sessions: sess.sessions ?? [],
+        sessions: (sess.sessions ?? []).map((s) => ({
+          ...s,
+          preview: s.preview ?? s.last_user_preview,
+        })),
         sessionId: sess.current ?? get().sessionId,
       });
     } catch {

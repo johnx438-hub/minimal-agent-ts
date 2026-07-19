@@ -90,6 +90,9 @@ export interface SessionMeta {
   updated_at?: number;
   task_count?: number;
   note?: string;
+  /** Secondary line: current_work / pending (not raw task title). */
+  preview?: string;
+  last_user_preview?: string;
 }
 
 export interface WorkflowMeta {
@@ -146,10 +149,12 @@ export type WsFrame =
       jobs?: Array<{ id: string; status: string; label?: string }>;
       armed_workflow?: string | null;
       loaded_skills?: string[];
-      workflow_confirm?: WorkflowConfirmPending & {
-        type?: "workflow_confirm";
-        status?: string;
-      } | null;
+      workflow_confirm?:
+        | (WorkflowConfirmPending & {
+            type?: "workflow_confirm";
+            status?: string;
+          })
+        | null;
     }
   | {
       type: "run_state";

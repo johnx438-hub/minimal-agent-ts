@@ -13,6 +13,15 @@ export function getMinimalBaseUrl(): string {
   );
 }
 
+/** Match server MINIMAL_WEB_NO_AUTH / --no-auth for local dogfood. */
+export function isMinimalAuthOptional(): boolean {
+  const env = process.env.NEXT_PUBLIC_MINIMAL_WEB_NO_AUTH?.trim().toLowerCase();
+  if (env === "1" || env === "true" || env === "yes" || env === "on") {
+    return true;
+  }
+  return false;
+}
+
 export function getMinimalToken(): string {
   return (
     process.env.NEXT_PUBLIC_MINIMAL_TOKEN?.trim() ||
@@ -39,7 +48,7 @@ function authHeaders(token: string): HeadersInit {
 }
 
 function withTokenQuery(path: string, token: string): string {
-  if (!token) return path;
+  if (!token || isMinimalAuthOptional()) return path;
   const sep = path.includes("?") ? "&" : "?";
   return `${path}${sep}token=${encodeURIComponent(token)}`;
 }
@@ -98,6 +107,10 @@ export function wsUrl(token?: string): string {
   const u = new URL(base);
   u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
   u.pathname = "/v1/ws";
-  u.search = t ? `token=${encodeURIComponent(t)}` : "";
+  if (t && !isMinimalAuthOptional()) {
+    u.search = `token=${encodeURIComponent(t)}`;
+  } else {
+    u.search = "";
+  }
   return u.toString();
 }

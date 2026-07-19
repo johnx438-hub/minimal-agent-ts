@@ -180,33 +180,45 @@ export function lastTaskIntentPreview(
 }
 
 /**
- * Best one-line summary of what the session was about (list right column).
- * Priority: in-flight user → last task current_work → user_intent → user_messages.
+ * Best one-line summary of what the session was about (list secondary line).
+ * Prefer pending-card style progress over raw user task title:
+ * current_work → pending_tasks[0] → user_intent → last user message.
  */
 export function lastTaskSummaryPreview(
   session: Pick<SessionFile, 'current_messages' | 'tasks'>,
 ): string {
+  const lastTask = session.tasks[session.tasks.length - 1];
+  if (lastTask) {
+    const work = lastTask.current_work?.trim();
+    if (work) return clipSessionPreview(work, TASK_SUMMARY_PREVIEW_MAX_CHARS);
+
+    const pending = lastTask.pending_tasks?.find((t) => String(t).trim());
+    if (pending) {
+      return clipSessionPreview(String(pending).trim(), TASK_SUMMARY_PREVIEW_MAX_CHARS);
+    }
+
+    const intent = lastTask.user_intent?.trim();
+    if (intent) return clipSessionPreview(intent, TASK_SUMMARY_PREVIEW_MAX_CHARS);
+
+    const lastMsg = lastTask.user_messages[lastTask.user_messages.length - 1]?.trim();
+    if (lastMsg) return clipSessionPreview(lastMsg, TASK_SUMMARY_PREVIEW_MAX_CHARS);
+  }
+
+  // No completed task yet — fall back to latest human user line (skip system injects)
   if (session.current_messages.length > 0) {
     for (let i = session.current_messages.length - 1; i >= 0; i--) {
       const msg = session.current_messages[i];
-      if (msg?.role === 'user') {
-        const text = typeof msg.content === 'string' ? msg.content.trim() : '';
-        if (text) return clipSessionPreview(text, TASK_SUMMARY_PREVIEW_MAX_CHARS);
-      }
+      if (msg?.role !== 'user') continue;
+      const text = typeof msg.content === 'string' ? msg.content.trim() : '';
+      if (!text) continue;
+      if (text.startsWith('Attached image(s) for vision')) continue;
+      if (text.includes('<system_event')) continue;
+      // Strip Working directory envelope for display
+      const taskOnly = text.match(/^Working directory:[^\n]+\n\nTask:\n([\s\S]+)$/);
+      const body = (taskOnly?.[1] ?? text).trim();
+      if (body) return clipSessionPreview(body, TASK_SUMMARY_PREVIEW_MAX_CHARS);
     }
   }
-
-  const lastTask = session.tasks[session.tasks.length - 1];
-  if (!lastTask) return '(empty)';
-
-  const work = lastTask.current_work?.trim();
-  if (work) return clipSessionPreview(work, TASK_SUMMARY_PREVIEW_MAX_CHARS);
-
-  const intent = lastTask.user_intent?.trim();
-  if (intent) return clipSessionPreview(intent, TASK_SUMMARY_PREVIEW_MAX_CHARS);
-
-  const lastMsg = lastTask.user_messages[lastTask.user_messages.length - 1]?.trim();
-  if (lastMsg) return clipSessionPreview(lastMsg, TASK_SUMMARY_PREVIEW_MAX_CHARS);
 
   return '(empty)';
 }

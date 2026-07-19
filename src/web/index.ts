@@ -1,4 +1,10 @@
-export { generateWebUiToken, resolveWebUiToken, checkToken, extractRequestToken } from './auth.js';
+export {
+  generateWebUiToken,
+  resolveWebUiToken,
+  checkToken,
+  extractRequestToken,
+  isWebAuthDisabled,
+} from './auth.js';
 export { startWebUi, printWebUiBanner } from './server.js';
 export type { WebUiHandle, WebUiServerOptions, WebControlFrame } from './types.js';
 export { createWsMessageSink } from './ws-sink.js';

@@ -1,6 +1,9 @@
 /**
  * Local Web UI token auth (SPEC_WEB_UI).
  * Any listen port without a secret is an RCE surface for other local pages.
+ *
+ * Dev-only bypass (intranet): MINIMAL_WEB_NO_AUTH=1 or --no-auth on web-cli.
+ * Never enable on a public bind.
  */
 
 import { randomBytes, timingSafeEqual } from 'node:crypto';
@@ -10,7 +13,16 @@ export function generateWebUiToken(): string {
   return randomBytes(24).toString('base64url');
 }
 
+/** True when auth is intentionally open for local dogfood. */
+export function isWebAuthDisabled(): boolean {
+  const v = process.env.MINIMAL_WEB_NO_AUTH?.trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+}
+
 export function resolveWebUiToken(explicit?: string): string {
+  if (isWebAuthDisabled()) {
+    return explicit?.trim() || process.env.MINIMAL_WEB_TOKEN?.trim() || 'dev-open';
+  }
   const fromEnv = process.env.MINIMAL_WEB_TOKEN?.trim();
   if (explicit?.trim()) return explicit.trim();
   if (fromEnv) return fromEnv;
@@ -42,6 +54,7 @@ export function checkToken(
   provided: string | undefined,
   expected: string,
 ): boolean {
+  if (isWebAuthDisabled()) return true;
   if (!provided || !expected) return false;
   return tokensEqual(provided, expected);
 }

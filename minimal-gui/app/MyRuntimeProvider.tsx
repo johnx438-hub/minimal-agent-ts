@@ -12,7 +12,10 @@ import {
   formatTaskWithAttachments,
   pathsFromAppendMessage,
 } from "@/lib/minimal/attachment-adapter";
-import { getMinimalToken } from "@/lib/minimal/client";
+import {
+  getMinimalToken,
+  isMinimalAuthOptional,
+} from "@/lib/minimal/client";
 import {
   coalesceToolsIntoAssistants,
   convertMessage,
@@ -21,6 +24,9 @@ import {
 import { useMinimalStore } from "@/lib/minimal/store";
 import { connectMinimalWs } from "@/lib/minimal/ws";
 import { TooltipProvider } from "@/components/ui/tooltip";
+
+/** Cap visible history after coalesce (older messages stay on server). */
+const MESSAGE_DISPLAY_CAP = 80;
 
 export function MyRuntimeProvider({
   children,
@@ -40,21 +46,29 @@ export function MyRuntimeProvider({
 
   // Avoid SSR/client mismatch: token may live in localStorage / ?query only on client.
   const [tokenHint, setTokenHint] = useState(false);
+  const [showAllMessages, setShowAllMessages] = useState(false);
 
   useEffect(() => {
     const token = getMinimalToken();
-    setTokenHint(!token);
-    if (token) {
-      useMinimalStore.getState().setToken(token);
-      connectMinimalWs(token);
+    const open = isMinimalAuthOptional() || Boolean(token);
+    setTokenHint(!open);
+    if (open) {
+      if (token) useMinimalStore.getState().setToken(token);
+      connectMinimalWs(token || undefined);
     }
   }, []);
 
-  // Merge tool rows into assistant content parts → single layer, less whitespace
-  const displayMessages = useMemo(
-    () => coalesceToolsIntoAssistants(messages),
-    [messages],
-  );
+  // Merge tool rows; optionally cap long sessions for DOM cost
+  const { displayMessages, hiddenCount } = useMemo(() => {
+    const coalesced = coalesceToolsIntoAssistants(messages);
+    if (showAllMessages || coalesced.length <= MESSAGE_DISPLAY_CAP) {
+      return { displayMessages: coalesced, hiddenCount: 0 };
+    }
+    return {
+      displayMessages: coalesced.slice(-MESSAGE_DISPLAY_CAP),
+      hiddenCount: coalesced.length - MESSAGE_DISPLAY_CAP,
+    };
+  }, [messages, showAllMessages]);
 
   const attachmentAdapter = useMemo(
     () =>
@@ -181,6 +195,30 @@ export function MyRuntimeProvider({
             <div className="border-border/50 bg-amber-500/10 text-amber-950 dark:text-amber-100 border-b px-3 py-1 font-mono text-[11px] leading-snug">
               <span className="opacity-70">子 agent 运行中（与主时间线隔离）· </span>
               <span className="truncate">{spawnLine}</span>
+            </div>
+          )}
+          {hiddenCount > 0 && (
+            <div className="border-border/50 text-muted-foreground flex items-center gap-2 border-b px-3 py-1 text-[11px]">
+              <span>已折叠更早 {hiddenCount} 条消息（显示最近 {MESSAGE_DISPLAY_CAP}）</span>
+              <button
+                type="button"
+                className="text-foreground underline-offset-2 hover:underline"
+                onClick={() => setShowAllMessages(true)}
+              >
+                显示全部
+              </button>
+            </div>
+          )}
+          {showAllMessages && messages.length > MESSAGE_DISPLAY_CAP && (
+            <div className="border-border/50 text-muted-foreground flex items-center gap-2 border-b px-3 py-1 text-[11px]">
+              <span>正在显示全部 {messages.length} 条</span>
+              <button
+                type="button"
+                className="underline-offset-2 hover:underline"
+                onClick={() => setShowAllMessages(false)}
+              >
+                仅最近 {MESSAGE_DISPLAY_CAP}
+              </button>
             </div>
           )}
           <div className="min-h-0 flex-1">{children}</div>
