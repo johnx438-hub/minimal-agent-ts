@@ -202,7 +202,7 @@
         "cli-web-search -p brave",
         "opencli google search"
       ],
-      "max_turns": 50,
+      "max_turns": 80,
       "shell": {
         "mode": "allowlist",
         "allowed_prefixes": [
@@ -249,7 +249,7 @@
         "web_fetch",
         "web_search"
       ],
-      "max_turns": 50,
+      "max_turns": 80,
       "shell": {
         "mode": "allowlist",
         "allowed_prefixes": [
@@ -290,7 +290,7 @@
         "web_fetch",
         "web_search"
       ],
-      "max_turns": 50,
+      "max_turns": 80,
       "shell": {
         "mode": "allowlist",
         "allowed_prefixes": [
@@ -330,7 +330,7 @@
         "web_fetch",
         "web_search"
       ],
-      "max_turns": 50,
+      "max_turns": 80,
       "shell": {
         "mode": "allowlist",
         "allowed_prefixes": [

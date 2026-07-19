@@ -14,9 +14,6 @@ agent.llm.prepare.json
 # Session runtime: conversations, cold storage, vector index
 .sessions/
 
-# Background job scratch (under workspace/)
-workspace/jobs/
-
 # OS files
 .DS_Store
 Thumbs.db
@@ -35,32 +32,32 @@ npm-debug.log*
 .tui-prefs-test.json
 .tui-prefs.json.bak
 
-# Local workspace / scratch (not repo content)
+# Local workspace / scratch (agent outputs, screenshots, jobs)
 /workspace/
 /web-articles/
 CONVERSATION_SUMMARY.md
 PROJECT_SUMMARY.md
 
+# Dogfood notes accidentally written at repo root (prefer workspace/)
+/reports/
+/*-summary.md
+/*-report.md
+/workflow-module-analysis.md
+
 # Zvec / local index artifacts (if created outside .sessions)
 *.zvec
 agent_memory.zvec
 
-# Skills: ship curated set; install others locally under skills/
-skills/*
-!skills/context-design/
-!skills/context-design/**
-!skills/office-layout/
-!skills/office-layout/**
-!skills/cloak-fetch/
-!skills/cloak-fetch/**
-!skills/opencli-usage/
-!skills/opencli-usage/**
-!skills/cli-web-search/
-!skills/cli-web-search/**
-!skills/memory/
-!skills/memory/**
-!skills/workflow-design/
-!skills/workflow-design/**
+# Skills: ship thin SKILL.md only; full vendor trees (e.g. cli-web-search Cargo)
+# stay local — install / clone under skills/ without polluting git status.
+# skills/*/** re-ignores nested paths so a skill's own .gitignore cannot
+# re-include Cargo.lock / src / etc.
+skills/**
+!skills/*/
+!skills/*/SKILL.md
+skills/*/**
+!skills/*/SKILL.md
+!skills/cloak-fetch/cloak_fetch.py
 
 # User-level memory (personal — keep local)
 .agent/memory/

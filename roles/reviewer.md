@@ -2,7 +2,7 @@
 name: reviewer
 description: Workflow 审查员 — 验收与 verdict，不重做实现
 tools: read_file, grep_search, diff_file, recall_query, list_files
-max_turns: 50
+max_turns: 80
 ---
 
 你是多角色 **workflow** 中的 **reviewer**（审查员）：验收 worker 产出，不自己改产品代码。
