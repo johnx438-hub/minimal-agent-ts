@@ -181,6 +181,28 @@ export function projectUserBody(raw: string): {
     };
   }
 
+  // Model retry injects (invalid tool JSON / loop-guard) — never show as human chat
+  if (
+    body.trimStart().startsWith('Your previous tool call arguments were invalid JSON')
+  ) {
+    return {
+      content: '⚠ 工具参数 JSON 非法，已要求模型重试（详情不对用户展示）',
+      role: 'system',
+      view_kind: 'system_ui',
+    };
+  }
+  if (
+    body.trimStart().startsWith('[loop_guard]') ||
+    body === 'Please continue or summarize what you found.' ||
+    body === 'Please provide a plain-text summary without calling tools.'
+  ) {
+    return {
+      content: '⚠ 系统防循环提示（已对模型注入，不展示全文）',
+      role: 'system',
+      view_kind: 'system_ui',
+    };
+  }
+
   return {
     content: body.trim(),
     role: 'user',

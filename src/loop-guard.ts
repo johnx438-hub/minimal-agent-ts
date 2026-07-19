@@ -60,8 +60,22 @@ export function isLoopGuardInjection(message: ChatMessage): boolean {
   return LOOP_GUARD_INJECTIONS.has(content);
 }
 
+/**
+ * Harness-only user rows: loop-guard nudges + malformed tool-args retries.
+ * These must not surface as human chat in TUI/Web (LLM context only).
+ */
+export function isHarnessInjectedUserMessage(message: ChatMessage): boolean {
+  if (message.role !== 'user') return false;
+  if (isLoopGuardInjection(message)) return true;
+  const content = typeof message.content === 'string' ? message.content : '';
+  // Lazy import avoided: prefix match is stable and shared with tool-args.ts
+  return content
+    .trimStart()
+    .startsWith('Your previous tool call arguments were invalid JSON');
+}
+
 export function stripLoopGuardInjections(messages: ChatMessage[]): ChatMessage[] {
-  return messages.filter((m) => !isLoopGuardInjection(m));
+  return messages.filter((m) => !isHarnessInjectedUserMessage(m));
 }
 
 function stableStringify(value: unknown): string {

@@ -228,9 +228,13 @@ export function coalesceToolsIntoAssistants(
       host.toolParts = [...(host.toolParts ?? []), part];
       if (part.status === "running") host.status = "running";
     } else {
-      // Stable id from tool call — never newMsgId per coalesce pass (remount thrash)
+      // Stable id from tool call — never newMsgId per coalesce pass (remount thrash).
+      // Include tool row id so missing callId never collapses two tools into one id.
+      const atId = part.callId
+        ? `at_${part.callId}`
+        : `at_${m.id || newMsgId("t")}`;
       out.push({
-        id: `at_${part.callId || m.id}`,
+        id: atId,
         role: "assistant",
         content: "",
         status: part.status === "running" ? "running" : "complete",
@@ -244,7 +248,8 @@ export function coalesceToolsIntoAssistants(
 
   const merged = mergeAdjacentToolsOnly(out);
   const expanded = applyToolExpandPolicy(merged);
-  const result = reuseCoalesceIdentities(expanded, coalesceCache?.output);
+  const reused = reuseCoalesceIdentities(expanded, coalesceCache?.output);
+  const result = ensureUniqueMessageIds(reused);
   coalesceCache = { inputs: messages, output: result };
   return result;
 }
@@ -666,51 +671,79 @@ export function preferRicherToolMessages(
   });
 }
 
-/** Deterministic id so post-run loadHistory does not remount every bubble. */
-function stableHistoryId(row: SessionChatMessageDto, contentKey: string): string {
-  if (row.action_id) return `hist_act_${row.action_id}`;
+/** Deterministic base id; always suffix with list index for uniqueness. */
+function stableHistoryId(
+  row: SessionChatMessageDto,
+  contentKey: string,
+  index: number,
+): string {
+  if (row.action_id) return `hist_act_${row.action_id}_${index}`;
   const task = row.task_id ?? "t";
   const turn = row.turn ?? 0;
   const role = row.role ?? "x";
-  // Short content fingerprint for multi-msg same turn
   let h = 0;
   const s = contentKey.slice(0, 240);
   for (let i = 0; i < s.length; i++) h = (h * 33 + s.charCodeAt(i)) | 0;
-  return `hist_${role}_${task}_${turn}_${(h >>> 0).toString(36)}`;
+  return `hist_${role}_${task}_${turn}_${(h >>> 0).toString(36)}_${index}`;
+}
+
+/**
+ * Guarantee unique ids before handing messages to assistant-ui MessageRepository.
+ * Duplicate ids throw: "A message with the same id already exists in the parent tree".
+ */
+export function ensureUniqueMessageIds(
+  messages: MinimalMessage[],
+): MinimalMessage[] {
+  const seen = new Set<string>();
+  let changed = false;
+  const out = messages.map((m, i) => {
+    let id = m.id?.trim() || `m_${i}`;
+    if (seen.has(id)) {
+      changed = true;
+      id = `${id}__${i}`;
+      // extreme: still colliding
+      while (seen.has(id)) id = `${id}_${seen.size}`;
+    }
+    seen.add(id);
+    return id === m.id ? m : { ...m, id };
+  });
+  return changed ? out : messages;
 }
 
 /**
  * After history reload, keep live React keys when the same logical messages
  * are still present — avoids full-thread remount scroll jumps on post-run sync.
+ * Never assigns the same live id to two history rows.
  */
 export function preserveLiveMessageIds(
   prev: MinimalMessage[],
   next: MinimalMessage[],
 ): MinimalMessage[] {
-  if (!prev.length || !next.length) return next;
-  const used = new Set<string>();
+  if (!prev.length || !next.length) return ensureUniqueMessageIds(next);
+  const usedPrev = new Set<string>();
+  const assigned = new Set<string>();
 
   const take = (pred: (p: MinimalMessage) => boolean): MinimalMessage | undefined => {
     for (const p of prev) {
-      if (used.has(p.id)) continue;
+      if (usedPrev.has(p.id)) continue;
       if (pred(p)) {
-        used.add(p.id);
+        usedPrev.add(p.id);
         return p;
       }
     }
     return undefined;
   };
 
-  return next.map((m) => {
+  const mapped = next.map((m, i) => {
     let match: MinimalMessage | undefined;
     if (m.role === "tool" && (m.callId || m.id.startsWith("hist_act_"))) {
       const cid = m.callId;
       match = take(
         (p) =>
           p.role === "tool" &&
-          ((cid && p.callId === cid) ||
-            (cid && p.id === `at_${cid}`) ||
-            p.content === m.content),
+          ((cid != null && cid !== "" && p.callId === cid) ||
+            (cid != null && cid !== "" && p.id === `at_${cid}`) ||
+            (p.content === m.content && p.content.length > 0)),
       );
     } else if (
       (m.role === "assistant" || m.role === "user") &&
@@ -722,7 +755,6 @@ export function preserveLiveMessageIds(
           p.role === m.role &&
           p.taskId === m.taskId &&
           p.turn === m.turn &&
-          // prefer exact content match when multiple assistants in a turn
           (p.content === m.content ||
             joinContent(p).slice(0, 80) === m.content.slice(0, 80)),
       );
@@ -732,27 +764,41 @@ export function preserveLiveMessageIds(
             p.role === m.role && p.taskId === m.taskId && p.turn === m.turn,
         );
       }
-    } else {
+    } else if (m.content.trim()) {
       match = take(
         (p) =>
           p.role === m.role &&
-          (p.content === m.content ||
-            joinContent(p) === m.content),
+          (p.content === m.content || joinContent(p) === m.content),
       );
     }
-    if (!match) return m;
+
+    let id = match?.id ?? m.id;
+    if (assigned.has(id)) {
+      // Prefer history's own unique id over double-using a live key
+      id = assigned.has(m.id) ? `${m.id}__${i}` : m.id;
+      if (assigned.has(id)) id = `${m.id}__${i}_${assigned.size}`;
+    }
+    assigned.add(id);
+
+    if (!match) {
+      return id === m.id ? m : { ...m, id };
+    }
     return {
       ...m,
-      id: match.id,
-      // Keep live toolParts / richer body when history stub is thinner
+      id,
       toolParts: match.toolParts?.length ? match.toolParts : m.toolParts,
       argsJson: m.argsJson ?? match.argsJson,
       meta: m.meta ?? match.meta,
     };
   });
+
+  return ensureUniqueMessageIds(mapped);
 }
 
-export function fromHistoryDto(row: SessionChatMessageDto): MinimalMessage {
+export function fromHistoryDto(
+  row: SessionChatMessageDto,
+  index = 0,
+): MinimalMessage {
   const raw = row.content ?? "";
   if (row.role === "assistant") {
     const summary = row.meta ?? parseAgentSummary(raw);
@@ -762,7 +808,7 @@ export function fromHistoryDto(row: SessionChatMessageDto): MinimalMessage {
       row.meta?.artifact ||
       looksLikeArtifact(clean);
     return {
-      id: stableHistoryId(row, clean),
+      id: stableHistoryId(row, clean, index),
       role: "assistant",
       content: clean,
       status: "complete",
@@ -784,7 +830,7 @@ export function fromHistoryDto(row: SessionChatMessageDto): MinimalMessage {
   if (row.role === "tool") {
     const name = inferToolName(row.tool_name, raw);
     return {
-      id: stableHistoryId(row, raw),
+      id: stableHistoryId(row, raw, index),
       role: "tool",
       content: raw,
       status: "complete",
@@ -806,7 +852,7 @@ export function fromHistoryDto(row: SessionChatMessageDto): MinimalMessage {
     const projected = projectUserDisplay(raw);
     const content = projected.content || raw;
     return {
-      id: stableHistoryId(row, content),
+      id: stableHistoryId(row, content, index),
       role: "system",
       content,
       status: "complete",
@@ -827,7 +873,7 @@ export function fromHistoryDto(row: SessionChatMessageDto): MinimalMessage {
   const content = attachments ? displayText : projected.content;
 
   return {
-    id: stableHistoryId({ ...row, role: projected.role }, content),
+    id: stableHistoryId({ ...row, role: projected.role }, content, index),
     role: projected.role,
     content,
     status: "complete",

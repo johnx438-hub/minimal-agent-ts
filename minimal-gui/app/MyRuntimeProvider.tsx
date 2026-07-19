@@ -21,6 +21,7 @@ import {
 import {
   coalesceToolsIntoAssistants,
   convertMessage,
+  ensureUniqueMessageIds,
   textFromAppendContent,
 } from "@/lib/minimal/convert";
 import { useTheme } from "@/components/minimal/theme-provider";
@@ -82,7 +83,9 @@ export function MyRuntimeProvider({
 
   // Merge tool rows; optionally cap long sessions for DOM cost
   const { displayMessages, hiddenCount } = useMemo(() => {
-    const coalesced = coalesceToolsIntoAssistants(messages);
+    const coalesced = ensureUniqueMessageIds(
+      coalesceToolsIntoAssistants(messages),
+    );
     if (showAllMessages || coalesced.length <= MESSAGE_DISPLAY_CAP) {
       return { displayMessages: coalesced, hiddenCount: 0 };
     }

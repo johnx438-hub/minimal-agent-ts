@@ -6,6 +6,7 @@ import { getMinimalToken, minimalFetch, rememberToken } from "./client";
 import {
   applyToolExpandPolicy,
   collapseToolsExceptLatestTurn,
+  ensureUniqueMessageIds,
   fromHistoryDto,
   joinContent,
   newMsgId,
@@ -275,7 +276,9 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
 
   hydrateHistory(rows) {
     set({
-      messages: applyToolExpandPolicy(rows.map(fromHistoryDto)),
+      messages: ensureUniqueMessageIds(
+        applyToolExpandPolicy(rows.map((row, i) => fromHistoryDto(row, i))),
+      ),
     });
   },
 
@@ -546,32 +549,41 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
     const frameSession = sm.session_id;
     const currentSession = get().sessionId;
     const bridgeSource = sm.source;
+    // spawn_* virtual sessions are always child (even if source tag was dropped)
+    const isSpawnSessionId =
+      typeof frameSession === "string" && frameSession.startsWith("spawn_");
     const isChildAgentStream =
       bridgeSource === "job" ||
       bridgeSource === "spawn" ||
+      isSpawnSessionId ||
       (Boolean(frameSession) &&
         Boolean(currentSession) &&
         frameSession !== currentSession);
 
     // Settlement notices are tagged source=job but use parent session_id —
-    // still allow system_notice onto the main timeline.
+    // still allow system_notice onto the main timeline (short digests only).
     if (isChildAgentStream && role !== "system_notice") {
       const spawnKey =
         sm.source_id ||
         frameSession ||
         (bridgeSource === "spawn" ? "spawn" : "job");
+      // source_id for jobs is job_id; for sync spawn is often the preset name
       const presetLabel =
         bridgeSource === "spawn"
           ? sm.source_id || "spawn"
-          : sm.source_id || spawnKey;
+          : bridgeSource === "job"
+            ? sm.source_id || spawnKey
+            : sm.source_id || spawnKey;
 
-      // Background jobs: only touch jobs panel (never stream previews into the
-      // top strip — multi-job preview thrash was causing layout / scroll shake).
-      if (bridgeSource === "job" && sm.source_id) {
-        if (role === "tool" || (role === "assistant" && sm.content)) {
+      // Background jobs: jobs panel only — never main bubbles / activity prose
+      if (bridgeSource === "job" || (isSpawnSessionId && sm.source_id?.startsWith("job_"))) {
+        if (role === "tool" || (role === "assistant" && (sm.content || sm.delta))) {
           set((s) => {
             const jobs = [...s.jobs];
-            const id = sm.source_id!;
+            const id =
+              sm.source_id?.startsWith("job_")
+                ? sm.source_id
+                : sm.source_id || spawnKey;
             const i = jobs.findIndex((j) => j.id === id);
             const tool =
               role === "tool"
@@ -580,16 +592,12 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
             const row = {
               id,
               status: "running" as const,
-              label:
-                jobs[i]?.label ||
-                tool ||
-                id.slice(0, 14),
+              label: jobs[i]?.label || tool || id.slice(0, 14),
             };
             if (i >= 0) {
               jobs[i] = {
                 ...jobs[i]!,
                 status: "running",
-                // keep stable label after first set
                 label: jobs[i]!.label || row.label,
               };
             } else jobs.unshift(row);
@@ -599,8 +607,25 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
         return;
       }
 
-      // Sync spawn: strip shows name + last tool only — ignore token deltas
+      // Sync spawn / other child: activity strip only — drop token deltas
       if (role === "assistant" && sm.delta) {
+        // Touch strip so user sees "spawn running" without dumping prose
+        set((s) => {
+          const list = [...s.activeSpawns];
+          let row = list.find(
+            (x) => x.id === spawnKey || x.preset === presetLabel,
+          );
+          if (!row) {
+            list.unshift({
+              id: spawnKey,
+              preset: String(presetLabel),
+              status: "running",
+              preview: "",
+            });
+            return { activeSpawns: list.slice(0, 6) };
+          }
+          return s;
+        });
         return;
       }
 
@@ -612,7 +637,7 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
         if (!row) {
           row = {
             id: spawnKey,
-            preset: presetLabel,
+            preset: String(presetLabel),
             status: "running",
             preview: "",
           };
@@ -623,7 +648,6 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
         if (role === "tool") {
           lastTool = inferToolName(sm.tool_name, sm.content);
         }
-        // Skip update if nothing meaningful changed (fewer re-renders)
         if (
           row.status === "running" &&
           row.lastTool === lastTool &&
@@ -635,8 +659,7 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
           ...row,
           status: "running",
           lastTool,
-          preset: row.preset || presetLabel,
-          // keep preview empty — top bar is compact only
+          preset: row.preset || String(presetLabel),
           preview: "",
         };
         return { activeSpawns: list.slice(0, 6) };
@@ -926,8 +949,10 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
         res.model ?? res.llm_override?.model ?? get().model;
       set({
         sessionId: res.session_id || id,
-        messages: applyToolExpandPolicy(
-          (res.messages ?? []).map(fromHistoryDto),
+        messages: ensureUniqueMessageIds(
+          applyToolExpandPolicy(
+            (res.messages ?? []).map((row, i) => fromHistoryDto(row, i)),
+          ),
         ),
         workflowSteps: [],
         lastError: undefined,
@@ -1242,16 +1267,20 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
     }>(path, { token: get().token || getMinimalToken() });
     const prev = get().messages;
     const incoming = applyToolExpandPolicy(
-      (res.messages ?? []).map(fromHistoryDto),
+      (res.messages ?? []).map((row, i) => fromHistoryDto(row, i)),
     );
     // Post-run sync must not clobber live write/edit diffs with bare "ok:" rows.
     const richer = preferRicherToolMessages(prev, incoming);
     // Keep live React keys when logical messages still match — stops delayed
     // "顶飞" when post-run history reload remounts the whole thread.
-    const merged = preserveLiveMessageIds(prev, richer);
+    // ensureUniqueMessageIds is required: assistant-ui MessageRepository throws
+    // if the same id appears twice (seen after skeleton-reader / multi-tool runs).
+    const merged = ensureUniqueMessageIds(
+      preserveLiveMessageIds(prev, richer),
+    );
     set({
       sessionId: res.session_id ?? get().sessionId,
-      messages: applyToolExpandPolicy(merged),
+      messages: ensureUniqueMessageIds(applyToolExpandPolicy(merged)),
       historySyncGen: get().historySyncGen + 1,
     });
   },

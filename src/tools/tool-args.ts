@@ -55,21 +55,34 @@ export function partitionToolCallsByValidJson(
   return { valid, invalid };
 }
 
+/** Leading line of {@link buildMalformedToolCallNudge} — UI/history must not show as a human bubble. */
+export const MALFORMED_TOOL_ARGS_NUDGE_PREFIX =
+  'Your previous tool call arguments were invalid JSON';
+
+/** True for harness → model retry injects (LLM-only; never a real user message). */
+export function isMalformedToolArgsNudge(content: string): boolean {
+  return content.trimStart().startsWith(MALFORMED_TOOL_ARGS_NUDGE_PREFIX);
+}
+
 export function buildMalformedToolCallNudge(invalid: ToolCall[]): string {
   const lines = [
-    'Your previous tool call arguments were invalid JSON (often from unescaped quotes in shell commands or large HTML).',
-    'Retry with the base64 field variants where available.',
+    `${MALFORMED_TOOL_ARGS_NUDGE_PREFIX} (often from unescaped quotes in shell commands, git args, or large HTML).`,
+    'Retry with the base64 field variants where available (command_b64 / content_b64 / …).',
   ];
   for (const call of invalid) {
+    const name = call.function.name;
     const hint =
-      call.function.name === 'write_file'
+      name === 'write_file'
         ? WRITE_JSON_HINT
-        : call.function.name === 'edit_file'
+        : name === 'edit_file'
           ? EDIT_JSON_HINT
-          : call.function.name === 'run_shell'
+          : name === 'run_shell' ||
+              name === 'git_status' ||
+              name === 'git_diff' ||
+              name === 'git_log'
             ? SHELL_JSON_HINT
             : 'Ensure arguments are valid JSON.';
-    lines.push(`- ${call.function.name}: ${hint}`);
+    lines.push(`- ${name}: ${hint}`);
     lines.push(`  Preview: ${previewArgs(call.function.arguments)}`);
   }
   return lines.join('\n');
