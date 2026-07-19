@@ -89,7 +89,11 @@ export class McpManager {
     return [...this.connections.keys()];
   }
 
-  async connect(server: McpServerConfig, cwd: string): Promise<McpToolBinding[]> {
+  async connect(
+    server: McpServerConfig,
+    cwd: string,
+    opts?: { agentHome?: string },
+  ): Promise<McpToolBinding[]> {
     if (server.enabled === false) return [];
 
     const configErr = validateMcpServerConfig(server);
@@ -97,7 +101,10 @@ export class McpManager {
 
     await this.closeServer(server.name);
 
-    const { transport } = createMcpClientTransport(server, cwd);
+    const { transport } = createMcpClientTransport(server, {
+      cwd,
+      agentHome: opts?.agentHome,
+    });
     const client = new Client({ name: 'minimal-agent-ts', version: '0.1.0' });
 
     try {

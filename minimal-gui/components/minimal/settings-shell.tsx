@@ -17,8 +17,33 @@ const NAV: Array<{ id: SectionId; label: string; hint: string }> = [
   { id: "overview", label: "概览", hint: "连接与当前会话" },
   { id: "permissions", label: "权限与能力", hint: "shell / web" },
   { id: "presets", label: "子 Agent", hint: "spawn 预设" },
+  { id: "mcp", label: "MCP", hint: "连接状态与配置" },
   { id: "guides", label: "指南", hint: "1–3 句教程" },
 ];
+
+type McpServerStatusDto = {
+  name: string;
+  enabled: boolean;
+  transport: string | null;
+  endpoint: string | null;
+  auth: string;
+  connected: boolean;
+  tool_count: number;
+  error?: string;
+};
+
+type McpStatusDto = {
+  ok?: boolean;
+  servers?: McpServerStatusDto[];
+  tools?: Array<{
+    apiName: string;
+    serverName: string;
+    toolName: string;
+    description: string;
+  }>;
+  policy?: { allow?: string[]; deny?: string[] };
+  config_hint?: string;
+};
 
 type SpawnPresetDto = {
   name: string;
@@ -524,6 +549,232 @@ function PermissionsPanel() {
   );
 }
 
+function McpPanel() {
+  const connection = useMinimalStore((s) => s.connection);
+  const [status, setStatus] = useState<McpStatusDto | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const s = await minimalFetch<McpStatusDto>("/v1/mcp/status", {
+        token: getMinimalToken(),
+      });
+      setStatus(s);
+      setErr(null);
+    } catch (e) {
+      setStatus(null);
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+    // re-fetch when WS comes back
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load only on connection change
+  }, [connection]);
+
+  const servers = status?.servers ?? [];
+  const tools = status?.tools ?? [];
+  const connectedN = servers.filter((s) => s.connected).length;
+  const enabledN = servers.filter((s) => s.enabled).length;
+
+  const authLabel = (a: string) => {
+    if (a === "oauth_client_credentials") return "OAuth · client_credentials";
+    if (a === "headers") return "静态 headers";
+    return "无";
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <SectionCard title="连接状态">
+        <p className="text-muted-foreground mb-3 text-[12px] leading-relaxed">
+          启动时按{" "}
+          <code className="text-[11px]">agent.json → mcp_servers</code>{" "}
+          连接一次；改配置后需重启 web 进程。密钥不会出现在此页。
+        </p>
+        {err && (
+          <p className="mb-2 text-[12px] text-red-600 dark:text-red-400">
+            拉取失败：{err}
+          </p>
+        )}
+        {loading && !status ? (
+          <p className="text-muted-foreground text-[12px]">加载中…</p>
+        ) : servers.length === 0 ? (
+          <p className="text-muted-foreground text-[12px]">
+            未配置任何 MCP server。见下方教程或{" "}
+            <code className="text-[11px]">agent.mcp.example.json</code>。
+          </p>
+        ) : (
+          <>
+            <p className="text-muted-foreground mb-2 text-[11px]">
+              已配置 {servers.length} · enabled {enabledN} · 已连接 {connectedN}{" "}
+              · 工具 {tools.length}
+            </p>
+            <ul className="flex flex-col gap-2">
+              {servers.map((s) => (
+                <li
+                  key={s.name}
+                  className="border-border/50 rounded-lg border bg-background/60 px-3 py-2"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[13px] font-medium">{s.name}</span>
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-[10px] font-medium",
+                        !s.enabled
+                          ? "bg-muted text-muted-foreground"
+                          : s.connected
+                            ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-200"
+                            : "bg-amber-500/15 text-amber-900 dark:text-amber-100",
+                      )}
+                    >
+                      {!s.enabled
+                        ? "disabled"
+                        : s.connected
+                          ? "connected"
+                          : "disconnected"}
+                    </span>
+                    {s.transport && (
+                      <span className="text-muted-foreground font-mono text-[10px]">
+                        {s.transport}
+                      </span>
+                    )}
+                    <span className="text-muted-foreground text-[10px]">
+                      {authLabel(s.auth)}
+                    </span>
+                    <span className="text-muted-foreground ml-auto text-[10px]">
+                      {s.tool_count} tools
+                    </span>
+                  </div>
+                  {s.endpoint && (
+                    <p className="text-muted-foreground mt-1 truncate font-mono text-[11px]">
+                      {s.endpoint}
+                    </p>
+                  )}
+                  {s.error && (
+                    <p className="mt-1 text-[11px] text-red-600 dark:text-red-400">
+                      {s.error}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        <button
+          type="button"
+          className="border-border/60 mt-3 rounded-full border px-3 py-1 text-[11px] hover:bg-muted/50"
+          onClick={() => void load()}
+        >
+          刷新状态
+        </button>
+        {status?.config_hint && (
+          <p className="text-muted-foreground mt-2 text-[10px]">
+            {status.config_hint}
+          </p>
+        )}
+      </SectionCard>
+
+      {tools.length > 0 && (
+        <SectionCard title="已暴露工具">
+          <p className="text-muted-foreground mb-2 text-[12px]">
+            Agent 侧名称形如{" "}
+            <code className="text-[11px]">mcp_&lt;server&gt;_&lt;tool&gt;</code>
+            ；受 <code className="text-[11px]">mcp_policy</code> 过滤。
+          </p>
+          <ul className="max-h-48 space-y-1 overflow-y-auto">
+            {tools.map((t) => (
+              <li
+                key={t.apiName}
+                className="font-mono text-[11px] leading-snug"
+              >
+                <span className="text-foreground/90">{t.apiName}</span>
+                {t.description ? (
+                  <span className="text-muted-foreground">
+                    {" "}
+                    — {t.description.slice(0, 80)}
+                    {t.description.length > 80 ? "…" : ""}
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          {status?.policy && (
+            <p className="text-muted-foreground mt-2 text-[10px]">
+              policy allow: {(status.policy.allow ?? ["*"]).join(", ") || "—"}
+              {(status.policy.deny?.length ?? 0) > 0
+                ? ` · deny: ${status.policy.deny!.join(", ")}`
+                : ""}
+            </p>
+          )}
+        </SectionCard>
+      )}
+
+      <SectionCard title="配置教程">
+        <ol className="text-muted-foreground list-inside list-decimal space-y-2 text-[12px] leading-relaxed">
+          <li>
+            复制{" "}
+            <code className="text-[11px]">agent.mcp.example.json</code>{" "}
+            中的 <code className="text-[11px]">mcp_servers</code>{" "}
+            片段到项目根{" "}
+            <code className="text-[11px]">agent.json</code>。
+          </li>
+          <li>
+            <strong className="text-foreground/90">stdio</strong>
+            ：设 <code className="text-[11px]">command</code> +{" "}
+            <code className="text-[11px]">args</code>
+            （如本地 filesystem server）。
+          </li>
+          <li>
+            <strong className="text-foreground/90">远程 HTTP</strong>
+            ：<code className="text-[11px]">transport: streamable-http</code>（或{" "}
+            <code className="text-[11px]">sse</code>）+{" "}
+            <code className="text-[11px]">url</code>。
+          </li>
+          <li>
+            <strong className="text-foreground/90">鉴权</strong>
+            ：静态{" "}
+            <code className="text-[11px]">headers.Authorization</code>
+            ，或{" "}
+            <code className="text-[11px]">oauth.type: client_credentials</code>{" "}
+            + <code className="text-[11px]">client_id_env</code> /{" "}
+            <code className="text-[11px]">client_secret_env</code>
+            （密钥写在 <code className="text-[11px]">.env</code>
+            ，token 缓存于{" "}
+            <code className="text-[11px]">$AGENT_HOME/mcp-oauth/</code>）。
+          </li>
+          <li>
+            可选{" "}
+            <code className="text-[11px]">mcp_policy.allow / deny</code>{" "}
+            按工具名通配过滤（如{" "}
+            <code className="text-[11px]">mcp_filesystem_*</code>）。
+          </li>
+          <li>
+            保存后<strong className="text-foreground/90">重启</strong>{" "}
+            <code className="text-[11px]">npm run web</code>
+            ，回到本页点「刷新状态」确认 connected 与工具列表。
+          </li>
+          <li>
+            TUI 可用 <code className="text-[11px]">/mcp list</code>{" "}
+            对照；主 Agent 通过工具名{" "}
+            <code className="text-[11px]">mcp_…</code> 调用。
+          </li>
+        </ol>
+        <p className="text-muted-foreground mt-3 text-[11px] leading-relaxed">
+          当前<strong className="text-foreground/90">不支持</strong>
+          在 Settings 里在线改 MCP（避免把 secret 写进浏览器）。用户登录
+          OAuth（authorization code）尚未接入，仅有机机{" "}
+          <code className="text-[11px]">client_credentials</code>。
+        </p>
+      </SectionCard>
+    </div>
+  );
+}
+
 function OverviewPanel() {
   const connection = useMinimalStore((s) => s.connection);
   const sessionId = useMinimalStore((s) => s.sessionId);
@@ -661,7 +912,7 @@ function OverviewPanel() {
           </li>
           <li>
             <strong className="text-foreground/90">Settings</strong>
-            ：权限、子 Agent 预设、短指南（后续 S2–S4）。
+            ：权限、子 Agent、MCP 状态、短指南。
           </li>
           <li>
             危险或需重启的配置会单独标注；S0 不做在线改{" "}
@@ -733,6 +984,7 @@ export function SettingsShell() {
           {section === "overview" && <OverviewPanel />}
           {section === "permissions" && <PermissionsPanel />}
           {section === "presets" && <PresetsPanel />}
+          {section === "mcp" && <McpPanel />}
           {section === "guides" && (
             <GuidesPanel onNavigate={(id) => setSection(id)} />
           )}

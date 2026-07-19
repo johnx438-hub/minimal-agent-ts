@@ -1,5 +1,30 @@
 export type McpTransportKind = 'stdio' | 'streamable-http' | 'sse';
 
+/**
+ * Machine-to-machine OAuth for HTTP MCP (client_credentials).
+ * Prefer `*_env` so secrets stay in `.env`, not agent.json.
+ */
+export interface McpOAuthClientCredentials {
+  type: 'client_credentials';
+  /** Literal client_id (avoid in committed configs). */
+  client_id?: string;
+  /** Literal client_secret (avoid in committed configs). */
+  client_secret?: string;
+  /** Read client_id from process.env[name]. */
+  client_id_env?: string;
+  /** Read client_secret from process.env[name]. */
+  client_secret_env?: string;
+  /** Optional space-separated or single scope string. */
+  scope?: string;
+  /** OAuth client_name metadata (default: minimal-agent:&lt;server&gt;). */
+  client_name?: string;
+  /**
+   * Token cache file. Default: `$AGENT_HOME/mcp-oauth/<server>.json`
+   * (or ~/.minimal-agent/mcp-oauth/…). Relative paths resolve under cwd.
+   */
+  token_store?: string;
+}
+
 export interface McpServerConfig {
   name: string;
   enabled?: boolean;
@@ -15,8 +40,14 @@ export interface McpServerConfig {
   cwd?: string;
   /** HTTP: MCP endpoint (streamable-http or sse). Mutually exclusive with `command`. */
   url?: string;
-  /** Optional HTTP headers (e.g. Authorization). */
+  /** Optional HTTP headers (e.g. static Authorization Bearer). */
   headers?: Record<string, string>;
+  /**
+   * OAuth for streamable-http / sse. client_credentials uses SDK
+   * ClientCredentialsProvider + optional token file cache.
+   * Do not combine with stdio.
+   */
+  oauth?: McpOAuthClientCredentials;
 }
 
 export interface McpPolicy {

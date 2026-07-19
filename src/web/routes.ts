@@ -356,6 +356,18 @@ export async function handleApiRoute(
     return true;
   }
 
+  // ── MCP status (Settings) ────────────────────────────────────────────
+  if (path === '/v1/mcp/status' && method === 'GET') {
+    const snap = ctx.runtime.getMcpStatus();
+    sendJson(res, 200, {
+      ok: true,
+      ...snap,
+      /** Config lives in agent.json; restart web after edits. */
+      config_hint: 'agent.json → mcp_servers / mcp_policy · see agent.mcp.example.json',
+    });
+    return true;
+  }
+
   // ── Skills (W3b) ─────────────────────────────────────────────────────
   if (path === '/v1/skills' && method === 'GET') {
     sendJson(res, 200, {

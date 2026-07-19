@@ -3,11 +3,19 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 
+import { createMcpOAuthProvider } from './mcp-oauth.js';
 import type { McpServerConfig, McpTransportKind } from './types.js';
 
 export interface ResolvedMcpTransport {
   kind: McpTransportKind;
   transport: Transport;
+}
+
+export interface CreateMcpTransportOptions {
+  /** Used for relative oauth.token_store paths. */
+  cwd: string;
+  /** Default token cache under $AGENT_HOME/mcp-oauth/. */
+  agentHome?: string;
 }
 
 function buildRequestInit(headers?: Record<string, string>): RequestInit | undefined {
@@ -37,6 +45,24 @@ export function validateMcpServerConfig(server: McpServerConfig): string | null 
     return `MCP server "${server.name}": set transport or provide command (stdio) / url (http)`;
   }
 
+  if (server.oauth) {
+    if (kind === 'stdio') {
+      return `MCP server "${server.name}": oauth is only supported for streamable-http / sse (not stdio)`;
+    }
+    if (server.oauth.type !== 'client_credentials') {
+      return `MCP server "${server.name}": oauth.type must be "client_credentials" (got "${server.oauth.type}")`;
+    }
+    const hasId =
+      Boolean(server.oauth.client_id?.trim()) ||
+      Boolean(server.oauth.client_id_env?.trim());
+    const hasSecret =
+      Boolean(server.oauth.client_secret?.trim()) ||
+      Boolean(server.oauth.client_secret_env?.trim());
+    if (!hasId || !hasSecret) {
+      return `MCP server "${server.name}": client_credentials requires client_id(+_env) and client_secret(+_env)`;
+    }
+  }
+
   if (kind === 'stdio') {
     if (!hasCommand) {
       return `MCP server "${server.name}": stdio transport requires command`;
@@ -60,8 +86,15 @@ export function validateMcpServerConfig(server: McpServerConfig): string | null 
 
 export function createMcpClientTransport(
   server: McpServerConfig,
-  cwd: string,
+  cwdOrOpts: string | CreateMcpTransportOptions,
+  maybeAgentHome?: string,
 ): ResolvedMcpTransport {
+  // Back-compat: createMcpClientTransport(server, cwd) | (server, { cwd, agentHome })
+  const opts: CreateMcpTransportOptions =
+    typeof cwdOrOpts === 'string'
+      ? { cwd: cwdOrOpts, agentHome: maybeAgentHome }
+      : cwdOrOpts;
+
   const err = validateMcpServerConfig(server);
   if (err) throw new Error(err);
 
@@ -75,23 +108,34 @@ export function createMcpClientTransport(
         command: server.command!,
         args: server.args ?? [],
         env: server.env,
-        cwd: server.cwd ?? cwd,
+        cwd: server.cwd ?? opts.cwd,
         stderr: 'pipe',
       }),
     };
   }
 
+  const authProvider = createMcpOAuthProvider(server, {
+    cwd: opts.cwd,
+    agentHome: opts.agentHome,
+  });
+
   const url = new URL(server.url!.trim());
   if (kind === 'sse') {
     return {
       kind,
-      transport: new SSEClientTransport(url, { requestInit }),
+      transport: new SSEClientTransport(url, {
+        requestInit,
+        ...(authProvider ? { authProvider } : {}),
+      }),
     };
   }
 
   return {
     kind,
-    transport: new StreamableHTTPClientTransport(url, { requestInit }),
+    transport: new StreamableHTTPClientTransport(url, {
+      requestInit,
+      ...(authProvider ? { authProvider } : {}),
+    }),
   };
 }
 

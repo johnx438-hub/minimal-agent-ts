@@ -3,7 +3,12 @@
  * 每条 1–3 句，可扫读；related 可选链到 Settings 分区 id。
  */
 
-export type GuideSectionId = "overview" | "permissions" | "presets" | "guides";
+export type GuideSectionId =
+  | "overview"
+  | "permissions"
+  | "presets"
+  | "mcp"
+  | "guides";
 
 export interface GuideCard {
   id: string;
@@ -129,6 +134,17 @@ export const SETTINGS_GUIDES: GuideCard[] = [
       "气泡上的芯片是给人看的；路径块在刷新后仍会从历史投影回来。",
     ],
     refs: ["workspace/gui-inbox/"],
+  },
+  {
+    id: "mcp-setup",
+    title: "怎么接 MCP",
+    body: [
+      "在 agent.json 写 mcp_servers（stdio / streamable-http / sse），可参考仓库里的 agent.mcp.example.json。",
+      "远程机机鉴权可用 oauth.client_credentials（client_id_env / client_secret_env），或静态 headers Bearer。",
+      "改配置后需重启 web；连接结果与工具列表见 Settings → MCP。",
+    ],
+    related: "mcp",
+    refs: ["agent.json → mcp_servers", "agent.mcp.example.json", "Settings → MCP"],
   },
   {
     id: "history-cap",

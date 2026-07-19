@@ -1461,6 +1461,32 @@ export class AgentRuntime {
     return toolRegistry.listMcpTools();
   }
 
+  /** MCP connection snapshot for Web Settings (no secrets). */
+  getMcpStatus() {
+    if (!toolRegistry.isInitialized()) {
+      return {
+        servers: [] as Array<{
+          name: string;
+          enabled: boolean;
+          transport: string | null;
+          endpoint: string | null;
+          auth: string;
+          connected: boolean;
+          tool_count: number;
+          error?: string;
+        }>,
+        tools: [] as Array<{
+          apiName: string;
+          serverName: string;
+          toolName: string;
+          description: string;
+        }>,
+        policy: { allow: ['*'], deny: [] as string[] },
+      };
+    }
+    return toolRegistry.getMcpStatus();
+  }
+
   /** Background spawn jobs (workspace/jobs); emits `job_list` for listeners. */
   listBackgroundJobs(opts?: ListJobsOptions): SpawnJobMeta[] {
     const jobs = listSpawnJobs(opts);

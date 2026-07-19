@@ -109,6 +109,10 @@ export class ToolRegistry {
     return this.mcpProvider.listMcpTools();
   }
 
+  getMcpStatus() {
+    return this.mcpProvider.getStatusSnapshot();
+  }
+
   getSkillSystemExtension(): string {
     return this.skillsProvider.getSkillSystemExtension(
       this.pluginConfig.loaded_skills,

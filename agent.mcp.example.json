@@ -33,6 +33,19 @@
       "_comment": "WSL/Windows: run MCP server on one side, agent connects via url"
     },
     {
+      "name": "remote_oauth",
+      "transport": "streamable-http",
+      "url": "https://mcp.example.com/mcp",
+      "enabled": false,
+      "oauth": {
+        "type": "client_credentials",
+        "client_id_env": "MCP_REMOTE_CLIENT_ID",
+        "client_secret_env": "MCP_REMOTE_CLIENT_SECRET",
+        "scope": "mcp:tools"
+      },
+      "_comment": "client_credentials OAuth; tokens cached under $AGENT_HOME/mcp-oauth/remote_oauth.json (0600)"
+    },
+    {
       "name": "legacy_sse",
       "transport": "sse",
       "url": "http://127.0.0.1:9000/sse",
