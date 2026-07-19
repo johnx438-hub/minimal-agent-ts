@@ -99,6 +99,7 @@ const WD_WORKFLOW_RE = /^Working directory task \(workflow\):\n?([\s\S]*)$/i;
  * Display projection for user rows:
  * - strip Working directory / Task envelope (LLM context only)
  * - auto_run / job-merge synthetic prompts → system_ui (not a human bubble)
+ * - vision tool inject ("Attached image(s) for vision…") → system_ui
  */
 export function projectUserBody(raw: string): {
   content: string;
@@ -113,6 +114,25 @@ export function projectUserBody(raw: string): {
   if (wf) {
     return {
       content: (wf[1] ?? body).trim(),
+      role: 'system',
+      view_kind: 'system_ui',
+    };
+  }
+
+  // Harness injects this after vision tools so the next LLM turn can see pixels.
+  if (
+    body.trimStart().startsWith('Attached image(s) for vision') ||
+    body.includes('Attached image(s) for vision (from tools')
+  ) {
+    const names = body
+      .split('\n')
+      .map((l) => l.replace(/^\s*-\s*/, '').trim())
+      .filter((l) => l.includes('/') || l.includes('\\'))
+      .map((p) => p.split('/').pop() || p);
+    return {
+      content: names.length
+        ? `🖼 vision · ${names.join(', ')}`
+        : '🖼 vision attachment',
       role: 'system',
       view_kind: 'system_ui',
     };

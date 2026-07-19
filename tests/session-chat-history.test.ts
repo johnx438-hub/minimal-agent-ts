@@ -66,6 +66,28 @@ describe('session chat history', () => {
     assert.equal(msgs[0]!.view_kind, 'chat');
   });
 
+  it('projects vision inject user messages as system_ui (not human bubble)', () => {
+    const session = {
+      session_id: 'session_test',
+      user_id: 'u',
+      created_at: 1,
+      tasks: [],
+      current_messages: [
+        {
+          role: 'user',
+          content:
+            'Working directory: /tmp\n\nTask:\nAttached image(s) for vision (from tools — inspect the image pixels in this message):\n- workspace/gui-inbox/session_x/photo.png',
+        },
+      ],
+    } as SessionFile;
+    const msgs = buildSessionChatHistory(session);
+    assert.equal(msgs.length, 1);
+    assert.equal(msgs[0]!.role, 'system');
+    assert.equal(msgs[0]!.view_kind, 'system_ui');
+    assert.match(msgs[0]!.content, /vision|photo\.png/i);
+    assert.doesNotMatch(msgs[0]!.content, /Attached image\(s\) for vision/);
+  });
+
   it('projects synthetic system_event auto_run prompts as system_ui', () => {
     const body = [
       'Working directory: /tmp/proj\n\nTask:',

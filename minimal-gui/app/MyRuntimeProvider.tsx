@@ -7,6 +7,11 @@ import {
 } from "@assistant-ui/react";
 import { useEffect, useMemo, useState } from "react";
 
+import {
+  createPathInboxAttachmentAdapter,
+  formatTaskWithAttachments,
+  pathsFromAppendMessage,
+} from "@/lib/minimal/attachment-adapter";
 import { getMinimalToken } from "@/lib/minimal/client";
 import {
   coalesceToolsIntoAssistants,
@@ -15,6 +20,7 @@ import {
 } from "@/lib/minimal/convert";
 import { useMinimalStore } from "@/lib/minimal/store";
 import { connectMinimalWs } from "@/lib/minimal/ws";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 export function MyRuntimeProvider({
   children,
@@ -50,17 +56,71 @@ export function MyRuntimeProvider({
     [messages],
   );
 
+  const attachmentAdapter = useMemo(
+    () =>
+      createPathInboxAttachmentAdapter({
+        getSessionId: () => useMinimalStore.getState().sessionId,
+        getToken: () =>
+          useMinimalStore.getState().token || getMinimalToken(),
+      }),
+    [],
+  );
+
   const onNew = async (message: AppendMessage) => {
     const text = textFromAppendContent(
       message.content as { type: string; text?: string }[],
     );
-    if (!text.trim()) {
-      throw new Error("Only text messages are supported");
+    const paths = pathsFromAppendMessage(
+      message as {
+        content?: readonly { type: string; data?: string }[];
+        attachments?: readonly {
+          content?: readonly { type: string; data?: string }[];
+          name?: string;
+          id?: string;
+          type?: string;
+          contentType?: string;
+        }[];
+      },
+    );
+    const task = formatTaskWithAttachments(text, paths);
+    if (!task.trim()) {
+      throw new Error("请输入文字或添加附件");
     }
+
+    // Build chips for the thread (component layer already renders attachments)
+    const attachments = paths.map((path, i) => {
+      const fromMsg = (
+        message.attachments as
+          | Array<{ id?: string; name?: string; type?: string; contentType?: string }>
+          | undefined
+      )?.[i];
+      const name =
+        fromMsg?.name || path.split("/").pop() || path;
+      const type: "image" | "document" | "file" =
+        fromMsg?.type === "image" ||
+        fromMsg?.type === "document" ||
+        fromMsg?.type === "file"
+          ? fromMsg.type
+          : /\.(png|jpe?g|gif|webp)$/i.test(name)
+            ? "image"
+            : "file";
+      return {
+        id: fromMsg?.id || `att_${i}_${name}`,
+        name,
+        path,
+        contentType: fromMsg?.contentType,
+        type,
+      };
+    });
+
     // /slash → POST /v1/command (sendTask routes slash too)
-    await sendTask(text.trim());
+    await sendTask(task, {
+      displayContent: text.trim() || (attachments.length ? "（附件）" : ""),
+      attachments: attachments.length ? attachments : undefined,
+    });
   };
 
+  // Composer pause (□) while running → same as former standalone 中止
   const onCancel = async () => {
     await abort();
   };
@@ -71,6 +131,9 @@ export function MyRuntimeProvider({
     onNew,
     onCancel,
     convertMessage,
+    adapters: {
+      attachments: attachmentAdapter,
+    },
   });
 
   const banner = useMemo(() => {
@@ -100,27 +163,29 @@ export function MyRuntimeProvider({
   }, [activeSpawns]);
 
   return (
-    <AssistantRuntimeProvider runtime={runtime}>
-      <div className="flex h-dvh flex-col">
-        {/* Thin status only — profile/model/skills live under the composer */}
-        <div className="border-border/60 text-muted-foreground flex flex-wrap items-center gap-x-2 border-b px-3 py-1 text-[11px]">
-          <span className="font-medium text-foreground/80">minimal</span>
-          <span className="opacity-40">·</span>
-          <span className="truncate">{banner}</span>
-          {tokenHint && (
-            <span className="text-red-500">
-              请设置 NEXT_PUBLIC_MINIMAL_TOKEN 或 URL ?token=
-            </span>
-          )}
-        </div>
-        {spawnLine && (
-          <div className="border-border/50 bg-amber-500/10 text-amber-950 dark:text-amber-100 border-b px-3 py-1 font-mono text-[11px] leading-snug">
-            <span className="opacity-70">子 agent 运行中（与主时间线隔离）· </span>
-            <span className="truncate">{spawnLine}</span>
+    <TooltipProvider delayDuration={200}>
+      <AssistantRuntimeProvider runtime={runtime}>
+        <div className="flex h-dvh flex-col">
+          {/* Thin status only — profile/model/skills live under the composer */}
+          <div className="border-border/60 text-muted-foreground flex flex-wrap items-center gap-x-2 border-b px-3 py-1 text-[11px]">
+            <span className="font-medium text-foreground/80">minimal</span>
+            <span className="opacity-40">·</span>
+            <span className="truncate">{banner}</span>
+            {tokenHint && (
+              <span className="text-red-500">
+                请设置 NEXT_PUBLIC_MINIMAL_TOKEN 或 URL ?token=
+              </span>
+            )}
           </div>
-        )}
-        <div className="min-h-0 flex-1">{children}</div>
-      </div>
-    </AssistantRuntimeProvider>
+          {spawnLine && (
+            <div className="border-border/50 bg-amber-500/10 text-amber-950 dark:text-amber-100 border-b px-3 py-1 font-mono text-[11px] leading-snug">
+              <span className="opacity-70">子 agent 运行中（与主时间线隔离）· </span>
+              <span className="truncate">{spawnLine}</span>
+            </div>
+          )}
+          <div className="min-h-0 flex-1">{children}</div>
+        </div>
+      </AssistantRuntimeProvider>
+    </TooltipProvider>
   );
 }

@@ -1,6 +1,11 @@
 import type { ThreadMessageLike } from "@assistant-ui/react";
 
 import {
+  attachmentsFromPaths,
+  splitAttachmentBlock,
+  toThreadAttachments,
+} from "./attachment-adapter";
+import {
   extractCleanAnswer,
   formatArtifactMarkdown,
   formatPendingCardMarkdown,
@@ -49,6 +54,41 @@ function messagesPrefixSame(
     if (a[i] !== b[i]) return false;
   }
   return true;
+}
+
+/** Walk back past system notices to find an assistant to attach tools to. */
+function findAttachAssistantIndex(out: MinimalMessage[]): number {
+  for (let i = out.length - 1; i >= 0; i--) {
+    const m = out[i]!;
+    if (m.role === "assistant") return i;
+    // Real human turn — stop; tools after user start a new toolsOnly bubble
+    if (m.role === "user") return -1;
+    // system / other: keep walking (vision inject, system_event, …)
+  }
+  return -1;
+}
+
+/** Merge adjacent toolsOnly assistants so history doesn't leave one-card-per-message gaps. */
+function mergeAdjacentToolsOnly(messages: MinimalMessage[]): MinimalMessage[] {
+  const out: MinimalMessage[] = [];
+  for (const m of messages) {
+    const prev = out[out.length - 1];
+    if (
+      m.role === "assistant" &&
+      m.toolsOnly &&
+      prev?.role === "assistant" &&
+      (prev.toolsOnly || (prev.toolParts?.length && !joinContent(prev).trim()))
+    ) {
+      prev.toolParts = [...(prev.toolParts ?? []), ...(m.toolParts ?? [])];
+      if (m.status === "running") prev.status = "running";
+      if (prev.toolsOnly === undefined && !joinContent(prev).trim()) {
+        prev.toolsOnly = true;
+      }
+      continue;
+    }
+    out.push(m);
+  }
+  return out;
 }
 
 /** Fold consecutive tool rows into the previous assistant (or a tools-only assistant). */
@@ -116,10 +156,12 @@ export function coalesceToolsIntoAssistants(
       skin: toolSkin(name),
     };
 
-    const last = out[out.length - 1];
-    if (last?.role === "assistant") {
-      last.toolParts = [...(last.toolParts ?? []), part];
-      if (part.status === "running") last.status = "running";
+    // Prefer previous assistant even if system notices sit between (vision inject)
+    const ai = findAttachAssistantIndex(out);
+    if (ai >= 0) {
+      const host = out[ai]!;
+      host.toolParts = [...(host.toolParts ?? []), part];
+      if (part.status === "running") host.status = "running";
     } else {
       out.push({
         id: newMsgId("at"),
@@ -129,13 +171,13 @@ export function coalesceToolsIntoAssistants(
         source: m.source,
         viewKind: "chat",
         toolParts: [part],
-        /** tighter chrome for tool-only bubbles */
         toolsOnly: true,
       });
     }
   }
 
-  const result = applyToolExpandPolicy(out);
+  const merged = mergeAdjacentToolsOnly(out);
+  const result = applyToolExpandPolicy(merged);
   coalesceCache = { inputs: messages, output: result };
   return result;
 }
@@ -212,7 +254,22 @@ export function collapseToolsExceptLatestTurn(
 function formatToolResultBody(part: ToolPart): string {
   const skin = part.skin ?? toolSkin(part.toolName);
   // Title already on the trigger — body is content only (avoid double header)
-  const body = part.content?.trim() ?? "";
+  let body = part.content?.trim() ?? "";
+
+  // Compact vision_attach tool results (JSON marker is agent-facing noise)
+  if (
+    part.toolName === "vision_attach" ||
+    body.startsWith("[vision_attach]")
+  ) {
+    const note = body
+      .replace(/\[vision_attach\]\{[^}]*\}\s*/i, "")
+      .replace(/^ok:\s*/i, "")
+      .trim();
+    const clip =
+      note.length > 220 ? `${note.slice(0, 220).trim()}…` : note;
+    return clip || "image registered for next model turn";
+  }
+
   if (skin === "write") {
     // write card: path line + clipped body (✓ toolName is in trigger)
     return formatWriteCardPreview(part.toolName, body, part.path)
@@ -290,6 +347,7 @@ export function convertMessage(message: MinimalMessage): ThreadMessageLike {
         message.status === "running"
           ? { type: "running" }
           : { type: "complete", reason: "stop" },
+      metadata: { custom: { toolsOnly: true } },
     };
   }
 
@@ -322,6 +380,9 @@ export function convertMessage(message: MinimalMessage): ThreadMessageLike {
     const running =
       message.status === "running" ||
       message.toolParts?.some((p) => p.status === "running");
+    const toolsOnly =
+      Boolean(message.toolsOnly) ||
+      (!text && (message.toolParts?.length ?? 0) > 0);
     return {
       id: message.id,
       role: "assistant",
@@ -329,13 +390,28 @@ export function convertMessage(message: MinimalMessage): ThreadMessageLike {
       status: running
         ? { type: "running" }
         : { type: "complete", reason: "stop" },
+      metadata: toolsOnly
+        ? { custom: { toolsOnly: true } }
+        : undefined,
     };
   }
+
+  // User: text bubble + optional attachment chips (UserMessageAttachments)
+  const userText = joinContent(message);
+  const atts =
+    message.attachments?.length
+      ? message.attachments
+      : attachmentsFromPaths(splitAttachmentBlock(userText).paths);
+  const display =
+    message.attachments?.length
+      ? userText
+      : splitAttachmentBlock(userText).displayText || userText;
 
   return {
     id: message.id,
     role: "user",
-    content: [{ type: "text", text: joinContent(message) }],
+    content: [{ type: "text", text: display }],
+    attachments: atts.length ? toThreadAttachments(atts) : undefined,
   };
 }
 
@@ -402,15 +478,23 @@ export function fromHistoryDto(row: SessionChatMessageDto): MinimalMessage {
   }
 
   const projected = projectUserDisplay(raw);
+  // History stores agent text with [attachments] path block — lift to chips
+  const { displayText, paths } = splitAttachmentBlock(projected.content);
+  const attachments =
+    projected.role === "user" && paths.length
+      ? attachmentsFromPaths(paths)
+      : undefined;
+
   return {
     id: newMsgId("hist"),
     role: projected.role,
-    content: projected.content,
+    content: attachments ? displayText : projected.content,
     status: "complete",
     turn: row.turn,
     taskId: row.task_id,
     source: row.source,
     viewKind: projected.viewKind,
+    attachments,
   };
 }
 

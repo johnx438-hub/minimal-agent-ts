@@ -70,7 +70,14 @@ export interface MinimalStore {
   hydrateHistory: (rows: SessionChatMessageDto[]) => void;
   applyWsFrame: (frame: WsFrame) => void;
 
-  sendTask: (text: string) => Promise<void>;
+  sendTask: (
+    text: string,
+    opts?: {
+      /** User-visible bubble (defaults to text with attachment block stripped) */
+      displayContent?: string;
+      attachments?: import("./types").MessageAttachment[];
+    },
+  ) => Promise<void>;
   /** Slash line e.g. /profile list — POST /v1/command */
   sendCommand: (line: string) => Promise<void>;
   abort: () => Promise<void>;
@@ -597,20 +604,32 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
     }
   },
 
-  async sendTask(text: string) {
+  async sendTask(text, opts) {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed && !opts?.attachments?.length) return;
     // Slash commands never go through the agent task path
     if (trimmed.startsWith("/")) {
       await get().sendCommand(trimmed);
       return;
     }
+    // Bubble: clean user text + chips; agent still receives full path block in `trimmed`
+    const stripped = trimmed
+      .replace(
+        /\n*\n?\[attachments[^\]]*\]\s*\n((?:[ \t]*-[ \t]*\S[^\n]*\n?)*)\s*$/i,
+        "",
+      )
+      .trim();
+    const displayContent =
+      opts?.displayContent ??
+      (stripped || (opts?.attachments?.length ? "" : trimmed));
+
     const userMsg: MinimalMessage = {
       id: newMsgId("u"),
       role: "user",
-      content: trimmed,
+      content: displayContent || (opts?.attachments?.length ? "（附件）" : trimmed),
       status: "complete",
       source: "live",
+      attachments: opts?.attachments,
     };
     set((s) => ({
       messages: [...s.messages, userMsg],

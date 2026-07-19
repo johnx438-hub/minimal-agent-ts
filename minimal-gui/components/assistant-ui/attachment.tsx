@@ -138,6 +138,14 @@ const AttachmentUI: FC = () => {
   const isComposer = aui.attachment.source !== "message";
 
   const isImage = useAuiState((s) => s.attachment.type === "image");
+  const attName = useAuiState((s) => s.attachment.name);
+  /** Path stored in file part data (gui-inbox relative path) */
+  const pathHint = useAuiState((s) => {
+    const part = s.attachment.content?.find((c) => c.type === "file");
+    return part && "data" in part && typeof part.data === "string"
+      ? part.data
+      : undefined;
+  });
   const typeLabel = useAuiState((s) => {
     const type = s.attachment.type;
     switch (type) {
@@ -174,7 +182,7 @@ const AttachmentUI: FC = () => {
     <Tooltip>
       <AttachmentPrimitive.Root
         className={cn(
-          "aui-attachment-root relative",
+          "aui-attachment-root relative flex max-w-[9rem] flex-col items-center gap-0.5",
           isImage &&
             !isComposer &&
             "aui-attachment-root-message only:*:first:size-24",
@@ -213,10 +221,17 @@ const AttachmentUI: FC = () => {
             </div>
           </TooltipTrigger>
         </AttachmentPreviewDialog>
+        {!isComposer && attName && (
+          <span className="text-muted-foreground w-full truncate text-center text-[10px] leading-tight">
+            {attName}
+          </span>
+        )}
         {isComposer && <AttachmentRemove />}
       </AttachmentPrimitive.Root>
-      <TooltipContent side="top">
-        <AttachmentPrimitive.Name />
+      <TooltipContent side="top" className="max-w-xs break-all font-mono text-[11px]">
+        <div className="font-sans font-medium">{attName}</div>
+        {pathHint && <div className="opacity-80">{pathHint}</div>}
+        {!pathHint && <AttachmentPrimitive.Name />}
         {errorMessage && (
           <p className="aui-attachment-error-message">{errorMessage}</p>
         )}
@@ -263,12 +278,12 @@ export const ComposerAddAttachment: FC = () => {
   return (
     <ComposerPrimitive.AddAttachment asChild>
       <TooltipIconButton
-        tooltip="Add Attachment"
+        tooltip="添加附件 → workspace/gui-inbox（Agent 可见路径）"
         side="bottom"
         variant="ghost"
         size="icon"
         className="aui-composer-add-attachment hover:bg-muted-foreground/15 dark:border-muted-foreground/15 dark:hover:bg-muted-foreground/30 size-7 rounded-full p-1 text-xs font-semibold"
-        aria-label="Add Attachment"
+        aria-label="添加附件"
       >
         <PlusIcon className="aui-attachment-add-icon size-4.5 stroke-[1.5px]" />
       </TooltipIconButton>

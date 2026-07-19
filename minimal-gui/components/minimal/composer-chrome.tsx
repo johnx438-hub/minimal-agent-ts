@@ -21,7 +21,6 @@ export function ComposerChrome() {
   const clearLoadedSkills = useMinimalStore((s) => s.clearLoadedSkills);
   const armedWorkflow = useMinimalStore((s) => s.armedWorkflow);
   const armWorkflow = useMinimalStore((s) => s.armWorkflow);
-  const abort = useMinimalStore((s) => s.abort);
 
   const activeProfile =
     profiles.find((p) => p.active)?.name ?? profile ?? profiles[0]?.name ?? "";
@@ -95,16 +94,7 @@ export function ComposerChrome() {
         )}
 
         <div className="flex-1" />
-
-        {isRunning && (
-          <button
-            type="button"
-            className="border-red-500/40 text-red-600 hover:bg-red-500/10 rounded-full border px-3 py-0.5 text-[11px]"
-            onClick={() => void abort()}
-          >
-            中止
-          </button>
-        )}
+        {/* Abort: use composer stop (□) next to Send — wired via runtime onCancel */}
       </div>
 
       {/* Skills under message input column */}

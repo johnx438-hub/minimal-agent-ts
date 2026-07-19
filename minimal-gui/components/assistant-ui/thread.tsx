@@ -132,7 +132,7 @@ const ThreadRoot: FC<{ isEmpty: boolean }> = ({ isEmpty }) => {
 
           <div
             data-slot="aui_message-group"
-            className="mb-14 flex flex-col gap-y-4 empty:hidden"
+            className="mb-14 flex flex-col gap-y-2 empty:hidden"
           >
             <ThreadPrimitive.Messages>
               {() => <ThreadMessage />}
@@ -298,15 +298,17 @@ const ComposerAction: FC = () => {
         </AuiIf>
         <AuiIf condition={(s) => s.thread.isRunning}>
           <ComposerPrimitive.Cancel asChild>
-            <Button
+            <TooltipIconButton
+              tooltip="中止运行"
+              side="bottom"
               type="button"
               variant="default"
               size="icon"
               className="aui-composer-cancel size-7 rounded-full"
-              aria-label="Stop generating"
+              aria-label="中止运行"
             >
               <SquareIcon className="aui-composer-cancel-icon size-3.5 fill-current" />
-            </Button>
+            </TooltipIconButton>
           </ComposerPrimitive.Cancel>
         </AuiIf>
       </div>
@@ -330,15 +332,29 @@ const AssistantMessage: FC = () => {
     ReasoningGroup,
   } = useContext(ThreadComponentsContext);
 
+  // tools-only bubbles (history/live coalesce): no action bar — kills huge gaps after refresh
+  const toolsOnly = useAuiState((s) => {
+    const custom = (
+      s.message as { metadata?: { custom?: { toolsOnly?: boolean } } }
+    ).metadata?.custom?.toolsOnly;
+    if (custom) return true;
+    const content = s.message.content;
+    if (!Array.isArray(content) || content.length === 0) return false;
+    return content.every((p) => (p as { type?: string }).type === "tool-call");
+  });
+
   const ACTION_BAR_PT = "pt-1";
-  // Keep the action bar inside the contained root's paint box, then cancel its reserved space in flow.
   const ACTION_BAR_HEIGHT = `min-h-7 ${ACTION_BAR_PT}`;
 
   return (
     <MessagePrimitive.Root
       data-slot="aui_assistant-message-root"
       data-role="assistant"
-      className="fade-in slide-in-from-bottom-1 animate-in relative mb-0.5 pb-0.5 duration-150"
+      data-tools-only={toolsOnly ? "true" : undefined}
+      className={cn(
+        "fade-in slide-in-from-bottom-1 animate-in relative duration-150",
+        toolsOnly ? "mb-0 pb-0" : "mb-0.5 pb-0.5",
+      )}
     >
       <div
         data-slot="aui_assistant-message-content"
@@ -361,7 +377,7 @@ const AssistantMessage: FC = () => {
                 return (
                   <div
                     data-slot="aui_tool-stack"
-                    className="aui-tool-stack my-0.5 flex flex-col gap-0.5"
+                    className="aui-tool-stack my-0 flex flex-col gap-0.5"
                   >
                     {children}
                   </div>
@@ -408,13 +424,15 @@ const AssistantMessage: FC = () => {
         <MessageError />
       </div>
 
-      <div
-        data-slot="aui_assistant-message-footer"
-        className={cn("ms-2 flex items-center", ACTION_BAR_HEIGHT)}
-      >
-        <BranchPicker />
-        <AssistantActionBar />
-      </div>
+      {!toolsOnly && (
+        <div
+          data-slot="aui_assistant-message-footer"
+          className={cn("ms-2 flex items-center", ACTION_BAR_HEIGHT)}
+        >
+          <BranchPicker />
+          <AssistantActionBar />
+        </div>
+      )}
     </MessagePrimitive.Root>
   );
 };

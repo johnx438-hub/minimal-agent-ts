@@ -16,6 +16,10 @@ import { sendJson } from './static.js';
 import type { WsHub } from './ws-hub.js';
 import type { WebRunStateFrame } from './types.js';
 import { snapshotJobs } from './event-bridge.js';
+import {
+  GUI_UPLOAD_MAX_BYTES,
+  saveGuiUpload,
+} from './uploads.js';
 
 import type { WebWorkflowConfirmController } from './workflow-confirm.js';
 
@@ -499,6 +503,97 @@ export async function handleApiRoute(
     // Abort also resolves any pending workflow confirm via AbortSignal
     broadcastRunState(ctx.hub, 'aborted');
     sendJson(res, 200, { ok: true, aborted: true });
+    return true;
+  }
+
+  /**
+   * GUI attachment inbox → workspace/gui-inbox/<session>/…
+   * Body: { filename, data_base64, session_id? } or { files: [...] }
+   * Returns cwd-relative paths the agent can read_file.
+   */
+  if (path === '/v1/uploads' && method === 'POST') {
+    let body: Record<string, unknown>;
+    try {
+      // base64 ~4/3 of raw; allow a bit over max file size for JSON wrapper
+      const raw = await readBody(req, Math.floor(GUI_UPLOAD_MAX_BYTES * 1.5) + 64_000);
+      body = raw.trim()
+        ? (JSON.parse(raw) as Record<string, unknown>)
+        : {};
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        throw new Error('invalid_json');
+      }
+    } catch (e) {
+      sendJson(res, 400, {
+        error: 'bad_body',
+        detail: e instanceof Error ? e.message : String(e),
+      });
+      return true;
+    }
+
+    type FileIn = { filename?: string; name?: string; data_base64?: string; data?: string };
+    const rawList: FileIn[] = Array.isArray(body.files)
+      ? (body.files as FileIn[])
+      : body.data_base64 || body.data
+        ? [body as FileIn]
+        : [];
+
+    if (rawList.length === 0) {
+      sendJson(res, 400, { error: 'files_required' });
+      return true;
+    }
+    if (rawList.length > 12) {
+      sendJson(res, 400, { error: 'too_many_files', max: 12 });
+      return true;
+    }
+
+    const sessionId =
+      (typeof body.session_id === 'string' && body.session_id.trim()) ||
+      ctx.runtime.session?.session_id ||
+      null;
+
+    const saved: Array<{ path: string; filename: string; bytes: number }> = [];
+    try {
+      for (const f of rawList) {
+        const filename = String(f.filename ?? f.name ?? 'file').trim() || 'file';
+        const b64 = String(f.data_base64 ?? f.data ?? '').replace(/^data:[^;]+;base64,/, '');
+        if (!b64) {
+          sendJson(res, 400, { error: 'data_base64_required', filename });
+          return true;
+        }
+        const bytes = Buffer.from(b64, 'base64');
+        if (!bytes.length) {
+          sendJson(res, 400, { error: 'empty_file', filename });
+          return true;
+        }
+        const out = saveGuiUpload({
+          cwd: ctx.cwd,
+          sessionId,
+          filename,
+          bytes,
+        });
+        saved.push({
+          path: out.relativePath,
+          filename,
+          bytes: out.bytes,
+        });
+      }
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      const status = detail.startsWith('file_too_large') ? 413 : 400;
+      sendJson(res, status, {
+        error: 'upload_failed',
+        detail,
+        max_bytes: GUI_UPLOAD_MAX_BYTES,
+      });
+      return true;
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      paths: saved.map((s) => s.path),
+      files: saved,
+      inbox: 'workspace/gui-inbox',
+    });
     return true;
   }
 

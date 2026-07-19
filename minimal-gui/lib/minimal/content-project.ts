@@ -65,11 +65,37 @@ const WD_TASK_RE = /^Working directory:\s*[^\n]+\n\nTask:\n([\s\S]*)$/;
 const WD_WORKFLOW_RE = /^Working directory task \(workflow\):\n?([\s\S]*)$/i;
 const SYSTEM_EVENT_OPEN = '<system_event not_user_message="true">';
 const SYSTEM_EVENT_CLOSE = "</system_event>";
+/** Injected by harness after vision tools — not a human turn. */
+const VISION_INJECT_RE =
+  /^Attached image\(s\) for vision\b[\s\S]*/i;
+
+export function isVisionInjectUserMessage(raw: string): boolean {
+  const t = (raw ?? "").replace(/\r\n/g, "\n").trim();
+  // After Working directory unwrap, body starts with this line
+  if (VISION_INJECT_RE.test(t)) return true;
+  if (t.includes("Attached image(s) for vision")) return true;
+  return false;
+}
+
+export function extractVisionInjectPaths(raw: string): string[] {
+  const text = (raw ?? "").replace(/\r\n/g, "\n");
+  return text
+    .split("\n")
+    .map((l) => l.replace(/^\s*-\s*/, "").trim())
+    .filter(
+      (l) =>
+        l.length > 0 &&
+        !l.startsWith("Attached image") &&
+        (l.includes("/") || l.includes("\\")),
+    );
+}
 
 export function projectUserDisplay(raw: string): {
   content: string;
   role: "user" | "system";
   viewKind: "chat" | "system_ui";
+  /** Paths lifted for chips when role stays user or system */
+  attachmentPaths?: string[];
 } {
   let body = (raw ?? "").replace(/\r\n/g, "\n");
   const wd = body.match(WD_TASK_RE);
@@ -81,6 +107,20 @@ export function projectUserDisplay(raw: string): {
       content: (wf[1] ?? body).trim(),
       role: "system",
       viewKind: "system_ui",
+    };
+  }
+
+  // Vision tool → synthetic user (pixels for next LLM turn). Never show as human bubble.
+  if (isVisionInjectUserMessage(body)) {
+    const paths = extractVisionInjectPaths(body);
+    const names = paths.map((p) => p.split("/").pop() || p);
+    return {
+      content: names.length
+        ? `🖼 vision · ${names.join(", ")}`
+        : "🖼 vision attachment",
+      role: "system",
+      viewKind: "system_ui",
+      attachmentPaths: paths,
     };
   }
 

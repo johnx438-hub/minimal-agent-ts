@@ -48,9 +48,13 @@ export function inferToolName(
 
   // Common previews: "read_file path/to" / "read_file(path)" / "✓ read_file"
   const head = c.match(
-    /(?:^|\b)(read_file|write_file|edit_file|apply_patch|grep_search|list_files|diff_file|recall_query|run_shell|web_fetch|web_search|office_read|office_write|invoke_skill|test_run)\b/i,
+    /(?:^|\b)(read_file|write_file|edit_file|apply_patch|grep_search|list_files|diff_file|recall_query|run_shell|web_fetch|web_search|office_read|office_write|invoke_skill|test_run|vision_attach)\b/i,
   );
   if (head?.[1]) return head[1];
+
+  if (c.includes("[vision_attach]") || c.startsWith("[vision_attach]")) {
+    return "vision_attach";
+  }
 
   // action card line sometimes embeds name=
   const named = c.match(/tool[_ ]?name["']?\s*[:=]\s*["']?([\w.-]+)/i);
@@ -62,6 +66,12 @@ export function inferToolName(
 /** Best-effort path for title chip. */
 export function inferToolPath(content: string | undefined): string | undefined {
   const c = content ?? "";
+  // vision_attach JSON: {"path":"workspace/gui-inbox/..."}
+  const visionPath = c.match(
+    /\[vision_attach\]\s*\{[^}]*"path"\s*:\s*"([^"]+)"/,
+  );
+  if (visionPath?.[1] && visionPath[1].length < 200) return visionPath[1];
+
   const quoted = c.match(/["'`]([^"'`\n]+\.[a-zA-Z0-9]{1,8})["'`]/);
   if (quoted?.[1] && quoted[1].length < 120) return quoted[1];
   const pathy = c.match(/(?:^|\s)([\w./-]+\.[a-zA-Z0-9]{1,8})(?:\s|$|:)/);

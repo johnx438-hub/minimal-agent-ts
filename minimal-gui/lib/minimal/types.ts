@@ -33,6 +33,16 @@ export interface ToolPart {
   skin?: "read" | "write" | "shell" | "generic";
 }
 
+/** User-message file chip (gui-inbox path); rendered by UserMessageAttachments. */
+export interface MessageAttachment {
+  id: string;
+  name: string;
+  /** cwd-relative path under workspace/gui-inbox */
+  path: string;
+  contentType?: string;
+  type?: "image" | "document" | "file";
+}
+
 /** GUI-side message (store format, before convertMessage). */
 export interface MinimalMessage {
   id: string;
@@ -61,6 +71,8 @@ export interface MinimalMessage {
   toolParts?: ToolPart[];
   /** Assistant bubble that only holds tools — tighter spacing. */
   toolsOnly?: boolean;
+  /** User attachments shown as chips (not a separate timeline). */
+  attachments?: MessageAttachment[];
 }
 
 /** Live sync-spawn / job child activity (not mixed into main bubbles). */
