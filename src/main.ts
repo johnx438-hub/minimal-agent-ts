@@ -283,7 +283,8 @@ function onRuntimeEvent(event: RuntimeEvent, jsonEvents: boolean): void {
     event.type === 'run_stopping' ||
     event.type === 'run_end' ||
     event.type === 'session_saved' ||
-    event.type === 'runtime'
+    event.type === 'runtime' ||
+    event.type === 'skills'
   ) {
     if (event.type === 'run_stopping') {
       console.error('… stopping (waiting for current step)');

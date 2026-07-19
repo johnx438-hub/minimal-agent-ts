@@ -281,6 +281,13 @@ export class AgentRuntime {
   private listeners = new Set<RuntimeListener>();
   private abortController = new AbortController();
   private armedWorkflowPath: string | null = null;
+  /**
+   * agent.json / --load-skills baseline (process sticky).
+   * Distinct from one-shot {@link armedSkills} from /skills load or Web UI.
+   */
+  private stickySkills: string[] = [];
+  /** One-shot system injection for the next user task only (then cleared). */
+  private armedSkills: string[] = [];
   private sessionDirty = false;
   private running = false;
   private readonly jsonEvents: boolean;
@@ -308,6 +315,9 @@ export class AgentRuntime {
       allowWeb: (opts.allowWeb ?? false) || env('ALLOW_WEB') === '1',
     });
     this.pluginConfig = built.pluginConfig;
+    // Sticky baseline only — UI /skills load goes to armedSkills (one-shot).
+    this.stickySkills = [...(this.pluginConfig.loaded_skills ?? [])];
+    this.syncLoadedSkillsToConfig();
     configureSessionStore({
       mode: this.pluginConfig.session_store ?? 'project_local',
       agentHome: this.pluginConfig.agent_home,
@@ -1126,33 +1136,65 @@ export class AgentRuntime {
   }
 
   /**
-   * Mid-run skill injection list (pluginConfig.loaded_skills).
-   * **Process-scoped**, not per-session — survives switchSession until clear/restart.
-   * Distinct from session.skills_invoked (tool invoke_skill tracking).
+   * Arm a skill for the **next user task** only (system injection).
+   * Cleared after that task (like one-shot workflow arm). Does not mutate
+   * agent.json sticky `loaded_skills`. Prefer invoke_skill for mid-run guidance
+   * (transcript + pointerize protection already cover skill bodies).
    */
   loadSkill(name: string): void {
-    const skills = this.pluginConfig.loaded_skills ?? [];
-    if (!skills.includes(name)) {
-      this.pluginConfig.loaded_skills = [...skills, name];
+    const n = name.trim();
+    if (!n) return;
+    // Already sticky — always injected; no need to arm.
+    if (this.stickySkills.includes(n)) return;
+    if (!this.armedSkills.includes(n)) {
+      this.armedSkills = [...this.armedSkills, n];
+      this.syncLoadedSkillsToConfig();
+      this.emit({ type: 'skills', loaded: this.getLoadedSkills() });
     }
   }
 
-  /** Remove one skill from process-scoped loaded_skills. */
+  /** Remove one one-shot armed skill (cannot remove sticky agent.json entries). */
   unloadSkill(name: string): boolean {
-    const skills = this.pluginConfig.loaded_skills ?? [];
-    const next = skills.filter((s) => s !== name);
-    if (next.length === skills.length) return false;
-    this.pluginConfig.loaded_skills = next;
+    const n = name.trim();
+    const before = this.armedSkills.length;
+    this.armedSkills = this.armedSkills.filter((s) => s !== n);
+    if (this.armedSkills.length === before) return false;
+    this.syncLoadedSkillsToConfig();
+    this.emit({ type: 'skills', loaded: this.getLoadedSkills() });
     return true;
   }
 
-  /** Clear all process-scoped /skills load entries (not agent.json defaults). */
+  /** Clear one-shot armed skills only (agent.json / --load-skills sticky remains). */
   clearLoadedSkills(): void {
-    this.pluginConfig.loaded_skills = [];
+    if (this.armedSkills.length === 0) {
+      this.syncLoadedSkillsToConfig();
+      return;
+    }
+    this.armedSkills = [];
+    this.syncLoadedSkillsToConfig();
+    this.emit({ type: 'skills', loaded: this.getLoadedSkills() });
   }
 
+  /** Effective injection list: sticky ∪ one-shot armed. */
   getLoadedSkills(): string[] {
-    return [...(this.pluginConfig.loaded_skills ?? [])];
+    return this.effectiveLoadedSkills();
+  }
+
+  private effectiveLoadedSkills(): string[] {
+    return [...new Set([...this.stickySkills, ...this.armedSkills])];
+  }
+
+  /** Keep pluginConfig.loaded_skills in sync for toolRegistry system injection. */
+  private syncLoadedSkillsToConfig(): void {
+    this.pluginConfig.loaded_skills = this.effectiveLoadedSkills();
+  }
+
+  /** Drop one-shot arms after a user task (sticky baseline stays). */
+  private consumeArmedSkills(): void {
+    if (this.armedSkills.length === 0) return;
+    this.armedSkills = [];
+    this.syncLoadedSkillsToConfig();
+    this.emit({ type: 'skills', loaded: this.getLoadedSkills() });
   }
 
   /**
@@ -1508,7 +1550,11 @@ export class AgentRuntime {
       opts?.skipArmedWorkflow === true || isSyntheticSystemEventPrompt(prompt);
 
     if (skipArm) {
-      return this.runSingleTask(prompt, { visionRefs: opts?.visionRefs });
+      // System auto_run: do not consume one-shot skill arm or workflow arm.
+      return this.runSingleTask(prompt, {
+        visionRefs: opts?.visionRefs,
+        consumeArmedSkills: false,
+      });
     }
 
     // One-shot arm: consume for this user task only.
@@ -1518,7 +1564,10 @@ export class AgentRuntime {
     if (workflowPath) {
       return this.runWorkflowTask(prompt, workflowPath);
     }
-    return this.runSingleTask(prompt, { visionRefs: opts?.visionRefs });
+    return this.runSingleTask(prompt, {
+      visionRefs: opts?.visionRefs,
+      consumeArmedSkills: true,
+    });
   }
 
   async runWorkflowTask(prompt: string, workflowPath: string): Promise<AgentResult> {
@@ -1686,6 +1735,8 @@ export class AgentRuntime {
       this.bridgeStepForwarder.dispose();
       await flushActionWrites().catch(() => undefined);
       await flushTranscriptWrites().catch(() => undefined);
+      // Whole DAG/workflow counts as one user task for skill one-shot.
+      this.consumeArmedSkills();
       this.running = false;
       this.scheduleInboundDrain(session.session_id);
     }
@@ -1693,7 +1744,7 @@ export class AgentRuntime {
 
   private async runSingleTask(
     prompt: string,
-    opts?: { visionRefs?: VisionRef[] },
+    opts?: { visionRefs?: VisionRef[]; consumeArmedSkills?: boolean },
   ): Promise<AgentResult> {
     const session = this.ensureSession();
     this.resetWebSearchTaskBudget();
@@ -1765,6 +1816,9 @@ export class AgentRuntime {
       this.bridgeStepForwarder.dispose();
       await flushActionWrites().catch(() => undefined);
       await flushTranscriptWrites().catch(() => undefined);
+      if (opts?.consumeArmedSkills) {
+        this.consumeArmedSkills();
+      }
       this.running = false;
       this.scheduleInboundDrain(session.session_id);
     }

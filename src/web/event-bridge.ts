@@ -49,6 +49,13 @@ export function attachRuntimeEventBridge(
         hub.broadcast(frame);
         break;
       }
+      case 'skills': {
+        hub.broadcast({
+          type: 'skills',
+          loaded: event.loaded,
+        });
+        break;
+      }
       case 'run_stopping': {
         hub.broadcast({
           type: 'run_state',

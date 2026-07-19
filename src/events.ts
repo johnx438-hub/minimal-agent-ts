@@ -182,6 +182,8 @@ export type RuntimeEvent =
     }
   | { type: 'spawn_start'; preset: string }
   | { type: 'spawn_end'; preset: string; ok: boolean; detail?: string }
+  /** One-shot /skills load list changed (Web UI chips). loaded = sticky ∪ remaining armed. */
+  | { type: 'skills'; loaded: string[] }
   | { type: 'action_flush'; flush_ms: number; count: number; pending: number }
   | {
       type: 'job_list';

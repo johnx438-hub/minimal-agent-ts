@@ -388,16 +388,17 @@ export async function handleApiRoute(
     sendJson(res, 200, {
       ok: true,
       loaded: ctx.runtime.getLoadedSkills(),
-      /** Process-scoped until clear — not cleared by switchSession. */
-      scope: 'process',
+      /** One-shot: next user task only; agent.json sticky may remain after run. */
+      scope: 'next_task',
     });
     return true;
   }
 
   if (path === '/v1/skills/clear' && method === 'POST') {
     ctx.runtime.clearLoadedSkills();
-    ctx.hub.broadcast({ type: 'skills', loaded: [] });
-    sendJson(res, 200, { ok: true, loaded: [] });
+    const loaded = ctx.runtime.getLoadedSkills();
+    ctx.hub.broadcast({ type: 'skills', loaded });
+    sendJson(res, 200, { ok: true, loaded });
     return true;
   }
 

@@ -1262,12 +1262,16 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
 
   async clearLoadedSkills() {
     try {
-      await minimalFetch("/v1/skills/clear", {
+      const res = await minimalFetch<{ loaded?: string[] }>("/v1/skills/clear", {
         method: "POST",
         body: "{}",
         token: get().token || getMinimalToken(),
       });
-      set({ loadedSkills: [], lastError: undefined });
+      // Sticky agent.json skills may remain after clearing one-shot arms.
+      set({
+        loadedSkills: res.loaded ?? [],
+        lastError: undefined,
+      });
     } catch (e) {
       set({ lastError: e instanceof Error ? e.message : String(e) });
     }

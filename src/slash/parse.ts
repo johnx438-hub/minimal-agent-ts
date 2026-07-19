@@ -206,20 +206,20 @@ const SLASH_HELP_ENTRIES: SlashHelpEntry[] = [
   {
     command: '/skills load <name>',
     autocomplete: false,
-    hintZh: '加载指定 skill（进程级，跨 session 直到 clear）',
-    hintEn: 'Load skill by name (process-scoped until clear)',
+    hintZh: '武装 skill：下一条任务一次性注入 system',
+    hintEn: 'Arm skill for next task only (one-shot system inject)',
   },
   {
     command: '/skills clear',
     autocompleteName: 'skills clear',
-    hintZh: '清空本进程已 load 的 skills',
-    hintEn: 'Clear process-scoped loaded skills',
+    hintZh: '清空一次性 load 的 skills（agent.json 常驻保留）',
+    hintEn: 'Clear one-shot loaded skills (agent.json sticky kept)',
   },
   {
     command: '/skills unload <name>',
     autocomplete: false,
-    hintZh: '卸载单个已 load 的 skill',
-    hintEn: 'Unload one process-scoped skill',
+    hintZh: '卸下一次性 skill（不能卸 agent.json 常驻）',
+    hintEn: 'Unload one-shot skill (not agent.json sticky)',
   },
   {
     command: '/tools',

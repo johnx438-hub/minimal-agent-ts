@@ -284,7 +284,7 @@ function dispatchPseudo(
     const skills = runtime.listSkills();
     const loaded = runtime.getLoadedSkills();
     const head =
-      'Skills（* 已 load，进程级，跨 session 直到 /skills clear）：\n';
+      'Skills（* 已 load：agent.json 常驻 或 下一条任务一次性注入）：\n';
     return {
       ok: true,
       message:
@@ -298,19 +298,20 @@ function dispatchPseudo(
               )
               .join('\n') +
             (loaded.length
-              ? `\n已加载: ${loaded.join(', ')}`
-              : '\n尚未 load 任何 skill。'),
+              ? `\n当前注入列表: ${loaded.join(', ')}`
+              : '\n尚未 load 任何 skill（可用 /skills load 或 invoke_skill）。'),
       data: { skills, loaded },
     };
   }
 
   if (msg === '__skills_clear__') {
     runtime.clearLoadedSkills();
-    hub.broadcast({ type: 'skills', loaded: [] });
+    hub.broadcast({ type: 'skills', loaded: runtime.getLoadedSkills() });
     return {
       ok: true,
-      message: '已清空本进程 load 的 skills（不影响 agent.json 默认与磁盘 memory）。',
-      data: { loaded: [] },
+      message:
+        '已清空一次性 load 的 skills（agent.json loaded_skills 常驻项仍保留）。',
+      data: { loaded: runtime.getLoadedSkills() },
     };
   }
 
@@ -322,8 +323,8 @@ function dispatchPseudo(
     return {
       ok,
       message: ok
-        ? `已卸载 skill: ${name}`
-        : `未在已加载列表中: ${name}`,
+        ? `已卸载一次性 skill: ${name}`
+        : `未在一次性列表中（或为 agent.json 常驻）: ${name}`,
       data: { loaded: runtime.getLoadedSkills() },
     };
   }
@@ -336,8 +337,8 @@ function dispatchPseudo(
     return {
       ok: true,
       message:
-        `已加载 skill: ${name}\n` +
-        `注意：当前为进程级注入，切换 session 不会自动卸下；用 /skills clear 或 /skills unload ${name}。`,
+        `已武装 skill: ${name}（下一条用户任务一次性注入 system，跑完自动卸下）。\n` +
+        `中途指引请用 invoke_skill（会话内保护，不必进程级挂载）。`,
       data: { loaded: runtime.getLoadedSkills() },
     };
   }
