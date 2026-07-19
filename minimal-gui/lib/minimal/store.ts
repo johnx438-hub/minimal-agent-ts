@@ -97,6 +97,8 @@ export interface MinimalStore {
   clearWorkflowSteps: () => void;
   refreshCatalog: () => Promise<void>;
   loadHistory: (sessionId?: string) => Promise<void>;
+  /** Catalog + history (sidebar list + chat) — not LLM reload. */
+  syncSessionView: () => Promise<void>;
   respondWorkflowConfirm: (approved: boolean) => Promise<void>;
   refreshCapabilities: () => Promise<void>;
   setCapability: (
@@ -933,20 +935,23 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
       set({ lastError: "agent is running — abort first" });
       return;
     }
+    // Optimistic remove so the card disappears immediately; refresh reconciles.
+    const prevSessions = get().sessions;
+    const wasCurrent = id === get().sessionId;
+    set({
+      sessions: prevSessions.filter((s) => s.session_id !== id),
+      lastError: undefined,
+    });
     try {
       const res = await minimalFetch<{
         ok?: boolean;
+        deleted?: string;
         session_id?: string | null;
         profile?: string | null;
         model?: string | null;
       }>(`/v1/sessions/${encodeURIComponent(id)}`, {
         method: "DELETE",
         token: get().token || getMinimalToken(),
-      });
-      const wasCurrent = id === get().sessionId;
-      set({
-        sessions: get().sessions.filter((s) => s.session_id !== id),
-        lastError: undefined,
       });
       if (wasCurrent) {
         set({
@@ -956,15 +961,31 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
           profile: res.profile ?? get().profile,
           model: res.model ?? get().model,
         });
-        if (res.session_id) {
+        if (res.session_id && res.session_id !== id) {
           await get().loadHistory(res.session_id).catch(() => {
             set({ messages: [] });
           });
+        } else if (!res.session_id) {
+          set({ messages: [] });
         }
       }
       await get().refreshCatalog();
+      // Guard: never let a failed/zombie disk entry put the deleted id back
+      // if the API confirmed deletion (or we already dropped it optimistically).
+      if (get().sessions.some((s) => s.session_id === id)) {
+        set({
+          sessions: get().sessions.filter((s) => s.session_id !== id),
+        });
+      }
     } catch (e) {
-      set({ lastError: e instanceof Error ? e.message : String(e) });
+      // Roll back list if delete failed so user sees the card + error.
+      set({
+        sessions: prevSessions,
+        lastError:
+          e instanceof Error
+            ? `删除失败: ${e.message}`
+            : `删除失败: ${String(e)}`,
+      });
     }
   },
 
@@ -1178,6 +1199,15 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
         (res.messages ?? []).map(fromHistoryDto),
       ),
     });
+  },
+
+  async syncSessionView() {
+    await get().refreshCatalog();
+    try {
+      await get().loadHistory();
+    } catch {
+      /* empty / offline ok */
+    }
   },
 
   async refreshCapabilities() {

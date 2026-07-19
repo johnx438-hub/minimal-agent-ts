@@ -42,7 +42,9 @@ export function safeJoin(root: string, reqPath: string): string | null {
 export const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  // DELETE is used by session cleanup; without it browsers fail preflight with
+  // opaque "Failed to fetch" while curl/GET/POST still work.
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
 };
 
 export function applyCors(res: ServerResponse): void {

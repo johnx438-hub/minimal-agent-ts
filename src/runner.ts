@@ -1014,7 +1014,10 @@ export class AgentRuntime {
   /**
    * Delete a main session and its bound cold storage / spawn trees / jobs.
    * Refuses when this session is the active run target.
-   * If the deleted id is the current idle session, starts a fresh empty session.
+   * If the deleted id is the current idle session: switch to the most recent
+   * remaining session when one exists; only create a fresh empty session when
+   * the list would otherwise be empty (avoids “deleted card comes back” when
+   * cleaning up empty greeting-test sessions).
    */
   deleteSession(sessionId: string): DeleteSessionResult {
     const id = sessionId.trim();
@@ -1037,7 +1040,13 @@ export class AgentRuntime {
     });
 
     if (result.ok && wasCurrent) {
-      this.newSession();
+      const uid = env('USER_ID') ?? 'user_default';
+      const next = listSessions(uid).find((m) => m.session_id !== id);
+      if (next && this.resumeSession(next.session_id)) {
+        /* switched to an existing session */
+      } else {
+        this.newSession();
+      }
     }
     return result;
   }

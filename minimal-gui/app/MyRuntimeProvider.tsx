@@ -6,8 +6,8 @@ import {
   useExternalStoreRuntime,
 } from "@assistant-ui/react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { Loader2Icon, SettingsIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Loader2Icon, MoonIcon, SettingsIcon, SunIcon } from "lucide-react";
 
 import {
   createPathInboxAttachmentAdapter,
@@ -23,12 +23,15 @@ import {
   convertMessage,
   textFromAppendContent,
 } from "@/lib/minimal/convert";
+import { useTheme } from "@/components/minimal/theme-provider";
 import { useMinimalStore } from "@/lib/minimal/store";
 import { connectMinimalWs } from "@/lib/minimal/ws";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 /** Cap visible history after coalesce (older messages stay on server). */
 const MESSAGE_DISPLAY_CAP = 80;
+/** After run ends, wait for disk/preview settle then refresh list+history. */
+const POST_RUN_SYNC_MS = 2500;
 
 export function MyRuntimeProvider({
   children,
@@ -46,10 +49,13 @@ export function MyRuntimeProvider({
   const lastError = useMinimalStore((s) => s.lastError);
   const activeSpawns = useMinimalStore((s) => s.activeSpawns);
   const jobs = useMinimalStore((s) => s.jobs);
+  const syncSessionView = useMinimalStore((s) => s.syncSessionView);
+  const { theme, toggle: toggleTheme } = useTheme();
 
   // Avoid SSR/client mismatch: token may live in localStorage / ?query only on client.
   const [tokenHint, setTokenHint] = useState(false);
   const [showAllMessages, setShowAllMessages] = useState(false);
+  const wasRunningRef = useRef(false);
 
   useEffect(() => {
     const token = getMinimalToken();
@@ -60,6 +66,20 @@ export function MyRuntimeProvider({
       connectMinimalWs(token || undefined);
     }
   }, []);
+
+  // After generation ends: delayed sync session list + history (preview / task count)
+  useEffect(() => {
+    if (isRunning) {
+      wasRunningRef.current = true;
+      return;
+    }
+    if (!wasRunningRef.current) return;
+    wasRunningRef.current = false;
+    const t = window.setTimeout(() => {
+      void syncSessionView();
+    }, POST_RUN_SYNC_MS);
+    return () => window.clearTimeout(t);
+  }, [isRunning, syncSessionView]);
 
   // Merge tool rows; optionally cap long sessions for DOM cost
   const { displayMessages, hiddenCount } = useMemo(() => {
@@ -218,11 +238,24 @@ export function MyRuntimeProvider({
                 请设置 NEXT_PUBLIC_MINIMAL_TOKEN 或 URL ?token=
               </span>
             )}
+            <button
+              type="button"
+              onClick={() => toggleTheme()}
+              className="text-muted-foreground hover:text-foreground hover:bg-muted/50 inline-flex size-6 shrink-0 items-center justify-center rounded-md"
+              title={theme === "dark" ? "浅色模式" : "暗黑模式"}
+              aria-label="切换主题"
+            >
+              {theme === "dark" ? (
+                <SunIcon className="size-3.5" />
+              ) : (
+                <MoonIcon className="size-3.5" />
+              )}
+            </button>
             <Link
               href="/settings"
               className="text-muted-foreground hover:text-foreground hover:bg-muted/50 inline-flex size-6 shrink-0 items-center justify-center rounded-md"
-              title="Settings"
-              aria-label="Settings"
+              title="设置"
+              aria-label="设置"
             >
               <SettingsIcon className="size-3.5" />
             </Link>

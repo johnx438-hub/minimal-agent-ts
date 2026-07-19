@@ -33,8 +33,7 @@ export function MinimalSidebar() {
   const clearWorkflowSteps = useMinimalStore((s) => s.clearWorkflowSteps);
   const jobs = useMinimalStore((s) => s.jobs);
   const connection = useMinimalStore((s) => s.connection);
-  const refreshCatalog = useMinimalStore((s) => s.refreshCatalog);
-  const loadHistory = useMinimalStore((s) => s.loadHistory);
+  const syncSessionView = useMinimalStore((s) => s.syncSessionView);
   const loadedSkills = useMinimalStore((s) => s.loadedSkills);
 
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
@@ -44,8 +43,8 @@ export function MinimalSidebar() {
     <aside className="flex h-full w-72 shrink-0 flex-col border-r bg-muted/20">
       {/* Sessions */}
       <div className="flex items-center justify-between border-b px-3 py-2">
-        <span className="text-xs font-semibold tracking-wide uppercase opacity-70">
-          Sessions
+        <span className="text-xs font-semibold tracking-wide opacity-70">
+          会话
         </span>
         <div className="flex items-center gap-2">
           <button
@@ -55,30 +54,27 @@ export function MinimalSidebar() {
             title="新建会话"
             onClick={() => void createSession()}
           >
-            + new
+            + 新建
           </button>
           <button
             type="button"
             className="text-[11px] opacity-60 hover:opacity-100"
-            onClick={() => {
-              void refreshCatalog();
-              void loadHistory().catch(() => {});
-            }}
-            title="Refresh list + history"
+            onClick={() => void syncSessionView()}
+            title="同步会话列表与当前历史"
           >
-            refresh
+            同步
           </button>
         </div>
       </div>
       <div className="min-h-0 flex-[1.2] overflow-y-auto p-2">
         {connection !== "open" && (
           <p className="mb-2 rounded border border-dashed px-2 py-1.5 text-[11px] opacity-60">
-            WS {connection}. Start{" "}
+            WS {connection}。请启动{" "}
             <code className="text-[10px]">npm run web -- --no-auth</code>
           </p>
         )}
         {sessions.length === 0 ? (
-          <p className="px-1 py-2 text-xs opacity-50">No sessions yet</p>
+          <p className="px-1 py-2 text-xs opacity-50">暂无会话</p>
         ) : (
           <ul className="flex flex-col gap-1">
             {sessions.map((s) => {
@@ -176,8 +172,8 @@ export function MinimalSidebar() {
                         <button
                           type="button"
                           disabled={isRunning}
-                          className="text-[10px] text-red-600/80 hover:text-red-600 disabled:opacity-40"
-                          title="删除会话"
+                          className="text-[10px] text-red-600/80 hover:text-red-600 dark:text-red-400/90 dark:hover:text-red-300 disabled:opacity-40"
+                          title="删除会话（不可恢复）"
                           onClick={(e) => {
                             e.stopPropagation();
                             if (
@@ -189,7 +185,7 @@ export function MinimalSidebar() {
                             }
                           }}
                         >
-                          del
+                          删除
                         </button>
                       </div>
                     </div>
@@ -201,11 +197,11 @@ export function MinimalSidebar() {
         )}
       </div>
 
-      {/* Workflows */}
+      {/* 工作流 */}
       <div className="border-t">
         <div className="flex items-center justify-between px-3 py-2">
-          <span className="text-xs font-semibold tracking-wide uppercase opacity-70">
-            Workflows
+          <span className="text-xs font-semibold tracking-wide opacity-70">
+            工作流
           </span>
           {armedWorkflow && (
             <button
@@ -213,19 +209,19 @@ export function MinimalSidebar() {
               className="text-[11px] text-amber-600 hover:underline"
               onClick={() => void armWorkflow(null)}
             >
-              disarm
+              取消武装
             </button>
           )}
         </div>
         {armedWorkflow && (
           <div className="mx-2 mb-2 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-800 dark:text-amber-200">
-            Armed: <span className="font-mono">{armedWorkflow}</span>
-            <div className="opacity-70">Next message = workflow task</div>
+            已武装: <span className="font-mono">{armedWorkflow}</span>
+            <div className="opacity-70">下一条消息 = 工作流任务</div>
           </div>
         )}
         <div className="max-h-32 overflow-y-auto px-2 pb-2">
           {workflows.length === 0 ? (
-            <p className="px-1 text-[11px] opacity-50">No workflows</p>
+            <p className="px-1 text-[11px] opacity-50">暂无工作流</p>
           ) : (
             <ul className="flex flex-col gap-0.5">
               {workflows.map((w) => {
@@ -261,8 +257,8 @@ export function MinimalSidebar() {
       {/* Workflow steps */}
       <div className="border-t px-2 py-2">
         <div className="mb-1 flex items-center justify-between">
-          <span className="text-[10px] font-semibold uppercase opacity-60">
-            Steps
+          <span className="text-[10px] font-semibold opacity-60">
+            步骤
           </span>
           {workflowSteps.length > 0 && (
             <button
@@ -270,7 +266,7 @@ export function MinimalSidebar() {
               className="text-[10px] opacity-50 hover:opacity-100"
               onClick={() => clearWorkflowSteps()}
             >
-              clear
+              清空
             </button>
           )}
         </div>
@@ -303,8 +299,8 @@ export function MinimalSidebar() {
 
       {/* Jobs */}
       <div className="border-t px-2 py-2">
-        <div className="mb-1 text-[10px] font-semibold uppercase opacity-60">
-          Jobs
+        <div className="mb-1 text-[10px] font-semibold opacity-60">
+          作业
         </div>
         <div className="max-h-28 space-y-1 overflow-y-auto">
           {jobs.length === 0 ? (

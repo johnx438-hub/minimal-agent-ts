@@ -51,10 +51,13 @@ import {
 import {
   createContext,
   useContext,
+  useMemo,
   type ComponentType,
   type FC,
   type PropsWithChildren,
 } from "react";
+import { pickWelcomeGreeting } from "@/content/greetings";
+import { useMinimalStore } from "@/lib/minimal/store";
 
 export type ThreadGroupPart = MessagePrimitive.GroupedParts.GroupPart;
 
@@ -201,10 +204,15 @@ const ThreadScrollToBottom: FC = () => {
 };
 
 const ThreadWelcome: FC = () => {
+  const sessionId = useMinimalStore((s) => s.sessionId);
+  const greeting = useMemo(
+    () => pickWelcomeGreeting(sessionId ?? "empty"),
+    [sessionId],
+  );
   return (
     <div className="aui-thread-welcome-root mb-6 flex flex-col items-center px-4 text-center">
       <h1 className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-2xl font-semibold duration-200">
-        How can I help you today?
+        {greeting}
       </h1>
     </div>
   );
@@ -454,6 +462,7 @@ const AssistantMessage: FC = () => {
 };
 
 const AssistantActionBar: FC = () => {
+  const syncSessionView = useMinimalStore((s) => s.syncSessionView);
   return (
     <ActionBarPrimitive.Root
       hideWhenRunning
@@ -461,7 +470,7 @@ const AssistantActionBar: FC = () => {
       className="aui-assistant-action-bar-root text-muted-foreground animate-in fade-in col-start-3 row-start-2 -ms-1 flex gap-1 duration-200"
     >
       <ActionBarPrimitive.Copy asChild>
-        <TooltipIconButton tooltip="Copy">
+        <TooltipIconButton tooltip="复制">
           <AuiIf condition={(s) => s.message.isCopied}>
             <CheckIcon className="animate-in zoom-in-50 fade-in duration-200 ease-out" />
           </AuiIf>
@@ -470,11 +479,13 @@ const AssistantActionBar: FC = () => {
           </AuiIf>
         </TooltipIconButton>
       </ActionBarPrimitive.Copy>
-      <ActionBarPrimitive.Reload asChild>
-        <TooltipIconButton tooltip="Refresh">
-          <RefreshCwIcon />
-        </TooltipIconButton>
-      </ActionBarPrimitive.Reload>
+      {/* Not LLM reload — sync session list + history (agent has no roll) */}
+      <TooltipIconButton
+        tooltip="同步列表与历史"
+        onClick={() => void syncSessionView()}
+      >
+        <RefreshCwIcon />
+      </TooltipIconButton>
       <ActionBarMorePrimitive.Root>
         <ActionBarMorePrimitive.Trigger asChild>
           <TooltipIconButton

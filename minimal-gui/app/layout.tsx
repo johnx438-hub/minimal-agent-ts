@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { MyRuntimeProvider } from "@/app/MyRuntimeProvider";
+import { ThemeProvider } from "@/components/minimal/theme-provider";
 
 import "./globals.css";
 
@@ -13,11 +14,13 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Provider must be *inside* body — never wrap <html>.
+  // Default dark class before hydrate (主黑+灰); ThemeProvider syncs localStorage
   return (
-    <html lang="en" className="h-dvh">
-      <body className="h-dvh font-sans">
-        <MyRuntimeProvider>{children}</MyRuntimeProvider>
+    <html lang="zh-CN" className="dark h-dvh" suppressHydrationWarning>
+      <body className="h-dvh font-sans antialiased">
+        <ThemeProvider>
+          <MyRuntimeProvider>{children}</MyRuntimeProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

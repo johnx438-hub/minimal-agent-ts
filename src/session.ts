@@ -56,13 +56,17 @@ export function saveSessionThrottled(
 }
 
 /**
- * Generate a session ID based on current timestamp.
- * Format: session_YYYYMMDD_HHMMSS
+ * Generate a unique session ID.
+ * Format: session_YYYYMMDDHHmmssSSS_<rand> — includes ms + entropy so
+ * rapid create/delete/new within the same second never collide (Web UI
+ * delete-current → newSession was reviving the just-deleted id).
  */
 export function generateSessionId(): string {
   const now = new Date();
-  const dateStr = now.toISOString().replace(/[-T:.Z]/g, '').slice(0, 14);
-  return `session_${dateStr}`;
+  // 17 digits: YYYYMMDDHHmmssSSS
+  const dateStr = now.toISOString().replace(/[-T:.Z]/g, '').slice(0, 17);
+  const rand = Math.random().toString(36).slice(2, 6).padEnd(4, '0');
+  return `session_${dateStr}_${rand}`;
 }
 
 /** @deprecated Use sessionPath from workspace; kept for callers that import by name. */
@@ -74,7 +78,12 @@ export function getSessionPath(sessionId: string): string {
  * Create a new session and persist it to disk.
  */
 export function createSession(userId: string = 'user_default'): SessionFile {
-  const sessionId = generateSessionId();
+  ensureSessionsDir();
+  let sessionId = generateSessionId();
+  // Extremely rare path collision: regenerate rather than overwrite.
+  for (let i = 0; i < 8 && existsSync(sessionPath(sessionId)); i += 1) {
+    sessionId = generateSessionId();
+  }
   const now = Date.now();
   const session: SessionFile = {
     session_id: sessionId,
@@ -86,7 +95,6 @@ export function createSession(userId: string = 'user_default'): SessionFile {
     workspace: buildSessionWorkspaceState(),
   };
 
-  ensureSessionsDir();
   saveSession(session);
 
   return session;
