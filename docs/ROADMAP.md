@@ -54,7 +54,7 @@
 |:------:|-----|------|
 | **P0 产品** | 产品 | ~~TUI `/jobs`、job-query~~ ✅；~~`web_search` v1+v1.5~~ ✅ |
 | **P1 产品** | 产品 | ~~`/spawns` 实装、TUI `turn_io`~~ ✅；pi overlay 统一（按需） |
-| **P1 压测** | B | 高压场景 harness（§5）；填压测表 |
+| **P1 压测** | B | 高压场景 harness（§5）；填压测表；**LITM 实验**见 [EVAL_LITM.md](./EVAL_LITM.md) |
 | **P1 底座** | 底座 | ToolProvider 拆分、context pipeline、**MessageBridge 出站**（§6 H1–H5；类型已有） |
 | **P1 产品** | 产品 | **Web UI**（[SPEC_WEB_UI](../SPEC_WEB_UI.md)）：本机 HTTP/WS + token + AgentUI；W1 竖切 |
 | **P2 底座** | 底座 | **InboundAdapter + Dispatch + Schedule**（§6.5–6.8；cron ≠ bridge） |
