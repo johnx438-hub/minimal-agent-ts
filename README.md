@@ -56,6 +56,7 @@ TypeScript 写的 Agent 框架，目标针对长程任务三大顽疾：**越跑
 | [QUICKSTART.md](./QUICKSTART.md) | 安装与常用命令 |
 | [docs/DEPS.md](./docs/DEPS.md) | 必装/可选依赖说明 |
 | [docs/ROADMAP.md](./docs/ROADMAP.md) | 项目规划与方向 |
+| [docs/EVAL_LITM.md](./docs/EVAL_LITM.md) | Lost in the Middle / 长程实验纲要与指标 |
 | [SPEC_CONTEXT_MANAGEMENT.md](./SPEC_CONTEXT_MANAGEMENT.md) | 上下文与指针化设计细节 |
 | [SPEC_TOOLS.md](./SPEC_TOOLS.md) · [SPEC_TUI.md](./SPEC_TUI.md) · [SPEC_LLM_ROUTER.md](./SPEC_LLM_ROUTER.md) | 工具/TUI/多模型路由规范 |
 

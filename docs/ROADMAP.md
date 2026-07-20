@@ -16,6 +16,7 @@
 | [DEPS.md](./DEPS.md) | 宿主 / npm 依赖分层 |
 | [ROADMAP.md](../ROADMAP.md) | 根目录轨 A–G 缩写与历史记录 |
 | [SPEC_CONTEXT_MANAGEMENT.md](../SPEC_CONTEXT_MANAGEMENT.md) | 上下文 / 指针化（**v2.0** 对齐 L2 pipeline；非 Zvec） |
+| [EVAL_LITM.md](./EVAL_LITM.md) | **长程 / Lost in the Middle 实验纲要**：解法地图、控制变量、指标、任务族、分期 |
 | [SPEC_LLM_ROUTER.md](../SPEC_LLM_ROUTER.md) | api_profiles、fallback、reasoning |
 | [SPEC_TOOLS.md](../SPEC_TOOLS.md) | 工具（含 Office ✅） |
 | [SPEC_WORKFLOW.md](../SPEC_WORKFLOW.md) | 多角色编排：profile 共用 spawn、flow/DAG、job 节点（**W1–W3 ✅**） |
