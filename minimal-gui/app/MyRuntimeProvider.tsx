@@ -48,6 +48,8 @@ export function MyRuntimeProvider({
   const lastError = useMinimalStore((s) => s.lastError);
   const activeSpawns = useMinimalStore((s) => s.activeSpawns);
   const refreshSessionList = useMinimalStore((s) => s.refreshSessionList);
+  const refreshWorkspace = useMinimalStore((s) => s.refreshWorkspace);
+  const workspace = useMinimalStore((s) => s.workspace);
   const jobs = useMinimalStore((s) => s.jobs);
   const { theme, toggle: toggleTheme } = useTheme();
 
@@ -174,7 +176,14 @@ export function MyRuntimeProvider({
     },
   });
 
-  /** Slim chrome: connection + short session; model/armed live under composer. */
+  // Ensure workspace snapshot after WS open (hello may already set it)
+  useEffect(() => {
+    if (connection === "open" && !workspace) {
+      void refreshWorkspace();
+    }
+  }, [connection, workspace, refreshWorkspace]);
+
+  /** Slim chrome: connection + session; cwd is a separate chip → Settings. */
   const banner = useMemo(() => {
     const ws =
       connection === "open"
@@ -190,6 +199,13 @@ export function MyRuntimeProvider({
     const err = lastError ? ` · err: ${lastError}` : "";
     return `${ws} ${sess}${err}`;
   }, [connection, sessionId, lastError]);
+
+  const cwdChip = useMemo(() => {
+    const p = workspace?.active_cwd;
+    if (!p) return "cwd …";
+    const base = p.split("/").filter(Boolean).pop() ?? p;
+    return base.length > 20 ? `cwd ${base.slice(0, 18)}…` : `cwd ${base}`;
+  }, [workspace?.active_cwd]);
 
   /**
    * Background activity only (jobs/spawns). Main-run phase lives in
@@ -251,13 +267,30 @@ export function MyRuntimeProvider({
             <span
               className="min-w-0 flex-1 truncate"
               title={
-                connection === "open"
-                  ? `WS connected · ${sessionId ?? "no session"}`
-                  : `WS ${connection} · ${sessionId ?? "no session"}`
+                [
+                  connection === "open" ? "WS connected" : `WS ${connection}`,
+                  sessionId ?? "no session",
+                  workspace?.active_cwd
+                    ? `cwd ${workspace.active_cwd}`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
               }
             >
               {banner}
             </span>
+            <Link
+              href="/settings#workspace"
+              className="text-muted-foreground hover:text-foreground hover:bg-muted/50 max-w-[9rem] shrink-0 truncate rounded-md px-1.5 py-0.5 font-mono text-[10px]"
+              title={
+                workspace
+                  ? `active_cwd: ${workspace.active_cwd}\n点击打开 Settings → 工作区`
+                  : "工作区 Settings"
+              }
+            >
+              {cwdChip}
+            </Link>
             {tokenHint && (
               <span className="shrink-0 text-red-500">
                 请设置 NEXT_PUBLIC_MINIMAL_TOKEN 或 URL ?token=

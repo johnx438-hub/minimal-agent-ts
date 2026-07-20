@@ -30,6 +30,7 @@ import type {
   PermissionConfirmPending,
   WorkflowConfirmPending,
   WorkflowMeta,
+  WorkspaceSnapshot,
   WsFrame,
 } from "./types";
 
@@ -76,6 +77,9 @@ export interface MinimalStore {
 
   /** Shell / web process flags (Settings + optional WS sync). */
   capabilities: RuntimeCapabilities | null;
+
+  /** active_cwd + path grants. */
+  workspace: WorkspaceSnapshot | null;
 
   /**
    * Bumps after loadHistory/sync so the thread can re-pin scroll without
@@ -130,6 +134,19 @@ export interface MinimalStore {
     kind: "shell" | "web",
     on: boolean,
   ) => Promise<{ ok: boolean; message?: string }>;
+  refreshWorkspace: () => Promise<void>;
+  workspaceAllow: (opts: {
+    path: string;
+    mode?: "read_only" | "read_write";
+    shell?: boolean;
+    web?: boolean;
+  }) => Promise<{ ok: boolean; message?: string }>;
+  workspaceRevoke: (path: string) => Promise<{ ok: boolean; message?: string }>;
+  workspaceSetCwd: (
+    path: string,
+    opts?: { grant_if_missing?: boolean },
+  ) => Promise<{ ok: boolean; message?: string }>;
+  workspaceGoPrimary: () => Promise<{ ok: boolean; message?: string }>;
 }
 
 function appendAssistantDelta(
@@ -318,6 +335,7 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
   permissionConfirmBusy: false,
   activeSpawns: [],
   capabilities: null,
+  workspace: null,
   historySyncGen: 0,
 
   setToken(token) {
@@ -383,6 +401,17 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
               }
               return get().permissionConfirm;
             })(),
+            workspace: frame.workspace
+              ? {
+                  active_cwd: frame.workspace.active_cwd,
+                  primary: frame.workspace.primary,
+                  project_id: frame.workspace.project_id,
+                  project_name: frame.workspace.project_name,
+                  session_store: frame.workspace.session_store,
+                  capability_policy: frame.workspace.capability_policy,
+                  grants: frame.workspace.grants ?? [],
+                }
+              : get().workspace,
           });
           return;
         }
@@ -540,6 +569,20 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
               permissionConfirmBusy: false,
             });
           }
+          return;
+        }
+        case "workspace": {
+          set({
+            workspace: {
+              active_cwd: frame.active_cwd,
+              primary: frame.primary,
+              project_id: frame.project_id,
+              project_name: frame.project_name,
+              session_store: frame.session_store,
+              capability_policy: frame.capability_policy,
+              grants: frame.grants ?? [],
+            },
+          });
           return;
         }
         case "spawn": {
@@ -1502,6 +1545,191 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
           auth_open: caps.auth_open,
           hot_toggle: caps.hot_toggle ?? true,
         },
+        lastError: undefined,
+      });
+      return { ok: true };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      set({ lastError: message });
+      return { ok: false, message };
+    }
+  },
+
+  async refreshWorkspace() {
+    try {
+      const snap = await minimalFetch<WorkspaceSnapshot & { ok?: boolean }>(
+        "/v1/workspace",
+        { token: get().token || getMinimalToken() },
+      );
+      set({
+        workspace: {
+          active_cwd: snap.active_cwd,
+          primary: snap.primary,
+          project_id: snap.project_id,
+          project_name: snap.project_name,
+          session_store: snap.session_store,
+          capability_policy: snap.capability_policy,
+          grants: snap.grants ?? [],
+        },
+        lastError: undefined,
+      });
+    } catch (e) {
+      set({
+        lastError: e instanceof Error ? e.message : String(e),
+      });
+    }
+  },
+
+  async workspaceAllow(opts) {
+    if (get().isRunning) {
+      return { ok: false, message: "agent is running — abort first" };
+    }
+    try {
+      const snap = await minimalFetch<WorkspaceSnapshot & { ok?: boolean }>(
+        "/v1/workspace/allow",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            path: opts.path,
+            mode: opts.mode ?? "read_write",
+            shell: opts.shell === true,
+            web: opts.web === true,
+          }),
+          token: get().token || getMinimalToken(),
+        },
+      );
+      set({
+        workspace: {
+          active_cwd: snap.active_cwd,
+          primary: snap.primary,
+          project_id: snap.project_id,
+          project_name: snap.project_name,
+          session_store: snap.session_store,
+          capability_policy: snap.capability_policy,
+          grants: snap.grants ?? [],
+        },
+        lastError: undefined,
+      });
+      return { ok: true };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      set({ lastError: message });
+      return { ok: false, message };
+    }
+  },
+
+  async workspaceRevoke(path) {
+    if (get().isRunning) {
+      return { ok: false, message: "agent is running — abort first" };
+    }
+    try {
+      const snap = await minimalFetch<WorkspaceSnapshot & { ok?: boolean }>(
+        "/v1/workspace/revoke",
+        {
+          method: "POST",
+          body: JSON.stringify({ path }),
+          token: get().token || getMinimalToken(),
+        },
+      );
+      set({
+        workspace: {
+          active_cwd: snap.active_cwd,
+          primary: snap.primary,
+          project_id: snap.project_id,
+          project_name: snap.project_name,
+          session_store: snap.session_store,
+          capability_policy: snap.capability_policy,
+          grants: snap.grants ?? [],
+        },
+        lastError: undefined,
+      });
+      return { ok: true };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      set({ lastError: message });
+      return { ok: false, message };
+    }
+  },
+
+  async workspaceSetCwd(path, opts) {
+    if (get().isRunning) {
+      return { ok: false, message: "agent is running — abort first" };
+    }
+    try {
+      const snap = await minimalFetch<
+        WorkspaceSnapshot & RuntimeCapabilities & { ok?: boolean }
+      >("/v1/workspace/cwd", {
+        method: "POST",
+        body: JSON.stringify({
+          path,
+          grant_if_missing: opts?.grant_if_missing === true,
+        }),
+        token: get().token || getMinimalToken(),
+      });
+      set({
+        workspace: {
+          active_cwd: snap.active_cwd,
+          primary: snap.primary,
+          project_id: snap.project_id,
+          project_name: snap.project_name,
+          session_store: snap.session_store,
+          capability_policy: snap.capability_policy,
+          grants: snap.grants ?? [],
+        },
+        capabilities:
+          typeof snap.shell === "boolean"
+            ? {
+                shell: snap.shell,
+                web: snap.web,
+                session_grants: snap.session_grants,
+                always_grants: snap.always_grants,
+                auth_open: snap.auth_open,
+                hot_toggle: snap.hot_toggle,
+              }
+            : get().capabilities,
+        lastError: undefined,
+      });
+      return { ok: true };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      set({ lastError: message });
+      return { ok: false, message };
+    }
+  },
+
+  async workspaceGoPrimary() {
+    if (get().isRunning) {
+      return { ok: false, message: "agent is running — abort first" };
+    }
+    try {
+      const snap = await minimalFetch<
+        WorkspaceSnapshot & RuntimeCapabilities & { ok?: boolean }
+      >("/v1/workspace/primary", {
+        method: "POST",
+        body: "{}",
+        token: get().token || getMinimalToken(),
+      });
+      set({
+        workspace: {
+          active_cwd: snap.active_cwd,
+          primary: snap.primary,
+          project_id: snap.project_id,
+          project_name: snap.project_name,
+          session_store: snap.session_store,
+          capability_policy: snap.capability_policy,
+          grants: snap.grants ?? [],
+        },
+        capabilities:
+          typeof snap.shell === "boolean"
+            ? {
+                shell: snap.shell,
+                web: snap.web,
+                session_grants: snap.session_grants,
+                always_grants: snap.always_grants,
+                auth_open: snap.auth_open,
+                hot_toggle: snap.hot_toggle,
+              }
+            : get().capabilities,
         lastError: undefined,
       });
       return { ok: true };

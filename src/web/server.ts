@@ -127,6 +127,10 @@ export async function startWebUi(opts: StartWebUiOptions): Promise<WebUiHandle> 
       loaded_skills: llm.loaded_skills as string[] | undefined,
       workflow_confirm: workflowConfirm.getPending(),
       permission_confirm: permissionConfirm.getPending(),
+      workspace: {
+        type: 'workspace',
+        ...opts.runtime.getWorkspaceSnapshot(),
+      },
     };
     try {
       ws.send(JSON.stringify(hello));

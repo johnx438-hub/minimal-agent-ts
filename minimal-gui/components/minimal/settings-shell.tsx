@@ -16,6 +16,7 @@ type SectionId = GuideSectionId;
 const NAV: Array<{ id: SectionId; label: string; hint: string }> = [
   { id: "overview", label: "概览", hint: "连接与当前会话" },
   { id: "permissions", label: "权限与能力", hint: "shell / web" },
+  { id: "workspace", label: "工作区", hint: "cwd / grants" },
   { id: "presets", label: "子 Agent", hint: "spawn 预设" },
   { id: "mcp", label: "MCP", hint: "连接状态与配置" },
   { id: "guides", label: "指南", hint: "1–3 句教程" },
@@ -549,6 +550,246 @@ function PermissionsPanel() {
   );
 }
 
+function shortPath(p: string, max = 48): string {
+  if (p.length <= max) return p;
+  return `…${p.slice(-(max - 1))}`;
+}
+
+function WorkspacePanel() {
+  const isRunning = useMinimalStore((s) => s.isRunning);
+  const workspace = useMinimalStore((s) => s.workspace);
+  const refreshWorkspace = useMinimalStore((s) => s.refreshWorkspace);
+  const workspaceAllow = useMinimalStore((s) => s.workspaceAllow);
+  const workspaceRevoke = useMinimalStore((s) => s.workspaceRevoke);
+  const workspaceSetCwd = useMinimalStore((s) => s.workspaceSetCwd);
+  const workspaceGoPrimary = useMinimalStore((s) => s.workspaceGoPrimary);
+  const lastError = useMinimalStore((s) => s.lastError);
+
+  const [path, setPath] = useState("");
+  const [mode, setMode] = useState<"read_write" | "read_only">("read_write");
+  const [withShell, setWithShell] = useState(false);
+  const [withWeb, setWithWeb] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [localMsg, setLocalMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    void refreshWorkspace();
+  }, [refreshWorkspace]);
+
+  const run = async (fn: () => Promise<{ ok: boolean; message?: string }>) => {
+    setBusy(true);
+    setLocalMsg(null);
+    const r = await fn();
+    setBusy(false);
+    if (!r.ok) setLocalMsg(r.message ?? "failed");
+    else setLocalMsg(null);
+  };
+
+  const disabled = isRunning || busy;
+  const grants = workspace?.grants ?? [];
+  const active = workspace?.active_cwd ?? "—";
+  const primary = workspace?.primary ?? "—";
+
+  return (
+    <div className="flex flex-col gap-3">
+      <SectionCard title="当前工作区">
+        <p className="text-muted-foreground mb-3 text-[12px] leading-relaxed">
+          同 session 可切换 active_cwd；工具读写受 grants 约束。运行中不可改。
+          临时只读区外路径仍可用聊天里的 path_escape 弹窗。
+        </p>
+        <dl className="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-[7rem_1fr]">
+          <dt className="text-muted-foreground text-[11px]">active_cwd</dt>
+          <dd className="font-mono text-[12px] break-all" title={active}>
+            {active}
+          </dd>
+          <dt className="text-muted-foreground text-[11px]">primary</dt>
+          <dd className="font-mono text-[12px] break-all" title={primary}>
+            {primary}
+          </dd>
+          <dt className="text-muted-foreground text-[11px]">project</dt>
+          <dd className="font-mono text-[12px]">
+            {workspace
+              ? `${workspace.project_name} (${workspace.project_id.slice(0, 8)}…)`
+              : "—"}
+          </dd>
+          <dt className="text-muted-foreground text-[11px]">policy</dt>
+          <dd className="font-mono text-[12px]">
+            {workspace?.capability_policy ?? "—"} ·{" "}
+            {workspace?.session_store ?? "—"}
+          </dd>
+        </dl>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={disabled}
+            className="border-border/60 rounded-full border px-3 py-1 text-[11px] hover:bg-muted/50 disabled:opacity-40"
+            onClick={() => void refreshWorkspace()}
+          >
+            刷新
+          </button>
+          <button
+            type="button"
+            disabled={disabled || active === primary}
+            className="border-border/60 rounded-full border px-3 py-1 text-[11px] hover:bg-muted/50 disabled:opacity-40"
+            onClick={() => void run(() => workspaceGoPrimary())}
+          >
+            回到 primary
+          </button>
+        </div>
+        {(localMsg || lastError) && (
+          <p className="mt-2 text-[11px] text-red-600 dark:text-red-400">
+            {localMsg || lastError}
+          </p>
+        )}
+        {isRunning && (
+          <p className="text-muted-foreground mt-2 text-[11px]">
+            Agent 运行中，暂不可切换 cwd 或改 grants。
+          </p>
+        )}
+      </SectionCard>
+
+      <SectionCard title="路径授权 (allow)">
+        <div className="flex flex-col gap-2">
+          <input
+            type="text"
+            value={path}
+            disabled={disabled}
+            placeholder="/abs/path 或相对当前 cwd"
+            className="border-border/60 bg-background w-full rounded-lg border px-3 py-2 font-mono text-[12px] disabled:opacity-40"
+            onChange={(e) => setPath(e.target.value)}
+          />
+          <div className="flex flex-wrap items-center gap-3 text-[12px]">
+            <label className="flex items-center gap-1.5">
+              <input
+                type="radio"
+                name="grant-mode"
+                checked={mode === "read_write"}
+                disabled={disabled}
+                onChange={() => setMode("read_write")}
+              />
+              读写
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input
+                type="radio"
+                name="grant-mode"
+                checked={mode === "read_only"}
+                disabled={disabled}
+                onChange={() => setMode("read_only")}
+              />
+              只读
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={withShell}
+                disabled={disabled}
+                onChange={(e) => setWithShell(e.target.checked)}
+              />
+              +shell
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={withWeb}
+                disabled={disabled}
+                onChange={(e) => setWithWeb(e.target.checked)}
+              />
+              +web
+            </label>
+            <button
+              type="button"
+              disabled={disabled || !path.trim()}
+              className="bg-primary text-primary-foreground ml-auto rounded-full px-3 py-1 text-[11px] font-medium disabled:opacity-40"
+              onClick={() =>
+                void run(async () => {
+                  const r = await workspaceAllow({
+                    path: path.trim(),
+                    mode,
+                    shell: withShell,
+                    web: withWeb,
+                  });
+                  if (r.ok) setPath("");
+                  return r;
+                })
+              }
+            >
+              允许路径
+            </button>
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Grants">
+        {grants.length === 0 ? (
+          <p className="text-muted-foreground text-[12px]">暂无 grant 数据</p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {grants.map((g) => {
+              const isActive = g.root === workspace?.active_cwd;
+              const isPrimary = g.root === workspace?.primary;
+              return (
+                <li
+                  key={g.root}
+                  className="border-border/50 rounded-lg border bg-background/60 px-3 py-2"
+                >
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span
+                      className="min-w-0 flex-1 font-mono text-[11px] break-all"
+                      title={g.root}
+                    >
+                      {shortPath(g.root, 56)}
+                    </span>
+                    {isActive && (
+                      <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] text-emerald-800 dark:text-emerald-200">
+                        cwd
+                      </span>
+                    )}
+                    {isPrimary && (
+                      <span className="bg-muted rounded-full px-2 py-0.5 text-[10px]">
+                        primary
+                      </span>
+                    )}
+                    <span className="text-muted-foreground text-[10px]">
+                      {g.mode}
+                      {g.shell ? " · shell" : ""}
+                      {g.web ? " · web" : ""}
+                    </span>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      disabled={disabled || isActive}
+                      className="border-border/60 rounded-full border px-2 py-0.5 text-[10px] hover:bg-muted/50 disabled:opacity-40"
+                      onClick={() =>
+                        void run(() => workspaceSetCwd(g.root))
+                      }
+                    >
+                      设为 cwd
+                    </button>
+                    {!isPrimary && (
+                      <button
+                        type="button"
+                        disabled={disabled}
+                        className="border-border/60 rounded-full border px-2 py-0.5 text-[10px] text-red-700 hover:bg-red-500/10 disabled:opacity-40 dark:text-red-300"
+                        onClick={() =>
+                          void run(() => workspaceRevoke(g.root))
+                        }
+                      >
+                        撤销
+                      </button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </SectionCard>
+    </div>
+  );
+}
+
 function McpPanel() {
   const connection = useMinimalStore((s) => s.connection);
   const [status, setStatus] = useState<McpStatusDto | null>(null);
@@ -924,8 +1165,37 @@ function OverviewPanel() {
   );
 }
 
+const SECTION_IDS: SectionId[] = [
+  "overview",
+  "permissions",
+  "workspace",
+  "presets",
+  "mcp",
+  "guides",
+];
+
+function sectionFromHash(): SectionId {
+  if (typeof window === "undefined") return "overview";
+  const h = window.location.hash.replace(/^#/, "");
+  return (SECTION_IDS as string[]).includes(h) ? (h as SectionId) : "overview";
+}
+
 export function SettingsShell() {
   const [section, setSection] = useState<SectionId>("overview");
+
+  useEffect(() => {
+    setSection(sectionFromHash());
+    const onHash = () => setSection(sectionFromHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  const go = (id: SectionId) => {
+    setSection(id);
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", `#${id}`);
+    }
+  };
 
   return (
     <div className="flex h-full min-h-0 w-full">
@@ -944,7 +1214,7 @@ export function SettingsShell() {
               <li key={item.id}>
                 <button
                   type="button"
-                  onClick={() => setSection(item.id)}
+                  onClick={() => go(item.id)}
                   className={cn(
                     "w-full rounded-lg px-2.5 py-2 text-left transition",
                     active
@@ -983,10 +1253,11 @@ export function SettingsShell() {
 
           {section === "overview" && <OverviewPanel />}
           {section === "permissions" && <PermissionsPanel />}
+          {section === "workspace" && <WorkspacePanel />}
           {section === "presets" && <PresetsPanel />}
           {section === "mcp" && <McpPanel />}
           {section === "guides" && (
-            <GuidesPanel onNavigate={(id) => setSection(id)} />
+            <GuidesPanel onNavigate={(id) => go(id)} />
           )}
         </div>
       </div>

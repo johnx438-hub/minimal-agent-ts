@@ -6,6 +6,7 @@
 export type GuideSectionId =
   | "overview"
   | "permissions"
+  | "workspace"
   | "presets"
   | "mcp"
   | "guides";
@@ -58,10 +59,21 @@ export const SETTINGS_GUIDES: GuideCard[] = [
     body: [
       "Agent 要读当前 cwd / grant 之外的路径时，会弹出「允许一次 / 本会话 / 拒绝」。",
       "这是只读 JIT：写入仍受硬限制；Shell / Web 请继续用 Settings 开关。",
-      "本会话允许后，同一会话内再次逃逸路径不必重复点确认。",
+      "长期访问请到 Settings → 工作区 allow 路径；本会话允许后同类逃逸可少点确认。",
     ],
-    related: "permissions",
-    refs: ["聊天中 JIT 弹窗", "PermissionGate path_escape"],
+    related: "workspace",
+    refs: ["聊天中 JIT 弹窗", "Settings → 工作区"],
+  },
+  {
+    id: "workspace-cwd",
+    title: "工作区 allow 与切换 cwd",
+    body: [
+      "allow 把路径加入本会话 grants（可读/可写、可选附带 shell/web）。",
+      "切换 cwd 优先点 grants 里的「设为 cwd」；运行中不可改。",
+      "顶栏显示当前 active_cwd；回到 primary 可一键还原主项目根。",
+    ],
+    related: "workspace",
+    refs: ["Settings → 工作区", "GET /v1/workspace"],
   },
   {
     id: "web-cap",

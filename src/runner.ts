@@ -1370,6 +1370,43 @@ export class AgentRuntime {
     return lines.join('\n');
   }
 
+  /** Web Settings / status bar snapshot (no secrets). */
+  getWorkspaceSnapshot(): {
+    active_cwd: string;
+    primary: string;
+    project_id: string;
+    project_name: string;
+    session_store: string;
+    capability_policy: string;
+    grants: Array<{
+      root: string;
+      mode: string;
+      scope: string;
+      shell: boolean;
+      web: boolean;
+      label?: string;
+      granted_at: number;
+    }>;
+  } {
+    return {
+      active_cwd: getWorkspaceRoot(),
+      primary: getPrimaryRoot(),
+      project_id: getProjectId(),
+      project_name: projectDisplayName(),
+      session_store: getSessionStoreMode(),
+      capability_policy: getCwdCapabilityPolicy(),
+      grants: getWorkspaceGrants().map((g) => ({
+        root: g.root,
+        mode: g.mode,
+        scope: g.scope,
+        shell: Boolean(g.shell),
+        web: Boolean(g.web),
+        label: g.label,
+        granted_at: g.granted_at,
+      })),
+    };
+  }
+
   armWorkflow(path: string | null): void {
     this.armedWorkflowPath = path;
   }

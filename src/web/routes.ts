@@ -183,6 +183,181 @@ export async function handleApiRoute(
     return true;
   }
 
+  // ── Workspace / cwd + grants (SPEC_SESSION_WORKSPACE) ────────────────
+  const broadcastWorkspace = (): void => {
+    ctx.hub.broadcast({
+      type: 'workspace',
+      ...ctx.runtime.getWorkspaceSnapshot(),
+    });
+  };
+
+  if (path === '/v1/workspace' && method === 'GET') {
+    sendJson(res, 200, {
+      ok: true,
+      ...ctx.runtime.getWorkspaceSnapshot(),
+    });
+    return true;
+  }
+
+  if (path === '/v1/workspace/allow' && method === 'POST') {
+    if (ctx.runtime.isRunning()) {
+      sendJson(res, 409, { error: 'agent_running' });
+      return true;
+    }
+    let body: Record<string, unknown>;
+    try {
+      body = await parseJsonBody(req);
+    } catch (e) {
+      sendJson(res, 400, {
+        error: 'bad_body',
+        detail: e instanceof Error ? e.message : String(e),
+      });
+      return true;
+    }
+    const pathArg = String(body.path ?? '').trim();
+    if (!pathArg) {
+      sendJson(res, 400, { error: 'path_required' });
+      return true;
+    }
+    const modeRaw = String(body.mode ?? 'read_write').toLowerCase();
+    const mode =
+      modeRaw === 'read_only' || modeRaw === 'ro' ? 'read_only' : 'read_write';
+    try {
+      const grant = ctx.runtime.allowWorkspacePath({
+        path: pathArg,
+        mode,
+        scope: 'session',
+        shell: body.shell === true,
+        web: body.web === true,
+        label:
+          typeof body.label === 'string' ? body.label.trim() || undefined : undefined,
+      });
+      broadcastWorkspace();
+      sendJson(res, 200, {
+        ok: true,
+        grant: {
+          root: grant.root,
+          mode: grant.mode,
+          scope: grant.scope,
+          shell: Boolean(grant.shell),
+          web: Boolean(grant.web),
+          label: grant.label,
+        },
+        ...ctx.runtime.getWorkspaceSnapshot(),
+      });
+    } catch (e) {
+      sendJson(res, 400, {
+        error: 'allow_failed',
+        detail: e instanceof Error ? e.message : String(e),
+      });
+    }
+    return true;
+  }
+
+  if (path === '/v1/workspace/revoke' && method === 'POST') {
+    if (ctx.runtime.isRunning()) {
+      sendJson(res, 409, { error: 'agent_running' });
+      return true;
+    }
+    let body: Record<string, unknown>;
+    try {
+      body = await parseJsonBody(req);
+    } catch (e) {
+      sendJson(res, 400, {
+        error: 'bad_body',
+        detail: e instanceof Error ? e.message : String(e),
+      });
+      return true;
+    }
+    const pathArg = String(body.path ?? '').trim();
+    if (!pathArg) {
+      sendJson(res, 400, { error: 'path_required' });
+      return true;
+    }
+    const ok = ctx.runtime.revokeWorkspacePath(pathArg);
+    if (!ok) {
+      sendJson(res, 404, { error: 'grant_not_found', path: pathArg });
+      return true;
+    }
+    broadcastWorkspace();
+    sendJson(res, 200, { ok: true, ...ctx.runtime.getWorkspaceSnapshot() });
+    return true;
+  }
+
+  if (path === '/v1/workspace/cwd' && method === 'POST') {
+    if (ctx.runtime.isRunning()) {
+      sendJson(res, 409, { error: 'agent_running' });
+      return true;
+    }
+    let body: Record<string, unknown>;
+    try {
+      body = await parseJsonBody(req);
+    } catch (e) {
+      sendJson(res, 400, {
+        error: 'bad_body',
+        detail: e instanceof Error ? e.message : String(e),
+      });
+      return true;
+    }
+    const pathArg = String(body.path ?? '').trim();
+    if (!pathArg) {
+      sendJson(res, 400, { error: 'path_required' });
+      return true;
+    }
+    const grantIfMissing = body.grant_if_missing === true;
+    try {
+      await ctx.runtime.setCwd(pathArg, {
+        grantIfMissing,
+        grantMode:
+          body.mode === 'read_only' || body.mode === 'ro'
+            ? 'read_only'
+            : 'read_write',
+        grantShell: body.shell === true,
+        grantWeb: body.web === true,
+      });
+      broadcastWorkspace();
+      // Capabilities may drop on strict cwd switch
+      const caps = capabilitiesSnapshot(ctx.runtime);
+      ctx.hub.broadcast({ type: 'capabilities', ...caps });
+      sendJson(res, 200, {
+        ok: true,
+        ...ctx.runtime.getWorkspaceSnapshot(),
+        ...caps,
+      });
+    } catch (e) {
+      sendJson(res, 400, {
+        error: 'cwd_failed',
+        detail: e instanceof Error ? e.message : String(e),
+      });
+    }
+    return true;
+  }
+
+  if (path === '/v1/workspace/primary' && method === 'POST') {
+    if (ctx.runtime.isRunning()) {
+      sendJson(res, 409, { error: 'agent_running' });
+      return true;
+    }
+    try {
+      const snap = ctx.runtime.getWorkspaceSnapshot();
+      await ctx.runtime.setCwd(snap.primary, { grantIfMissing: true });
+      broadcastWorkspace();
+      const caps = capabilitiesSnapshot(ctx.runtime);
+      ctx.hub.broadcast({ type: 'capabilities', ...caps });
+      sendJson(res, 200, {
+        ok: true,
+        ...ctx.runtime.getWorkspaceSnapshot(),
+        ...caps,
+      });
+    } catch (e) {
+      sendJson(res, 400, {
+        error: 'primary_failed',
+        detail: e instanceof Error ? e.message : String(e),
+      });
+    }
+    return true;
+  }
+
   // ── Runtime capabilities (shell / web) ───────────────────────────────
   if (path === '/v1/runtime/capabilities' && method === 'GET') {
     sendJson(res, 200, capabilitiesSnapshot(ctx.runtime));

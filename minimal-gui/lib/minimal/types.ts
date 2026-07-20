@@ -180,6 +180,7 @@ export type WsFrame =
             status?: string;
           })
         | null;
+      workspace?: WorkspaceSnapshot & { type?: "workspace" };
     }
   | {
       type: "run_state";
@@ -250,6 +251,9 @@ export type WsFrame =
       reason?: string;
       choice?: "once" | "session" | "deny";
     }
+  | ({
+      type: "workspace";
+    } & WorkspaceSnapshot)
   | {
       role: "user" | "assistant" | "tool" | "system_notice";
       session_id?: string;
@@ -284,4 +288,25 @@ export interface WorkflowConfirmPending {
 export interface PermissionConfirmPending {
   kind: "path_escape" | "shell" | "web";
   reason: string;
+}
+
+export interface WorkspaceGrantMeta {
+  root: string;
+  mode: string;
+  scope: string;
+  shell: boolean;
+  web: boolean;
+  label?: string;
+  granted_at?: number;
+}
+
+/** active_cwd + path grants snapshot. */
+export interface WorkspaceSnapshot {
+  active_cwd: string;
+  primary: string;
+  project_id: string;
+  project_name: string;
+  session_store: string;
+  capability_policy: string;
+  grants: WorkspaceGrantMeta[];
 }

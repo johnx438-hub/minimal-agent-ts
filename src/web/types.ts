@@ -21,6 +21,8 @@ export interface WebHelloFrame {
   /** Reconnect while a workflow entry gate is waiting. */
   workflow_confirm?: WebWorkflowConfirmFrame | null;
   permission_confirm?: WebPermissionConfirmFrame | null;
+  /** Active workspace (cwd + grants) for status bar. */
+  workspace?: WebWorkspaceFrame;
 }
 export interface WebRunStateFrame {
   type: 'run_state';
@@ -125,6 +127,26 @@ export interface WebPermissionConfirmFrame {
   choice?: 'once' | 'session' | 'deny';
 }
 
+/** active_cwd + path grants (SPEC_SESSION_WORKSPACE). */
+export interface WebWorkspaceFrame {
+  type: 'workspace';
+  active_cwd: string;
+  primary: string;
+  project_id: string;
+  project_name: string;
+  session_store: string;
+  capability_policy: string;
+  grants: Array<{
+    root: string;
+    mode: string;
+    scope: string;
+    shell: boolean;
+    web: boolean;
+    label?: string;
+    granted_at: number;
+  }>;
+}
+
 export type WebControlFrame =
   | WebHelloFrame
   | WebRunStateFrame
@@ -137,7 +159,8 @@ export type WebControlFrame =
   | WebCapabilitiesFrame
   | WebSpawnFrame
   | WebWorkflowConfirmFrame
-  | WebPermissionConfirmFrame;
+  | WebPermissionConfirmFrame
+  | WebWorkspaceFrame;
 
 export interface WebUiServerOptions {
   /** Default 127.0.0.1 — never bind public without explicit opt-in later. */
