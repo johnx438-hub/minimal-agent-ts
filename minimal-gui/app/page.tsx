@@ -3,6 +3,7 @@
 import { Thread } from "@/components/assistant-ui/thread";
 import { ComposerChrome } from "@/components/minimal/composer-chrome";
 import { MinimalSidebar } from "@/components/minimal/sidebar";
+import { PermissionConfirmDialog } from "@/components/minimal/permission-confirm-dialog";
 import { WorkflowConfirmDialog } from "@/components/minimal/workflow-confirm-dialog";
 import { AuiProvider, Suggestions, useAui } from "@assistant-ui/react";
 
@@ -50,6 +51,7 @@ export default function Home() {
         <ComposerChrome />
       </div>
       <WorkflowConfirmDialog />
+      <PermissionConfirmDialog />
     </main>
   );
 }

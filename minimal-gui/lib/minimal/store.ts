@@ -27,6 +27,7 @@ import type {
   SessionMeta,
   RuntimeCapabilities,
   SkillMeta,
+  PermissionConfirmPending,
   WorkflowConfirmPending,
   WorkflowMeta,
   WsFrame,
@@ -65,6 +66,10 @@ export interface MinimalStore {
   /** Strict workflow entry gate (TUI overlay parity). */
   workflowConfirm: WorkflowConfirmPending | null;
   workflowConfirmBusy: boolean;
+
+  /** JIT path_escape (outside cwd read). */
+  permissionConfirm: PermissionConfirmPending | null;
+  permissionConfirmBusy: boolean;
 
   /** Sync spawn_agent activity (child stream not mixed into main bubbles). */
   activeSpawns: ActiveSpawn[];
@@ -117,6 +122,9 @@ export interface MinimalStore {
     pending_tasks?: string[];
   }) => void;
   respondWorkflowConfirm: (approved: boolean) => Promise<void>;
+  respondPermissionConfirm: (
+    choice: "once" | "session" | "deny",
+  ) => Promise<void>;
   refreshCapabilities: () => Promise<void>;
   setCapability: (
     kind: "shell" | "web",
@@ -306,6 +314,8 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
   workflowSteps: [],
   workflowConfirm: null,
   workflowConfirmBusy: false,
+  permissionConfirm: null,
+  permissionConfirmBusy: false,
   activeSpawns: [],
   capabilities: null,
   historySyncGen: 0,
@@ -366,6 +376,13 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
                     summary: wc.summary,
                   }
                 : get().workflowConfirm,
+            permissionConfirm: (() => {
+              const pc = frame.permission_confirm;
+              if (pc && (pc.status === "pending" || !pc.status) && pc.reason) {
+                return { kind: pc.kind, reason: pc.reason };
+              }
+              return get().permissionConfirm;
+            })(),
           });
           return;
         }
@@ -403,6 +420,9 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
               // Gate only lives while a workflow is waiting — clear on terminal states
               workflowConfirm: ending ? null : s.workflowConfirm,
               workflowConfirmBusy: ending ? false : s.workflowConfirmBusy,
+              // path_escape wait is mid-run; only clear busy flag on hard end
+              permissionConfirm: ending ? null : s.permissionConfirm,
+              permissionConfirmBusy: ending ? false : s.permissionConfirmBusy,
               activeSpawns: ending ? [] : s.activeSpawns,
               lastError:
                 frame.state === "error" ? frame.detail : s.lastError,
@@ -501,6 +521,23 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
             set({
               workflowConfirm: null,
               workflowConfirmBusy: false,
+            });
+          }
+          return;
+        }
+        case "permission_confirm": {
+          if (frame.status === "pending" && frame.reason) {
+            set({
+              permissionConfirm: {
+                kind: frame.kind,
+                reason: frame.reason,
+              },
+              permissionConfirmBusy: false,
+            });
+          } else {
+            set({
+              permissionConfirm: null,
+              permissionConfirmBusy: false,
             });
           }
           return;
@@ -973,7 +1010,12 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
         body: "{}",
         token: get().token || getMinimalToken(),
       });
-      set({ workflowConfirm: null, workflowConfirmBusy: false });
+      set({
+        workflowConfirm: null,
+        workflowConfirmBusy: false,
+        permissionConfirm: null,
+        permissionConfirmBusy: false,
+      });
     } catch (e) {
       set({
         lastError: e instanceof Error ? e.message : String(e),
@@ -991,14 +1033,28 @@ export const useMinimalStore = create<MinimalStore>((set, get) => ({
         token: get().token || getMinimalToken(),
       });
       // WS will clear pending; optimistically dismiss modal
-      if (!approved) {
-        set({ workflowConfirm: null, workflowConfirmBusy: false });
-      } else {
-        set({ workflowConfirm: null, workflowConfirmBusy: false });
-      }
+      set({ workflowConfirm: null, workflowConfirmBusy: false });
     } catch (e) {
       set({
         workflowConfirmBusy: false,
+        lastError: e instanceof Error ? e.message : String(e),
+      });
+    }
+  },
+
+  async respondPermissionConfirm(choice: "once" | "session" | "deny") {
+    if (get().permissionConfirmBusy) return;
+    set({ permissionConfirmBusy: true });
+    try {
+      await minimalFetch("/v1/permission/confirm", {
+        method: "POST",
+        body: JSON.stringify({ choice }),
+        token: get().token || getMinimalToken(),
+      });
+      set({ permissionConfirm: null, permissionConfirmBusy: false });
+    } catch (e) {
+      set({
+        permissionConfirmBusy: false,
         lastError: e instanceof Error ? e.message : String(e),
       });
     }

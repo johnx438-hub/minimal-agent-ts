@@ -174,6 +174,12 @@ export type WsFrame =
             status?: string;
           })
         | null;
+      permission_confirm?:
+        | (PermissionConfirmPending & {
+            type?: "permission_confirm";
+            status?: string;
+          })
+        | null;
     }
   | {
       type: "run_state";
@@ -238,6 +244,13 @@ export type WsFrame =
       summary?: string;
     }
   | {
+      type: "permission_confirm";
+      status: "pending" | "approved" | "denied" | "aborted";
+      kind: "path_escape" | "shell" | "web";
+      reason?: string;
+      choice?: "once" | "session" | "deny";
+    }
+  | {
       role: "user" | "assistant" | "tool" | "system_notice";
       session_id?: string;
       turn?: number;
@@ -265,4 +278,10 @@ export interface WorkflowConfirmPending {
     needs_web: boolean;
   }>;
   summary?: string;
+}
+
+/** JIT path_escape (read outside cwd). Shell/web use Settings. */
+export interface PermissionConfirmPending {
+  kind: "path_escape" | "shell" | "web";
+  reason: string;
 }

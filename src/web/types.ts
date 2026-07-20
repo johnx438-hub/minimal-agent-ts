@@ -20,6 +20,7 @@ export interface WebHelloFrame {
   jobs?: WebJobFrame[];
   /** Reconnect while a workflow entry gate is waiting. */
   workflow_confirm?: WebWorkflowConfirmFrame | null;
+  permission_confirm?: WebPermissionConfirmFrame | null;
 }
 export interface WebRunStateFrame {
   type: 'run_state';
@@ -115,6 +116,15 @@ export interface WebWorkflowConfirmFrame {
   summary?: string;
 }
 
+/** JIT path_escape (and reserved kinds) → browser modal. */
+export interface WebPermissionConfirmFrame {
+  type: 'permission_confirm';
+  status: 'pending' | 'approved' | 'denied' | 'aborted';
+  kind: 'path_escape' | 'shell' | 'web';
+  reason?: string;
+  choice?: 'once' | 'session' | 'deny';
+}
+
 export type WebControlFrame =
   | WebHelloFrame
   | WebRunStateFrame
@@ -126,7 +136,8 @@ export type WebControlFrame =
   | WebSkillsFrame
   | WebCapabilitiesFrame
   | WebSpawnFrame
-  | WebWorkflowConfirmFrame;
+  | WebWorkflowConfirmFrame
+  | WebPermissionConfirmFrame;
 
 export interface WebUiServerOptions {
   /** Default 127.0.0.1 — never bind public without explicit opt-in later. */

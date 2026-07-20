@@ -22,7 +22,9 @@ import {
 } from './uploads.js';
 import { isWebAuthDisabled } from './auth.js';
 
+import type { WebPermissionConfirmController } from './permission-confirm.js';
 import type { WebWorkflowConfirmController } from './workflow-confirm.js';
+import type { PermissionChoice } from '../permission-gate.js';
 
 function capabilitiesSnapshot(runtime: import('../runner.js').AgentRuntime) {
   const gate = runtime.permissionGate;
@@ -49,6 +51,8 @@ export interface RouteContext {
   cwd: string;
   /** Strict workflow entry gate (TUI overlay parity). */
   workflowConfirm?: WebWorkflowConfirmController;
+  /** JIT path_escape (shell/web Settings-only). */
+  permissionConfirm?: WebPermissionConfirmController;
 }
 
 function readBody(req: IncomingMessage, maxBytes = 1_000_000): Promise<string> {
@@ -905,6 +909,62 @@ export async function handleApiRoute(
       return true;
     }
     sendJson(res, 200, { ok: true, approved });
+    return true;
+  }
+
+  // GET pending path_escape permission (reconnect)
+  if (path === '/v1/permission/confirm' && method === 'GET') {
+    const pending = ctx.permissionConfirm?.getPending() ?? null;
+    sendJson(res, 200, { pending });
+    return true;
+  }
+
+  // POST once | session | deny — primarily path_escape
+  if (path === '/v1/permission/confirm' && method === 'POST') {
+    if (!ctx.permissionConfirm) {
+      sendJson(res, 503, { error: 'permission_confirm_unavailable' });
+      return true;
+    }
+    let body: Record<string, unknown>;
+    try {
+      body = await parseJsonBody(req);
+    } catch (e) {
+      sendJson(res, 400, {
+        error: 'bad_body',
+        detail: e instanceof Error ? e.message : String(e),
+      });
+      return true;
+    }
+
+    let choice: PermissionChoice | null = null;
+    const raw = String(body.choice ?? body.decision ?? '').trim().toLowerCase();
+    if (raw === 'once' || raw === 'session' || raw === 'deny') {
+      choice = raw;
+    } else if (body.approved === true || body.approve === true) {
+      // Default approve → session (safer for multi-file tools in one turn)
+      choice = body.scope === 'once' ? 'once' : 'session';
+    } else if (
+      body.approved === false ||
+      body.approve === false ||
+      body.deny === true
+    ) {
+      choice = 'deny';
+    }
+
+    if (!choice) {
+      sendJson(res, 400, {
+        error: 'choice_required',
+        detail: 'body.choice must be once | session | deny',
+      });
+      return true;
+    }
+
+    const ok = ctx.permissionConfirm.respond(choice);
+    if (!ok) {
+      sendJson(res, 409, { error: 'no_pending_permission' });
+      return true;
+    }
+    sendJson(res, 200, { ok: true, choice });
     return true;
   }
 

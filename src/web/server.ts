@@ -27,6 +27,7 @@ import { broadcastArmed, llmStatus } from '../slash/index.js';
 import { subscribeJobUi } from '../spawn/job-ui-notify.js';
 import { attachRuntimeEventBridge, snapshotJobs } from './event-bridge.js';
 import type { WebHelloFrame, WebUiHandle, WebUiServerOptions } from './types.js';
+import { createWebPermissionConfirm } from './permission-confirm.js';
 import { createWebWorkflowConfirm } from './workflow-confirm.js';
 import { WsHub } from './ws-hub.js';
 import { createWsMessageSink } from './ws-sink.js';
@@ -72,6 +73,9 @@ export async function startWebUi(opts: StartWebUiOptions): Promise<WebUiHandle> 
   // Strict workflow entry (same gate as TUI overlay — no always-remember)
   const workflowConfirm = createWebWorkflowConfirm(hub);
   opts.runtime.setWorkflowConfirmFn(workflowConfirm.confirmFn);
+  // JIT path_escape (shell/web stay Settings-only)
+  const permissionConfirm = createWebPermissionConfirm(hub);
+  opts.runtime.permissionGate.setPrompter(permissionConfirm.prompter);
 
   const server: Server = createServer((req, res) => {
     void handleHttp(req, res);
@@ -122,6 +126,7 @@ export async function startWebUi(opts: StartWebUiOptions): Promise<WebUiHandle> 
       armed_workflow: (llm.armed_workflow as string | null) ?? undefined,
       loaded_skills: llm.loaded_skills as string[] | undefined,
       workflow_confirm: workflowConfirm.getPending(),
+      permission_confirm: permissionConfirm.getPending(),
     };
     try {
       ws.send(JSON.stringify(hello));
@@ -171,6 +176,7 @@ export async function startWebUi(opts: StartWebUiOptions): Promise<WebUiHandle> 
           hub,
           cwd,
           workflowConfirm,
+          permissionConfirm,
         })
       ) {
         return;
@@ -228,6 +234,8 @@ export async function startWebUi(opts: StartWebUiOptions): Promise<WebUiHandle> 
       unsubJobs();
       workflowConfirm.dispose();
       opts.runtime.setWorkflowConfirmFn(undefined);
+      permissionConfirm.dispose();
+      opts.runtime.permissionGate.setPrompter(undefined);
       hub.closeAll();
       await new Promise<void>((resolveClose, reject) => {
         wss.close(() => {

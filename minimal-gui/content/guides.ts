@@ -47,10 +47,21 @@ export const SETTINGS_GUIDES: GuideCard[] = [
     body: [
       "Shell 打开后，Agent 才能调用 run_shell（工作区内的命令行）。",
       "启动时加 --allow-shell，或在 Settings → 权限 热开（仅当前进程，运行中不可改）。",
-      "开 shell 等于高权限：只在本机 / 内网受信环境使用。",
+      "开 shell 等于高权限：只在本机 / 内网受信环境使用。跨目录只读另有 JIT 弹窗，不在这里。",
     ],
     related: "permissions",
     refs: ["npm run web -- --allow-shell", "Settings → 权限"],
+  },
+  {
+    id: "path-escape",
+    title: "跨工作目录读取许可",
+    body: [
+      "Agent 要读当前 cwd / grant 之外的路径时，会弹出「允许一次 / 本会话 / 拒绝」。",
+      "这是只读 JIT：写入仍受硬限制；Shell / Web 请继续用 Settings 开关。",
+      "本会话允许后，同一会话内再次逃逸路径不必重复点确认。",
+    ],
+    related: "permissions",
+    refs: ["聊天中 JIT 弹窗", "PermissionGate path_escape"],
   },
   {
     id: "web-cap",
