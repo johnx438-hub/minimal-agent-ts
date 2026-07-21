@@ -1,0 +1,59 @@
+# Dev / local
+node_modules/
+.sessions/
+workspace/
+.cache/
+.env
+.env.*
+!.env.example
+*.log
+
+# GUI (separate app; not part of CLI beta)
+minimal-gui/
+
+# Tests & build intermediates
+tests/
+coverage/
+*.tsbuildinfo
+
+# Docs bulk (keep README + QUICKSTART via package.json files)
+docs/
+reports/
+web-articles/
+*.pdf
+demos/
+
+# Specs & internal notes (README points to GitHub)
+SPEC_*.md
+CONVERSATION_SUMMARY.md
+PROJECT_SUMMARY.md
+ROADMAP.md
+thrust-article-summary.md
+venturebeat-jspace-summary.md
+tiny-emulators-report.md
+ghostlock-report.md
+backtrack-free-cursive-summary.md
+workflow-module-analysis.md
+
+# Local prefs / OS
+.tui-prefs*.json
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.agent/
+.git/
+
+# Source is compiled to dist — do not ship raw src in beta
+# (override: we use "files" whitelist in package.json instead)
+
+# Skill crates / junk that should never ship even if globs expand
+skills/**/target/
+skills/**/src/
+skills/**/tests/
+skills/**/debian/
+skills/**/Cargo.*
+skills/**/*.rs
+skills/**/*.Identifier
+skills/cli-web-search/
+skills/opencli-usage/

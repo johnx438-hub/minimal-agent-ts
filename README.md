@@ -51,6 +51,17 @@ TypeScript 写的 Agent 框架，目标针对长程任务三大顽疾：**越跑
 
 **仓库地址**: https://github.com/johnx438-hub/minimal-agent-ts
 
+### npm BETA（试玩 TUI + 主体）
+
+```bash
+npm install -g minimal-agent-ts@beta   # Node ≥ 22
+# 在含 agent.json / .env 的目录，或先 clone 本仓：
+minimal-agent                          # 交互 TUI
+minimal-agent-run "你的任务"            # 无界面单次
+```
+
+不含 Web GUI；实验性接口可能变。详见 [QUICKSTART.md](./QUICKSTART.md)。
+
 | 文档 | 用途 |
 |------|------|
 | [QUICKSTART.md](./QUICKSTART.md) | 安装与常用命令 |

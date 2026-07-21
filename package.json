@@ -1,13 +1,76 @@
 {
   "name": "minimal-agent-ts",
-  "version": "0.1.0",
+  "version": "0.1.0-beta.1",
   "private": false,
   "type": "module",
-  "description": "TypeScript agent harness evolved from context/event-structure experiments (ReAct, pointerize, spawn, TUI)",
+  "description": "Long-horizon agent harness: pointerize context, TUI, ReAct — experimental BETA",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/johnx438-hub/minimal-agent-ts.git"
+  },
+  "homepage": "https://github.com/johnx438-hub/minimal-agent-ts#readme",
+  "bugs": {
+    "url": "https://github.com/johnx438-hub/minimal-agent-ts/issues"
+  },
+  "keywords": [
+    "agent",
+    "llm",
+    "react",
+    "tui",
+    "context-management",
+    "pointerize",
+    "long-horizon",
+    "experimental"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "beta"
+  },
+  "bin": {
+    "minimal-agent": "bin/minimal-agent.mjs",
+    "minimal-agent-run": "bin/minimal-agent-run.mjs"
+  },
+  "main": "./dist/runner.js",
+  "types": "./dist/runner.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/runner.d.ts",
+      "import": "./dist/runner.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "agents",
+    "skills/background-spawn/SKILL.md",
+    "skills/cloak-fetch/SKILL.md",
+    "skills/cloak-fetch/cloak_fetch.py",
+    "skills/context-design/SKILL.md",
+    "skills/memory/SKILL.md",
+    "skills/office-layout/SKILL.md",
+    "skills/workflow-design/SKILL.md",
+    "workflows",
+    "roles",
+    "agent.json",
+    "agent.mcp.example.json",
+    "agent.llm.example.json",
+    "agent.llm.2key.example.json",
+    ".env.example",
+    "README.md",
+    "QUICKSTART.md",
+    "LICENSE"
+  ],
   "scripts": {
     "start": "tsx src/main.ts",
     "tui": "tsx src/tui/main.ts",
     "web": "tsx src/web-cli.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
     "typecheck": "tsc --noEmit",
     "test": "NODE_ENV=test node --import tsx --test tests/**/*.test.ts",
     "test:one": "NODE_ENV=test node --import tsx --test",
@@ -24,9 +87,6 @@
     "@types/ws": "^8.18.1",
     "tsx": "^4.21.0",
     "typescript": "^5.8.3"
-  },
-  "engines": {
-    "node": ">=22.0.0"
   },
   "dependencies": {
     "@earendil-works/pi-tui": "^0.80.3",
