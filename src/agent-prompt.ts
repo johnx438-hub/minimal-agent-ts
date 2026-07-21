@@ -57,7 +57,9 @@ function pointerizeRecallGuidance(recallMaxKb: number): string {
   const recallLead = firstSentence(RECALL_DEFINITIONS[0].function.description);
   return (
     `Large tool outputs become [action:…] cards after a few turns; recent turns stay inline. ` +
-    `${recallLead} Default full-text limit ~${recallMaxKb}KB when using action_id.`
+    `${recallLead} Default full-text limit ~${recallMaxKb}KB when using action_id. ` +
+    'If results are pointerized too soon for multi-file or multi-clause cross-checks, ' +
+    'use context_focus to extend the inline keep window instead of recall loops.'
   );
 }
 
@@ -92,6 +94,14 @@ function toolGuidanceLine(name: string, description: string): string | null {
       return (
         'spawn_background is fire-and-forget by default: job completion is pushed to this session ' +
         '(system notice / optional auto_run). Do not busy-poll or re-check the same job every turn.'
+      );
+    case 'context_focus':
+      return (
+        `${firstSentence(description)} ` +
+        'Use when long tasks need multi-file / multi-clause cross-check and results would otherwise ' +
+        'slide out of the inline window into [action:…] cards (recall thrash). ' +
+        'Raise keep_inline_turns + ttl_turns for that window; clear=true or wait for TTL when done. ' +
+        'Main agent only; prefer over repeated recall_query of the same action_ids.'
       );
     case 'invoke_skill':
     case 'spawn_agent':
@@ -169,6 +179,7 @@ export function buildSystemPrompt(config: AgentConfig): string {
     'web_fetch',
     'write_file',
     'edit_file',
+    'context_focus',
     'invoke_skill',
     'spawn_agent',
     'spawn_background',

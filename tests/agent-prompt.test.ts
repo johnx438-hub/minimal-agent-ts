@@ -45,6 +45,14 @@ describe('buildSystemPrompt', () => {
     assert.match(buildFrameworkWorkspaceHints(), /Built-in/);
   });
 
+  it('pointerize guidance mentions context_focus as anti-recall-thrash hook', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agent-prompt-'));
+    const prompt = buildSystemPrompt(minimalConfig(dir));
+    assert.match(prompt, /\[action:…\]/);
+    assert.match(prompt, /context_focus/);
+    assert.match(prompt, /instead of recall loops/i);
+  });
+
   it('prefers llm.model and displayName when set', () => {
     const dir = mkdtempSync(join(tmpdir(), 'agent-prompt-'));
     const cfg: AgentConfig = {
