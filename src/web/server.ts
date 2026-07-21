@@ -38,10 +38,12 @@ export interface StartWebUiOptions extends WebUiServerOptions {
 }
 
 function defaultUiDir(cwd: string): string {
-  // Prefer shipped public/web-ui; fall back to local workspace scratch.
+  // Stub API landing page (not a full GUI). Legacy shell lives in web-ui-legacy/.
   const shipped = resolve(cwd, 'public', 'web-ui');
+  const legacy = resolve(cwd, 'public', 'web-ui-legacy');
   const local = resolve(cwd, 'workspace', 'web-ui');
   if (existsSync(resolve(shipped, 'index.html'))) return shipped;
+  if (existsSync(resolve(legacy, 'index.html'))) return legacy;
   if (existsSync(resolve(local, 'index.html'))) return local;
   return shipped;
 }

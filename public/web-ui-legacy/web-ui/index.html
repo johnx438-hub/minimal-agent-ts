@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>minimal-agent-ts · Web API</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d1117;
+      --fg: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --border: #30363d;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: ui-sans-serif, system-ui, "Segoe UI", "PingFang SC", sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+    main {
+      max-width: 36rem;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem 1.75rem;
+      line-height: 1.55;
+    }
+    h1 { font-size: 1.15rem; margin: 0 0 0.75rem; }
+    p { margin: 0.5rem 0; color: var(--muted); font-size: 0.9rem; }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 0.82rem;
+      color: var(--accent);
+    }
+    ul { margin: 0.6rem 0 0; padding-left: 1.2rem; color: var(--muted); font-size: 0.88rem; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Web API is running · 不是完整 GUI</h1>
+    <p>
+      本端口是 harness 的 <strong>HTTP / WebSocket API</strong>。
+      推荐日常使用 <strong>TUI</strong>（终端），不要把这个页面当成产品 UI。
+    </p>
+    <p>快速自检：</p>
+    <ul>
+      <li><code>GET /health</code> — 进程是否就绪</li>
+      <li>仓库根：<code>npm run tui</code> — 交互 Agent（推荐）</li>
+      <li><code>minimal-gui/</code> — Next 实验性浏览器 UI（WIP，默认不推荐）</li>
+      <li>旧静态壳已挪到 <code>public/web-ui-legacy/</code>，仅作考古</li>
+    </ul>
+    <p style="margin-top:1rem">
+      文档：
+      <a href="https://github.com/johnx438-hub/minimal-agent-ts">GitHub</a>
+      · README 快速开始 ·
+      <a href="https://github.com/johnx438-hub/minimal-agent-ts/blob/master/docs/EVAL_LITM.md">EVAL_LITM</a>
+    </p>
+  </main>
+</body>
+</html>

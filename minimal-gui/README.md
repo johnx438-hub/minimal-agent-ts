@@ -1,38 +1,23 @@
-# External Store Integration
+# minimal-gui · 实验性浏览器 UI（WIP）
 
-This example demonstrates how to use assistant-ui with an external message store using `useExternalStoreRuntime`.
+> **默认不推荐试用。** 展示冲刺遗留 dogfood 界面；问题与未完成项较多。  
+> **不随** npm 包 `minimal-agent-ts` 发布。日常请用仓库根 **TUI**：`npm run tui`。
 
-## Quick Start
+## 依赖
 
-### Using CLI (Recommended)
+1. 先起 harness Web API（仓库根）：
+   ```bash
+   npm run web -- --allow-shell --web-port 7788
+   ```
+2. 再起本目录：
+   ```bash
+   npm install
+   npm run dev
+   ```
+3. 环境变量见 `.env.local` 示例（`NEXT_PUBLIC_MINIMAL_BASE_URL` / token）。
 
-```bash
-npx assistant-ui@latest create my-app --example with-external-store
-cd my-app
-```
+## 状态
 
-### Environment Variables
-
-Create `.env.local`:
-
-```
-OPENAI_API_KEY=sk-...
-```
-
-### Run
-
-```bash
-npm run dev
-```
-
-## Features
-
-- External store runtime via `useExternalStoreRuntime`
-- Custom message state management
-- React state-based message storage
-- Message conversion utilities
-
-## Related Documentation
-
-- [assistant-ui Documentation](https://www.assistant-ui.com/docs)
-- [External Store Runtime Guide](https://www.assistant-ui.com/docs/runtimes/external-store)
+- 与 `src/web` API 对接（session / workspace / path_escape 等）。
+- **非稳定**；打磨完成前不会写入 README「推荐路径」。
+- 旧静态壳见 `public/web-ui-legacy/`（已归档）。

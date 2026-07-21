@@ -51,24 +51,26 @@ TypeScript 写的 Agent 框架，目标针对长程任务三大顽疾：**越跑
 
 **仓库地址**: https://github.com/johnx438-hub/minimal-agent-ts
 
-### 仓库结构：主体 + TUI vs GUI
+### 仓库结构：主体 + TUI（推荐）· GUI（WIP）
 
-单仓库 monorepo；**发布到 npm 的只有「主体 + TUI」**，浏览器 GUI 是可选子目录。
+单仓库 monorepo。**对外默认路径 = 终端 TUI + 主体**；浏览器界面**不是**当前门面。
 
 | 路径 | 内容 | 谁需要 |
 |------|------|--------|
-| 根目录 `src/` · `bin/` | Agent Runtime、TUI、Web **API**（`npm run web`） | 几乎所有人 |
-| `minimal-gui/` | Next 浏览器 UI（assistant-ui） | 可选 dogfood / 演示 |
+| 根目录 `src/` · `bin/` | Agent Runtime、**TUI**、Web **API**（`npm run web`） | **几乎所有人** |
+| `public/web-ui/` | `npm run web` 时的**说明页**（非产品 UI） | 打开 API 端口时顺带看到 |
+| `public/web-ui-legacy/` | 早期静态壳，**已归档** | 考古 only |
+| `minimal-gui/` | Next 浏览器 UI | **维护者 dogfood · WIP · 默认不推荐** |
 | `docs/EVAL_LITM.md` 等 | 长程实验与规范 | 评测 / 二次开发 |
 
-**约定（读命令时看标签）：**
+**约定：**
 
 | 标签 | 含义 |
 |------|------|
-| **不带 GUI** | 不装 `minimal-gui` 依赖、不跑 Next；只要终端 Agent |
-| **带 GUI（完整开发默认）** | `git clone` 全仓 + 根目录依赖 + `minimal-gui` 依赖；要浏览器界面时按下面「带 GUI」启动 |
+| **不带 GUI（推荐）** | 只要终端 Agent；不要 `cd minimal-gui` |
+| **GUI · WIP** | 可选；问题多，打磨前不写入「稳定能力」 |
 
-> npm 包 **从不包含** `minimal-gui`。`git clone` 会带上该目录，但**只有**你在 `minimal-gui` 里 `npm install` / `npm run dev` 时才会用到 GUI。
+> npm 包 **不含** `minimal-gui`。`git clone` 会带上该目录，**忽略即可**，除非你在维护浏览器 UI。
 
 | 文档 | 用途 |
 |------|------|
@@ -130,34 +132,25 @@ git sparse-checkout set '/*' '!minimal-gui'
 npm install && cp .env.example .env && npm run tui
 ```
 
-### B. 带 GUI（完整开发默认路径）
+### B. GUI · WIP（维护者 dogfood · **默认不推荐**）
 
-`git clone` **默认带上** `minimal-gui/`。要浏览器界面时，在 **A 的源码步骤** 之上再加：
+浏览器 UI 曾用于内部展示，**尚未打磨到可推荐**。需要时见 [`minimal-gui/README.md`](./minimal-gui/README.md)。
 
 ```bash
-# 已在仓库根、已 npm install、已配置 .env
-
-# 终端 1：主体 Web API（:7788，属于 harness，不是 Next）
-npm run web -- --allow-shell --web-port 7788
-
-# 终端 2：浏览器 GUI（Next，默认 :3000）
-cd minimal-gui
-npm install
-# 可选：.env.local 里
-# NEXT_PUBLIC_MINIMAL_BASE_URL=http://127.0.0.1:7788
-# NEXT_PUBLIC_MINIMAL_TOKEN=…   # 与 web 打印的 token 一致；或 --no-auth
-npm run dev
-# 浏览器打开 http://localhost:3000
+# 已完成 A 的源码步骤后：
+npm run web -- --allow-shell --web-port 7788   # 终端 1：API only
+cd minimal-gui && npm install && npm run dev   # 终端 2：Next WIP
 ```
 
-| 命令 | 带 GUI？ | 说明 |
-|------|----------|------|
-| ~~`minimal-agent` / `minimal-agent-run`~~ | **否** | npm CLI · **暂未发包**，上架后可用 |
-| `npm run tui` / `npm start` | **否** | 源码根目录脚本，终端 Agent · **现在推荐** |
-| `npm run web` | **否**（仅 API + 可选静态页） | harness 的 HTTP/WS；**不是** `minimal-gui` |
-| `cd minimal-gui && npm run dev` | **是** | 完整浏览器 UI，需先有 `npm run web` |
+| 命令 | 产品 GUI？ | 说明 |
+|------|------------|------|
+| ~~`minimal-agent` / `minimal-agent-run`~~ | 否 | npm CLI · **暂未发包** |
+| `npm run tui` / `npm start` | 否 | **现在推荐** · 终端 Agent |
+| `npm run web` | 否 | harness **API**；浏览器只有说明页（非聊天 UI） |
+| `public/web-ui-legacy/` | 否 | **已归档** 的旧静态壳 |
+| `minimal-gui` → `npm run dev` | WIP | 实验性 Next UI，需先 `npm run web` |
 
-TUI 里也可 `npm run tui -- --web` 顺带起 Web API，**仍不等于**启动 Next GUI。
+TUI 里 `npm run tui -- --web` 只顺带起 API，**不等于**启动 `minimal-gui`。
 
 ---
 

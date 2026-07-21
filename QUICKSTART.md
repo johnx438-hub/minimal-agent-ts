@@ -6,10 +6,10 @@
 
 | 你要… | 做什么 |
 |--------|--------|
-| **不带 GUI**（推荐试用） | clone 后根目录 `npm i` → `npm run tui`（**现在**）；~~`minimal-agent-ts@beta`~~ 暂未发包 |
-| **带 GUI**（完整开发默认） | clone 全仓 + 根 `npm i` + `minimal-gui` 里再 `npm i`；`npm run web` + `npm run dev` |
+| **不带 GUI**（**推荐**试用） | clone 后根目录 `npm i` → `npm run tui`；~~`@beta`~~ 暂未发包 |
+| **GUI · WIP**（默认**不**推荐） | 见 [`minimal-gui/README.md`](./minimal-gui/README.md)；需 `npm run web` + Next |
 
-`minimal-gui/` 是可选 Next 前端；**npm 包（上架后）也不包含它**。详见 [README 快速开始](./README.md#快速开始)。
+`minimal-gui/` 为实验性前端；**npm 包不含它**。`npm run web` 只起 **API** + 说明页，旧静态壳在 `public/web-ui-legacy/`。详见 [README](./README.md#快速开始)。
 
 ## npm BETA（不带 GUI）— **暂未发包**
 
@@ -26,12 +26,12 @@
 
 ~~`npm install -g minimal-agent-ts@beta`~~ · ~~`minimal-agent`~~ · ~~`minimal-agent-run`~~ — **暂不可用**。
 
-| 命令 | 带 GUI？ | 状态 |
-|------|----------|------|
+| 命令 | 产品 GUI？ | 状态 |
+|------|------------|------|
 | ~~`minimal-agent` / `minimal-agent-run`~~ | 否 | **暂未发包** |
 | 源码 `npm run tui` / `npm start` | 否 | **现在推荐** |
-| `npm run web` | 否（仅 API） | 可用 |
-| `minimal-gui` → `npm run dev` | **是** | 可选 |
+| `npm run web` | 否（API + 说明页） | 可用；非聊天 UI |
+| `minimal-gui` → `npm run dev` | WIP | 维护者 dogfood，默认不推荐 |
 
 本地只要 TUI：`git clone` → 根目录 `npm install` → `npm run tui`（**不要** `cd minimal-gui`）。
 
