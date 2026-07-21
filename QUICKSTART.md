@@ -2,35 +2,37 @@
 
 > 把 harness 跑起来。项目定位与特性见 [README.md](./README.md)；依赖分层见 [docs/DEPS.md](./docs/DEPS.md)。
 
-## npm BETA（TUI + 主体）
+## 不带 GUI vs 带 GUI
 
-> **实验性** `0.1.0-beta.x`：长程上下文结构实验用 CLI，**不含** Next GUI。  
-> 问题与反馈：[Issues](https://github.com/johnx438-hub/minimal-agent-ts/issues)
+| 你要… | 做什么 |
+|--------|--------|
+| **不带 GUI**（推荐试用） | 只装根目录依赖或 `minimal-agent-ts@beta`；`npm run tui` / `minimal-agent` |
+| **带 GUI**（完整开发默认） | clone 全仓 + 根 `npm i` + `minimal-gui` 里再 `npm i`；`npm run web` + `npm run dev` |
+
+`minimal-gui/` 是可选 Next 前端；**npm 包从不包含它**。详见 [README 快速开始](./README.md#快速开始)。
+
+## npm BETA（不带 GUI · 仅 TUI + 主体）
+
+> **实验性** `0.1.0-beta.x`：**不含** Next GUI。反馈：[Issues](https://github.com/johnx438-hub/minimal-agent-ts/issues)
 
 ```bash
 # Node.js ≥ 22
 npm install -g minimal-agent-ts@beta
-# 或在空目录试跑：
-# npx minimal-agent-ts@beta   # 若 bin 名冲突见下
 
-mkdir my-agent-sandbox && cd my-agent-sandbox
-# 从仓库复制一份默认配置（或 git clone 后在仓库根运行）
-# curl -sL https://raw.githubusercontent.com/johnx438-hub/minimal-agent-ts/master/.env.example -o .env.example
-# 最小：在仓库根已有 agent.json 时直接：
-
-export DEEPSEEK_API_KEY=sk-你的key   # 或写进 .env
-minimal-agent                        # 交互 TUI（默认 shell 开，同仓库 npm run tui）
-minimal-agent-run "用三句话说明当前目录"   # 无界面单次任务
+export DEEPSEEK_API_KEY=sk-你的key   # 或写进 .env；建议在含 agent.json 的目录跑
+minimal-agent                        # 交互 TUI（不带 GUI）
+minimal-agent-run "用三句话说明当前目录"   # headless（不带 GUI）
 ```
 
-全局命令名：
+| 命令 | 带 GUI？ | 作用 |
+|------|----------|------|
+| `minimal-agent` | 否 | 交互 TUI |
+| `minimal-agent-run` | 否 | headless 单次任务 |
+| 源码 `npm run tui` / `npm start` | 否 | 同上 |
+| `npm run web` | 否（仅 API） | HTTP/WS harness |
+| `minimal-gui` → `npm run dev` | **是** | 浏览器 UI |
 
-| 命令 | 作用 |
-|------|------|
-| `minimal-agent` | 交互 TUI（主入口） |
-| `minimal-agent-run` | headless 单次任务 |
-
-本地从源码开发仍推荐：`git clone` → `npm install` → `npm run tui`。
+本地只要 TUI：`git clone` → 根目录 `npm install` → `npm run tui`（**不要** `cd minimal-gui`）。
 
 ## 环境
 
