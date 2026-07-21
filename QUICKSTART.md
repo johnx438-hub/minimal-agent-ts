@@ -6,31 +6,32 @@
 
 | 你要… | 做什么 |
 |--------|--------|
-| **不带 GUI**（推荐试用） | 只装根目录依赖或 `minimal-agent-ts@beta`；`npm run tui` / `minimal-agent` |
+| **不带 GUI**（推荐试用） | clone 后根目录 `npm i` → `npm run tui`（**现在**）；~~`minimal-agent-ts@beta`~~ 暂未发包 |
 | **带 GUI**（完整开发默认） | clone 全仓 + 根 `npm i` + `minimal-gui` 里再 `npm i`；`npm run web` + `npm run dev` |
 
-`minimal-gui/` 是可选 Next 前端；**npm 包从不包含它**。详见 [README 快速开始](./README.md#快速开始)。
+`minimal-gui/` 是可选 Next 前端；**npm 包（上架后）也不包含它**。详见 [README 快速开始](./README.md#快速开始)。
 
-## npm BETA（不带 GUI · 仅 TUI + 主体）
+## npm BETA（不带 GUI）— **暂未发包**
 
-> **实验性** `0.1.0-beta.x`：**不含** Next GUI。反馈：[Issues](https://github.com/johnx438-hub/minimal-agent-ts/issues)
+> 仓库已准备好 `0.1.0-beta.1` 打包（`bin` / `dist` / `files`），**registry 尚未 `publish`**（作者侧 2FA 就绪后会发）。  
+> **请先用源码安装**，勿依赖下列划线命令。反馈：[Issues](https://github.com/johnx438-hub/minimal-agent-ts/issues)
 
 ```bash
-# Node.js ≥ 22
-npm install -g minimal-agent-ts@beta
-
-export DEEPSEEK_API_KEY=sk-你的key   # 或写进 .env；建议在含 agent.json 的目录跑
-minimal-agent                        # 交互 TUI（不带 GUI）
-minimal-agent-run "用三句话说明当前目录"   # headless（不带 GUI）
+# ── 上架后（Node ≥ 22，包内无 GUI）──
+# npm install -g minimal-agent-ts@beta
+# export DEEPSEEK_API_KEY=sk-你的key
+# minimal-agent
+# minimal-agent-run "用三句话说明当前目录"
 ```
 
-| 命令 | 带 GUI？ | 作用 |
+~~`npm install -g minimal-agent-ts@beta`~~ · ~~`minimal-agent`~~ · ~~`minimal-agent-run`~~ — **暂不可用**。
+
+| 命令 | 带 GUI？ | 状态 |
 |------|----------|------|
-| `minimal-agent` | 否 | 交互 TUI |
-| `minimal-agent-run` | 否 | headless 单次任务 |
-| 源码 `npm run tui` / `npm start` | 否 | 同上 |
-| `npm run web` | 否（仅 API） | HTTP/WS harness |
-| `minimal-gui` → `npm run dev` | **是** | 浏览器 UI |
+| ~~`minimal-agent` / `minimal-agent-run`~~ | 否 | **暂未发包** |
+| 源码 `npm run tui` / `npm start` | 否 | **现在推荐** |
+| `npm run web` | 否（仅 API） | 可用 |
+| `minimal-gui` → `npm run dev` | **是** | 可选 |
 
 本地只要 TUI：`git clone` → 根目录 `npm install` → `npm run tui`（**不要** `cd minimal-gui`）。
 

@@ -89,14 +89,26 @@ TypeScript 写的 Agent 框架，目标针对长程任务三大顽疾：**越跑
 
 只需 **Node ≥ 22** + API Key。**不会**安装 Next，也**不需要**打开浏览器。
 
-```bash
-# ── 方式 1：npm BETA（发布后；仅主体 + TUI，包内无 GUI）──
-npm install -g minimal-agent-ts@beta
-# 在含 agent.json 与 .env 的目录（可先 clone 本仓只为配置）：
-minimal-agent                    # 交互 TUI
-minimal-agent-run "你的任务"      # 无界面单次任务
+#### 方式 1：npm BETA — **暂未发包**（包装已就绪，即将上架）
 
-# ── 方式 2：源码，只装根目录依赖（不进 minimal-gui）──
+> ⚠️ **当前 registry 上还没有 `minimal-agent-ts` 正式/beta 包。**  
+> 仓库内已完成 `0.1.0-beta.1` 的 `bin` / `dist` / `files` 打包与 `npm pack` 自测；作者完成 npm 2FA 后会 `npm publish --tag beta`。  
+> **现在请用下面的「方式 2：源码」试用。** 下列安装命令先划线保留，上架后去掉划线即可用。
+
+```bash
+# ── 上架后可用（仅主体 + TUI，包内无 GUI）──
+# npm install -g minimal-agent-ts@beta
+# # 在含 agent.json 与 .env 的目录：
+# minimal-agent                    # 交互 TUI
+# minimal-agent-run "你的任务"      # 无界面单次任务
+```
+
+~~`npm install -g minimal-agent-ts@beta`~~ · ~~`minimal-agent`~~ · ~~`minimal-agent-run "…"`~~  
+（同上，**暂不可用**，待 npm 发布。）
+
+#### 方式 2：源码（**现在就能用** · 不带 GUI）
+
+```bash
 git clone https://github.com/johnx438-hub/minimal-agent-ts.git
 cd minimal-agent-ts
 npm install                      # 只装根 package.json（不含 GUI 的 Next 依赖）
