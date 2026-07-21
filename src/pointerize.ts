@@ -145,8 +145,15 @@ export function buildPointerCard(
     ? `\nstored=truncated_in_tool_layer original_chars=${block.byte_size}`
     : '';
 
+  // turn_number is on ActionBlock but was only implicit via dialogue sandwich;
+  // surface it for long-horizon ordering (action_id does NOT encode turn).
+  const turnSuffix =
+    Number.isFinite(block.turn_number) && block.turn_number >= 0
+      ? ` turn=${block.turn_number}`
+      : '';
+
   const cardLines = [
-    `[action:${block.action_id}]`,
+    `[action:${block.action_id}]${turnSuffix}`,
     `tool=${block.tool_name}${pathLine}${lineRange} chars=${block.byte_size} sha256=${block.result_hash}`,
   ];
 

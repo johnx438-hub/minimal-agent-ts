@@ -50,7 +50,7 @@ describe('pointer secondary compact', () => {
     applyPointerSecondaryCompact(msg);
 
     assert.ok(msg.compacted_at);
-    assert.equal(msg.content, '[compacted tool action_id=act_old]');
+    assert.equal(msg.content, '[compacted tool action_id=act_old turn=2]');
     assert.equal(msg.pointerized, true);
   });
 
@@ -96,6 +96,6 @@ describe('pointer secondary compact', () => {
     const compacted = maybeCompactPointerCards(messages, 5, budget);
     assert.ok(compacted >= 1);
     assert.ok(messages[1]?.compacted_at, 'oldest pointer card is downgraded first');
-    assert.equal(messages[1]?.content, '[compacted tool action_id=act_1]');
+    assert.equal(messages[1]?.content, '[compacted tool action_id=act_1 turn=2]');
   });
 });

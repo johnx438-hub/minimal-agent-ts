@@ -46,9 +46,13 @@ function findOldestCompactablePointerIndex(
 export function applyPointerSecondaryCompact(msg: ChatMessage): void {
   const actionId = msg.action_id;
   msg.compacted_at = Date.now();
+  const turnSuffix =
+    msg.turn !== undefined && Number.isFinite(msg.turn) && msg.turn >= 0
+      ? ` turn=${msg.turn}`
+      : '';
   msg.content = actionId
-    ? `[compacted tool action_id=${actionId}]`
-    : '[compacted tool]';
+    ? `[compacted tool action_id=${actionId}${turnSuffix}]`
+    : `[compacted tool${turnSuffix}]`;
 }
 
 export function compactPointerCardsUntilUnderBudget(

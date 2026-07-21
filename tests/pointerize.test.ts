@@ -13,6 +13,7 @@ import {
   resetActionWriteQueueForTests,
 } from '../src/action-write-queue.js';
 import {
+  buildPointerCard,
   materializePriorTurnTools,
   POINTER_RULES,
   shouldPointerize,
@@ -27,6 +28,24 @@ function chars(n: number): string {
 function lines(n: number, lineLen = 10): string {
   return Array.from({ length: n }, (_, i) => `line${i}:${'a'.repeat(lineLen)}`).join('\n');
 }
+
+describe('buildPointerCard', () => {
+  it('surfaces ActionBlock.turn_number on the card header', () => {
+    const block = buildActionBlock({
+      action_id: 'action_t_1',
+      task_id: 'task_1',
+      session_id: 'sess_1',
+      turn_number: 12,
+      tool_name: 'read_file',
+      args_json: '{"path":"a.ts"}',
+      result_text: 'hello world',
+    });
+    const card = buildPointerCard(block);
+    assert.match(card, /^\[action:action_t_1\] turn=12\n/);
+    assert.match(card, /tool=read_file/);
+    assert.match(card, /recall=recall_query\(action_id="action_t_1"\)/);
+  });
+});
 
 describe('shouldPointerize', () => {
   it('rejects empty and whitespace-only output', () => {
@@ -128,7 +147,7 @@ describe('materializePriorTurnTools', () => {
     materializePriorTurnTools([msg], 5);
 
     assert.equal(msg.pointerized, true);
-    assert.match(msg.content ?? '', /^\[action:action_ptr_1\]/);
+    assert.match(msg.content ?? '', /^\[action:action_ptr_1\] turn=1/);
     assert.match(msg.content ?? '', /tool=read_file/);
     assert.match(msg.content ?? '', /path=src\/a\.ts/);
     assert.match(msg.content ?? '', /recall=recall_query\(action_id="action_ptr_1"\)/);
