@@ -152,8 +152,8 @@ npm run dev
 
 | 命令 | 带 GUI？ | 说明 |
 |------|----------|------|
-| `minimal-agent` / `minimal-agent-run` | **否** | npm 包只有主体 + TUI |
-| `npm run tui` / `npm start` | **否** | 根目录脚本，终端 Agent |
+| ~~`minimal-agent` / `minimal-agent-run`~~ | **否** | npm CLI · **暂未发包**，上架后可用 |
+| `npm run tui` / `npm start` | **否** | 源码根目录脚本，终端 Agent · **现在推荐** |
 | `npm run web` | **否**（仅 API + 可选静态页） | harness 的 HTTP/WS；**不是** `minimal-gui` |
 | `cd minimal-gui && npm run dev` | **是** | 完整浏览器 UI，需先有 `npm run web` |
 
