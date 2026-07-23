@@ -1,6 +1,6 @@
 # EVAL · Lost in the Middle 与长程 Agent 实验纲要
 
-> **状态**: Draft v1.1（2026-07-23）· **E0 scaffold ✅**（`eval/` 金题 + 策略；无 API run CLI）  
+> **状态**: Draft v1.2（2026-07-23）· **E0–E1 ✅**（`eval:run` + manifest/JSONL/summary；dry-run 无 API）  
 > **目标**: 用可复现的对比实验，说明 minimal-agent-ts 的存在意义——在**原生消息数组**上做细粒度上下文工程，而不是再堆一层 Memory/RAG/状态机外挂。  
 > **原则**: 不宣称银弹；先少而硬的任务与指标；数字必须可复现。  
 > **相关**: [README.md](../README.md) · [eval/README.md](../eval/README.md) · [SPEC_CONTEXT_MANAGEMENT.md](../SPEC_CONTEXT_MANAGEMENT.md) · [SPEC_POINTERIZE_SCOPE.md](../SPEC_POINTERIZE_SCOPE.md) · [docs/ROADMAP.md](./ROADMAP.md)
@@ -287,10 +287,10 @@ eval/
 ### 6.3 明确待补（实现期）
 
 - [x] **E0**: `eval/` 骨架 · 策略 JSON · `state_chain_01` + `setup.sh`/`score.sh` · `npm run eval:smoke`  
-- [ ] **E1**: 统一 `eval run` CLI：题 × 策略 × 导出 JSONL + manifest  
-- [x] `naive_full` / 消融的**稳定开关**（`eval/strategies/*.json` 配置覆盖；E1 接线）  
-- [x] `score.sh` 约定与 1 道金题端到端（本地无 API smoke）  
-- [ ] 主图生成脚本（CSV/JSONL → png 或 markdown 表）  
+- [x] **E1**: `npm run eval:run` · `src/eval/*` · manifest + turns.jsonl + summary · Runtime 事件采集  
+- [x] `naive_full` / 消融的**稳定开关**（`eval/strategies/*.json` → run 时 merge）  
+- [x] `score.sh` 约定与 1 道金题端到端（本地 dry-run + 可选 live API）  
+- [ ] **E2**: 主图 / 多 run 聚合表（CSV/JSONL → markdown）  
 - [ ] API cache 字段各厂商差异的归一化层  
 
 ---
@@ -348,14 +348,15 @@ eval/
 |------|------|------|
 | 2026-07-20 | v1.0 | 首版：问题分层、解法地图、变量/指标、任务族、分期、遥测缺口、对外表述 |
 | 2026-07-23 | v1.1 | E0：`eval/` 骨架、strategies、`state_chain_01`、本地 smoke |
+| 2026-07-23 | v1.2 | E1：`src/eval` run CLI、telemetry、dry-run 产物 |
 
 ---
 
 ## 11. 下一步（实现清单）
 
 1. ~~建立 `eval/tasks/` 与至少 1 道金题 + `score.sh`~~ ✅ E0  
-2. **E1**: 导出每轮 JSONL + `eval run`（对接 metrics / json-events）  
-3. 跑通 `minimal_full` vs `minimal_no_pointerize` 在 turn≤30 的小 n 对比  
+2. ~~导出每轮 JSONL + `eval run`~~ ✅ E1（`npm run eval:run`）  
+3. **E2**: 跑通 `minimal_full` vs `minimal_no_pointerize` 小 n 对比 + 聚合表  
 4. 把第一张主图链回 README「实验与数字」（有稳定数字后再写）  
 
-操作入口：[eval/README.md](../eval/README.md) · `npm run eval:smoke`
+操作入口：[eval/README.md](../eval/README.md) · `npm run eval:smoke` · `npm run eval:run -- --dry-run --plant --task state_chain_01 --strategy minimal_full`

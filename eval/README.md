@@ -1,6 +1,6 @@
 # Eval harness (Lost-in-Middle / long-horizon)
 
-> **Status**: E0 scaffold — task + strategies + local score; **no** full `eval run` CLI yet (E1).  
+> **Status**: **E0 ✅ · E1 ✅** — `eval:run` writes manifest / turns.jsonl / summary; dry-run without API.  
 > **Spec**: [docs/EVAL_LITM.md](../docs/EVAL_LITM.md) · knobs: [SPEC_CONTEXT_POLICY.md](../SPEC_CONTEXT_POLICY.md)
 
 ## Layout
@@ -44,39 +44,50 @@ Merge strategy JSON **into** a working `agent.json` (or pass as overlay when E1 
 ### Local smoke (no API)
 
 ```bash
-# prepare sandbox under tasks/state_chain_01/workspace
-bash eval/scripts/setup-task.sh state_chain_01
-
-# plant a correct answer (agent would write this)
-cp eval/tasks/state_chain_01/fixtures/answer.correct.json \
-   eval/tasks/state_chain_01/workspace/answer.json
-
-bash eval/scripts/score-task.sh state_chain_01
-# exit 0
-
-# wrong answer fails
-echo '{"token":"nope"}' > eval/tasks/state_chain_01/workspace/answer.json
-bash eval/scripts/score-task.sh state_chain_01
-# exit 1
+npm run eval:smoke
+# or
+npm run eval:run -- --task state_chain_01 --strategy minimal_full --dry-run --plant
 ```
 
-Or: `npm run eval:smoke` (setup + correct score + wrong score).
+Artifacts land in `eval/runs/<run_id>/`:
 
-### Agent run (manual until E1)
+| File | Content |
+|------|---------|
+| `manifest.json` | git_sha, model, strategy, policies, paths |
+| `turns.jsonl` | per-turn usage / tools / compression |
+| `events.jsonl` | raw RuntimeEvents (LLM runs only) |
+| `summary.json` | task_success, repeat_tool_rate, hot_tokens_* |
+| `score.json` | score.sh JSON |
+| `final.txt` | model final text |
 
-1. `bash eval/scripts/setup-task.sh state_chain_01`
-2. Point agent cwd at `eval/tasks/state_chain_01/workspace`
-3. Prompt = contents of `TASK.md` (or paste)
-4. Use strategy overlay as needed
-5. `bash eval/scripts/score-task.sh state_chain_01`
+### Live agent run (needs API key in `.env`)
 
-## Metrics (E1+)
+```bash
+# from repo root (agent.json + .env)
+npm run eval:run -- \
+  --task state_chain_01 \
+  --strategy minimal_full \
+  --max-turns 30
 
-Turn telemetry → `turns.jsonl`; rollups → `summary.json`  
-Primary: `task_success`, `repeat_tool_rate`, `hot_tokens_*`, tokens/cost per success.
+# ablation
+npm run eval:run -- --task state_chain_01 --strategy minimal_no_pointerize --max-turns 30
+```
 
-## Next (E1)
+Exit code: `0` if `score.sh` passes, else `1`.  
+Stdout: one JSON object with `run_dir` and headline metrics.
 
-- `eval run --task … --strategy …` writing manifest + JSONL
-- Wire `json-events` / Runtime listener
-- Aggregate table for `minimal_full` vs `minimal_no_pointerize`
+Options: `--allow-shell` · `--allow-web` · `--timeout-sec N` · `--run-id <id>` · `--project-root <dir>`.
+
+## Metrics
+
+| Field | Source |
+|-------|--------|
+| `task_success` | `score.sh` exit |
+| `repeat_tool_rate` | duplicate tool name+arg fingerprints |
+| `hot_tokens_mean` / `p95` | `llm_done.usage.prompt_tokens` |
+| `turns_used` | turns with events |
+
+## Next (E2)
+
+- Aggregate multi-run table (`minimal_full` vs `minimal_no_pointerize`)
+- Optional markdown report under `eval/reports/`
