@@ -22,7 +22,7 @@ import { join as pathJoin } from 'node:path';
 function usage(): never {
   console.error(`Usage:
   eval run --task <id> --strategy <id> [run options]
-  eval aggregate [--task <id>] [--strategies a,b] [--out-name name] [--no-dry-run]
+  eval aggregate [--task <id>] [--strategies a,b] [--run-ids id1,id2] [--git-sha prefix] ...
   eval compare --task <id> --strategies a,b [,c] [run options] [--n <repeats>]
   eval list
 
@@ -39,6 +39,8 @@ Run options:
 Aggregate options:
   --task <id>           Filter task
   --strategies a,b      Filter strategies
+  --run-ids id1,id2     Only these run_id values (clean pairs)
+  --git-sha <sha>       Only runs whose manifest.git_sha matches / starts with
   --out-name <base>     Write eval/reports/<base>.{md,json}
   --no-dry-run          Exclude dry-run runs
   --runs-dir <dir>      Override runs directory
@@ -68,6 +70,8 @@ type Parsed = {
   outName?: string;
   includeDryRun: boolean;
   runsDir?: string;
+  runIds?: string[];
+  gitSha?: string;
 };
 
 function parseArgs(argv: string[]): Parsed {
@@ -136,6 +140,15 @@ function parseArgs(argv: string[]): Parsed {
         break;
       case '--runs-dir':
         out.runsDir = resolve(next());
+        break;
+      case '--run-ids':
+        out.runIds = next()
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+        break;
+      case '--git-sha':
+        out.gitSha = next();
         break;
       case '-h':
       case '--help':
@@ -217,6 +230,8 @@ async function main(): Promise<void> {
       taskId: args.task,
       strategyIds: args.strategies,
       includeDryRun: args.includeDryRun,
+      runIds: args.runIds,
+      gitSha: args.gitSha,
     });
     const outName =
       args.outName ??

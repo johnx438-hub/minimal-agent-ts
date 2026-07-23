@@ -69,6 +69,45 @@ describe('eval aggregate E2', () => {
     assert.ok(Array.isArray(slim.rows));
   });
 
+  it('filters by run_ids and git_sha', async () => {
+    const a = await runEval({
+      projectRoot: ROOT,
+      taskId: 'state_chain_01',
+      strategyId: 'minimal_full',
+      dryRun: true,
+      plantCorrectAnswer: true,
+      runId: `e2_filter_a_${Date.now()}`,
+    });
+    const b = await runEval({
+      projectRoot: ROOT,
+      taskId: 'state_chain_01',
+      strategyId: 'minimal_no_pointerize',
+      dryRun: true,
+      plantCorrectAnswer: true,
+      runId: `e2_filter_b_${Date.now()}`,
+    });
+    const onlyA = aggregateRuns({
+      runsDir: RUNS,
+      runIds: [a.manifest.run_id],
+      includeDryRun: true,
+    });
+    assert.equal(onlyA.run_count, 1);
+    assert.equal(onlyA.rows[0]?.run_ids[0], a.manifest.run_id);
+
+    const sha = a.manifest.git_sha;
+    if (sha) {
+      const bySha = aggregateRuns({
+        runsDir: RUNS,
+        taskId: 'state_chain_01',
+        gitSha: sha.slice(0, 8),
+        includeDryRun: true,
+        runIds: [a.manifest.run_id, b.manifest.run_id],
+      });
+      assert.ok(bySha.run_count >= 1);
+      assert.ok(bySha.runs.every((r) => r.manifest?.git_sha?.startsWith(sha.slice(0, 8)) || r.manifest?.git_sha === sha));
+    }
+  });
+
   it('compareStrategies runs two dry strategies and writes report', async () => {
     const stamp = Date.now();
     const result = await compareStrategies({

@@ -27,12 +27,15 @@ describe('eval E3 multi_doc_01', () => {
     });
     assert.equal(result.summary.task_success, true);
     assert.ok(existsSync(join(result.runDir, 'workspace', 'docs', '02_operations.md')));
+    assert.ok(existsSync(join(result.runDir, 'workspace', 'docs', '07_distractor.md')));
     const ops = readFileSync(
       join(result.runDir, 'workspace', 'docs', '02_operations.md'),
       'utf8',
     );
     assert.match(ops, /Project Codename: ORBIT-7/);
     assert.match(ops, /Budget Cap USD: 42000/);
+    const task = readFileSync(join(result.runDir, 'workspace', 'TASK.md'), 'utf8');
+    assert.match(task, /at most 2 files/i);
   });
 
   it('wrong answer fails score', async () => {

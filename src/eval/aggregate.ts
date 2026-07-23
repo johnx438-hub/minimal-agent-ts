@@ -42,6 +42,8 @@ export interface AggregateReport {
     task_id?: string;
     strategy_ids?: string[];
     include_dry_run: boolean;
+    run_ids?: string[];
+    git_sha?: string;
   };
   run_count: number;
   rows: StrategyAggregateRow[];
@@ -108,6 +110,13 @@ export interface AggregateOptions {
   strategyIds?: string[];
   /** Default true for offline tables; set false to only live API runs. */
   includeDryRun?: boolean;
+  /** Only these run_id values (exact match). */
+  runIds?: string[];
+  /**
+   * Keep runs whose manifest.git_sha equals or starts with this prefix
+   * (full SHA or short prefix, case-insensitive).
+   */
+  gitSha?: string;
 }
 
 export function aggregateRuns(opts: AggregateOptions): AggregateReport {
@@ -122,6 +131,18 @@ export function aggregateRuns(opts: AggregateOptions): AggregateReport {
   }
   if (!includeDryRun) {
     runs = runs.filter((r) => !r.dry_run);
+  }
+  if (opts.runIds?.length) {
+    const set = new Set(opts.runIds);
+    runs = runs.filter((r) => set.has(r.run_id));
+  }
+  if (opts.gitSha?.trim()) {
+    const want = opts.gitSha.trim().toLowerCase();
+    runs = runs.filter((r) => {
+      const sha = r.manifest?.git_sha?.trim().toLowerCase();
+      if (!sha) return false;
+      return sha === want || sha.startsWith(want) || want.startsWith(sha);
+    });
   }
 
   const groups = new Map<string, LoadedEvalRun[]>();
@@ -181,6 +202,8 @@ export function aggregateRuns(opts: AggregateOptions): AggregateReport {
       task_id: opts.taskId,
       strategy_ids: opts.strategyIds,
       include_dry_run: includeDryRun,
+      ...(opts.runIds?.length ? { run_ids: opts.runIds } : {}),
+      ...(opts.gitSha?.trim() ? { git_sha: opts.gitSha.trim() } : {}),
     },
     run_count: runs.length,
     rows,
@@ -207,6 +230,12 @@ export function formatAggregateMarkdown(report: AggregateReport): string {
   }
   if (report.filters.strategy_ids?.length) {
     lines.push(`- Strategies: ${report.filters.strategy_ids.map((s) => `\`${s}\``).join(', ')}`);
+  }
+  if (report.filters.run_ids?.length) {
+    lines.push(`- Run IDs: ${report.filters.run_ids.map((s) => `\`${s}\``).join(', ')}`);
+  }
+  if (report.filters.git_sha) {
+    lines.push(`- git_sha filter: \`${report.filters.git_sha}\``);
   }
   lines.push(
     `- Include dry-run: **${report.filters.include_dry_run}**`,

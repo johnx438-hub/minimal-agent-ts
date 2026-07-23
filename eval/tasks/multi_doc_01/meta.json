@@ -2,9 +2,9 @@
   "id": "multi_doc_01",
   "family": "multi_doc",
   "noise": "high",
-  "max_turns": 40,
-  "timeout_sec": 2400,
+  "max_turns": 50,
+  "timeout_sec": 3600,
   "tools": "default",
   "acceptance": "score.sh",
-  "description": "Multi-document mid-context needle: read several docs (incl. large fillers), answer a fact buried in doc B."
+  "description": "Multi-document mid-context needle with segmented reads (≤2 docs/* per turn) and large distractors so pointerize keep windows can act across turns."
 }

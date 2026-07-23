@@ -51,7 +51,7 @@ npm run eval:list
 | ID | Family | Pressure | Score |
 |----|--------|----------|-------|
 | `state_chain_01` | `state_chain` | tool chain + noise blobs | `score.sh` |
-| `multi_doc_01` | `multi_doc` | mid-doc needle among fillers | `score.sh` |
+| `multi_doc_01` | `multi_doc` | mid-doc needle + **≤2 docs/turn** + larger distractors | `score.sh` |
 
 ### Local smoke (no API)
 
@@ -113,6 +113,14 @@ npm run eval:aggregate -- --task state_chain_01 --out-name latest_state_chain
 
 # Exclude dry-run (live API only)
 npm run eval:aggregate -- --task state_chain_01 --no-dry-run --out-name live_only
+
+# Clean pair only (avoid mixing old fingerprint / pre-deny runs)
+npm run eval:aggregate -- --no-dry-run \
+  --run-ids multi_doc_01__minimal_pointerize_eager__…,multi_doc_01__minimal_no_pointerize__… \
+  --out-name clean_pair
+
+# Or filter by git commit that produced the runs
+npm run eval:aggregate -- --task multi_doc_01 --no-dry-run --git-sha c117dcf --out-name since_deny
 
 # Run two strategies then write a compare report under eval/reports/
 npm run eval:compare -- \
