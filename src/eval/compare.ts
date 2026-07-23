@@ -110,6 +110,11 @@ export async function compareStrategies(opts: CompareOptions): Promise<CompareRe
             subset.map((r) => r.summary.prompt_tokens_total),
           ),
           dry_run_n: subset.filter((r) => r.manifest.dry_run).length,
+          cost_usd_est_mean: mean(
+            subset
+              .map((r) => r.summary.cost_usd_est)
+              .filter((v): v is number => typeof v === 'number'),
+          ),
           run_ids: subset.map((r) => r.manifest.run_id),
         };
       })

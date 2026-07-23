@@ -1,6 +1,6 @@
 # EVAL · Lost in the Middle 与长程 Agent 实验纲要
 
-> **状态**: Draft v1.3（2026-07-23）· **E0–E2 ✅**（run · aggregate · compare 报告）  
+> **状态**: Draft v1.4（2026-07-23）· **E0–E3 ✅**（+ `multi_doc_01` · cost stub · `eval:list`）  
 > **目标**: 用可复现的对比实验，说明 minimal-agent-ts 的存在意义——在**原生消息数组**上做细粒度上下文工程，而不是再堆一层 Memory/RAG/状态机外挂。  
 > **原则**: 不宣称银弹；先少而硬的任务与指标；数字必须可复现。  
 > **相关**: [README.md](../README.md) · [eval/README.md](../eval/README.md) · [SPEC_CONTEXT_MANAGEMENT.md](../SPEC_CONTEXT_MANAGEMENT.md) · [SPEC_POINTERIZE_SCOPE.md](../SPEC_POINTERIZE_SCOPE.md) · [docs/ROADMAP.md](./ROADMAP.md)
@@ -291,8 +291,9 @@ eval/
 - [x] `naive_full` / 消融的**稳定开关**（`eval/strategies/*.json` → run 时 merge）  
 - [x] `score.sh` 约定与 1 道金题端到端（本地 dry-run + 可选 live API）  
 - [x] **E2**: `eval:aggregate` / `eval:compare` → `eval/reports/*.md`  
+- [x] **E3**: 第二题 `multi_doc_01` · 可选 `$` 估价 · `eval:list`  
 - [ ] API cache 字段各厂商差异的归一化层  
-- [ ] 第二题族 / live n≥3 主图进 README  
+- [ ] live n≥3 主图进 README「实验与数字」  
 
 ---
 
@@ -351,6 +352,7 @@ eval/
 | 2026-07-23 | v1.1 | E0：`eval/` 骨架、strategies、`state_chain_01`、本地 smoke |
 | 2026-07-23 | v1.2 | E1：`src/eval` run CLI、telemetry、dry-run 产物 |
 | 2026-07-23 | v1.3 | E2：aggregate / compare → reports markdown |
+| 2026-07-23 | v1.4 | E3：`multi_doc_01`、cost stub、list |
 
 ---
 
@@ -358,13 +360,15 @@ eval/
 
 1. ~~建立 `eval/tasks/` 与至少 1 道金题 + `score.sh`~~ ✅ E0  
 2. ~~导出每轮 JSONL + `eval run`~~ ✅ E1  
-3. ~~聚合表 + 双策略 compare~~ ✅ E2（`npm run eval:compare`）  
-4. Live API 小 n 对比 + 有趋势后 README「实验与数字」  
-5. 第二题族（multi_doc / repo_long）  
+3. ~~聚合表 + 双策略 compare~~ ✅ E2  
+4. ~~第二题族 multi_doc~~ ✅ E3  
+5. Live API 小 n 对比 + 有趋势后 README「实验与数字」固定数字区  
+6. 可选 `repo_long_01`  
 
 操作入口：[eval/README.md](../eval/README.md)  
 
 ```bash
-npm run eval:compare -- --task state_chain_01 \
+npm run eval:list
+npm run eval:compare -- --task multi_doc_01 \
   --strategies minimal_full,minimal_no_pointerize --dry-run --plant
 ```

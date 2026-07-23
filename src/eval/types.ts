@@ -77,6 +77,11 @@ export interface EvalSummary {
   loop_guard_count: number;
   final_text_preview: string;
   error?: string;
+  /**
+   * Optional cost estimate (USD) when EVAL_PRICE_PROMPT_PER_1M /
+   * EVAL_PRICE_COMPLETION_PER_1M are set (dollars per 1M tokens).
+   */
+  cost_usd_est?: number | null;
 }
 
 export interface EvalRunOptions {

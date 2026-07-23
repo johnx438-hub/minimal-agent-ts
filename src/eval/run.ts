@@ -131,6 +131,27 @@ function writeJsonl(path: string, rows: unknown[]): void {
   );
 }
 
+function envPricePer1M(name: string): number | null {
+  const raw = process.env[name]?.trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/** Optional USD estimate from env prices ($ / 1M tokens). */
+export function estimateCostUsd(
+  promptTokens: number,
+  completionTokens: number,
+): number | null {
+  const p = envPricePer1M('EVAL_PRICE_PROMPT_PER_1M');
+  const c = envPricePer1M('EVAL_PRICE_COMPLETION_PER_1M');
+  if (p === null && c === null) return null;
+  const cost =
+    (promptTokens / 1_000_000) * (p ?? 0) +
+    (completionTokens / 1_000_000) * (c ?? 0);
+  return Math.round(cost * 1e6) / 1e6;
+}
+
 function buildSummary(
   manifest: EvalManifest,
   records: EvalTurnRecord[],
@@ -157,6 +178,8 @@ function buildSummary(
     loop += r.loop_guard_actions.length;
   }
 
+  const cost_usd_est = estimateCostUsd(hot.sum, completion);
+
   return {
     run_id: manifest.run_id,
     task_id: manifest.task_id,
@@ -175,6 +198,7 @@ function buildSummary(
     heavy_compression_count: heavy,
     loop_guard_count: loop,
     final_text_preview: finalText.slice(0, 500),
+    cost_usd_est,
     ...(error ? { error } : {}),
   };
 }

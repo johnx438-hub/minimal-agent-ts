@@ -31,6 +31,7 @@ export interface StrategyAggregateRow {
   tool_calls_mean: number | null;
   prompt_tokens_total_mean: number | null;
   dry_run_n: number;
+  cost_usd_est_mean: number | null;
   run_ids: string[];
 }
 
@@ -146,6 +147,9 @@ export function aggregateRuns(opts: AggregateOptions): AggregateReport {
     const repeat = list.map((r) => r.summary.repeat_tool_rate);
     const tools = list.map((r) => r.summary.tool_calls_total);
     const prompt = list.map((r) => r.summary.prompt_tokens_total);
+    const costs = list
+      .map((r) => r.summary.cost_usd_est)
+      .filter((v): v is number => typeof v === 'number');
 
     rows.push({
       task_id,
@@ -160,6 +164,7 @@ export function aggregateRuns(opts: AggregateOptions): AggregateReport {
       tool_calls_mean: round(mean(tools), 2),
       prompt_tokens_total_mean: round(mean(prompt), 1),
       dry_run_n: list.filter((r) => r.dry_run).length,
+      cost_usd_est_mean: round(mean(costs), 6),
       run_ids: list.map((r) => r.run_id),
     });
   }
@@ -208,13 +213,13 @@ export function formatAggregateMarkdown(report: AggregateReport): string {
     ``,
     `## By strategy`,
     ``,
-    `| task | strategy | n | success | success_rate | turns̄ | hot_tokens̄ | repeat_tool̄ | tools̄ | dry_n |`,
-    `|------|----------|---|--------:|-------------:|-------:|------------:|------------:|------:|------:|`,
+    `| task | strategy | n | success | success_rate | turns̄ | hot_tokens̄ | repeat_tool̄ | tools̄ | $̄ | dry_n |`,
+    `|------|----------|---|--------:|-------------:|-------:|------------:|------------:|------:|---:|------:|`,
   );
 
   for (const r of report.rows) {
     lines.push(
-      `| ${r.task_id} | ${r.strategy_id} | ${r.n} | ${r.success_n}/${r.n} | ${fmt(r.success_rate)} | ${fmt(r.turns_mean)} | ${fmt(r.hot_tokens_mean)} | ${fmt(r.repeat_tool_rate_mean)} | ${fmt(r.tool_calls_mean)} | ${r.dry_run_n} |`,
+      `| ${r.task_id} | ${r.strategy_id} | ${r.n} | ${r.success_n}/${r.n} | ${fmt(r.success_rate)} | ${fmt(r.turns_mean)} | ${fmt(r.hot_tokens_mean)} | ${fmt(r.repeat_tool_rate_mean)} | ${fmt(r.tool_calls_mean)} | ${fmt(r.cost_usd_est_mean)} | ${r.dry_run_n} |`,
     );
   }
 
@@ -228,6 +233,7 @@ export function formatAggregateMarkdown(report: AggregateReport): string {
     ``,
     `- Primary narrative metrics (EVAL_LITM): task_success, repeat_tool_rate, hot_tokens, cost/tokens (cost TBD).`,
     `- Dry-run rows have no LLM telemetry (\`hot_tokens\` / \`turns\` often empty).`,
+    `- Optional \`$̄\` from \`EVAL_PRICE_PROMPT_PER_1M\` / \`EVAL_PRICE_COMPLETION_PER_1M\` (USD per 1M tokens).`,
     `- Live API variance is expected; report \`n\` and do not treat n=1 as a distribution.`,
     ``,
   );

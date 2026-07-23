@@ -84,7 +84,8 @@
     "eval:smoke": "bash eval/scripts/smoke-state-chain.sh",
     "eval:run": "tsx src/eval/cli.ts run",
     "eval:aggregate": "tsx src/eval/cli.ts aggregate",
-    "eval:compare": "tsx src/eval/cli.ts compare"
+    "eval:compare": "tsx src/eval/cli.ts compare",
+    "eval:list": "tsx src/eval/cli.ts list"
   },
   "devDependencies": {
     "@types/dotenv-safe": "^9.1.0",

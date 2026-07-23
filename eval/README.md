@@ -1,6 +1,6 @@
 # Eval harness (Lost-in-Middle / long-horizon)
 
-> **Status**: **E0–E2 ✅** — run · aggregate · compare (markdown report).  
+> **Status**: **E0–E3 ✅** — run · aggregate · compare · second task family (`multi_doc_01`).  
 > **Spec**: [docs/EVAL_LITM.md](../docs/EVAL_LITM.md) · knobs: [SPEC_CONTEXT_POLICY.md](../SPEC_CONTEXT_POLICY.md)
 
 ## Layout
@@ -37,9 +37,14 @@ Merge strategy JSON **into** a working `agent.json` (or pass as overlay when E1 
 
 ## Tasks
 
-| ID | Family | Score |
-|----|--------|-------|
-| `state_chain_01` | `state_chain` | `tasks/state_chain_01/score.sh` |
+```bash
+npm run eval:list
+```
+
+| ID | Family | Pressure | Score |
+|----|--------|----------|-------|
+| `state_chain_01` | `state_chain` | tool chain + noise blobs | `score.sh` |
+| `multi_doc_01` | `multi_doc` | mid-doc needle among fillers | `score.sh` |
 
 ### Local smoke (no API)
 
@@ -112,10 +117,20 @@ npm run eval:compare -- \
 ```
 
 Reports: `eval/reports/<name>.md` + `.json`  
-Columns: n · success_rate · turns̄ · hot_tokens̄ · repeat_tool̄ · tools̄ · dry_n
+Columns: n · success_rate · turns̄ · hot_tokens̄ · repeat_tool̄ · tools̄ · $̄ · dry_n  
 
-## Next (E3 / packaging)
+Optional cost: set `EVAL_PRICE_PROMPT_PER_1M` and/or `EVAL_PRICE_COMPLETION_PER_1M` (USD per 1M tokens).
 
-- Second task family (`multi_doc` / `repo_long`)
-- Cost column when price table available
-- README「实验与数字」once live n≥3 shows a stable trend
+```bash
+# multi_doc needle task (dry)
+npm run eval:run -- --task multi_doc_01 --strategy minimal_full --dry-run --plant
+
+# both tasks × two strategies (dry matrix)
+npm run eval:compare -- --task multi_doc_01 \
+  --strategies minimal_full,minimal_no_pointerize --dry-run --plant
+```
+
+## Next
+
+- Live API n≥3 on both tasks before claiming trends in README  
+- Optional `repo_long_01` family

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import type { EvalStrategyFile, EvalTaskMeta } from './types.js';
@@ -39,6 +39,15 @@ export function readTaskPrompt(evalRoot: string, taskId: string): string {
     throw new Error(`TASK.md not found for ${taskId}`);
   }
   return readFileSync(path, 'utf8');
+}
+
+/** List task ids that have meta.json under eval/tasks. */
+export function listTaskIds(evalRoot: string): string[] {
+  const dir = join(evalRoot, 'tasks');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((name) => existsSync(join(dir, name, 'meta.json')))
+    .sort();
 }
 
 export function gitSha(projectRoot: string): string | null {

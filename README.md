@@ -63,12 +63,48 @@ Single monorepo. **Default path = terminal TUI + core**; the browser UI is **not
 | [QUICKSTART.md](./QUICKSTART.md) | Install & common commands |
 | [docs/DEPS.md](./docs/DEPS.md) | Required/optional deps |
 | [docs/ROADMAP.md](./docs/ROADMAP.md) | Project direction |
-| [docs/EVAL_LITM.md](./docs/EVAL_LITM.md) · [eval/README.md](./eval/README.md) | Lost in the Middle eval plan + E0 harness scaffold |
+| [docs/EVAL_LITM.md](./docs/EVAL_LITM.md) · [eval/README.md](./eval/README.md) | Lost in the Middle eval plan + harness E0–E3 |
 | [SPEC_CONTEXT_MANAGEMENT.md](./SPEC_CONTEXT_MANAGEMENT.md) | Context & pointerize design details |
 | [SPEC_CONTEXT_POLICY.md](./SPEC_CONTEXT_POLICY.md) · [agent.context.example.json](./agent.context.example.json) | Tunable context knobs (`context_policy` in agent.json) |
 | [SPEC_TOOLS.md](./SPEC_TOOLS.md) · [SPEC_TUI.md](./SPEC_TUI.md) · [SPEC_LLM_ROUTER.md](./SPEC_LLM_ROUTER.md) | Tools / TUI / multi-model router specs |
 
 Verify: `npm test` · `npm run typecheck` (~600 test cases)
+
+---
+
+## Updates · 2026-07-23
+
+Ship notes for today’s core+eval work (between product framing above and install steps below). Full detail: commits on `master` from `92842c4` onward; eval docs in [eval/README.md](./eval/README.md) · [docs/EVAL_LITM.md](./docs/EVAL_LITM.md) · [SPEC_CONTEXT_POLICY.md](./SPEC_CONTEXT_POLICY.md).
+
+### Context engineering
+
+| Area | What landed |
+|------|-------------|
+| **Token self-calibration** | Session EWMA scale from `llm_done.usage.prompt_tokens` vs local estimate (`TokenCalibrator`). Default scale=1 → prior behavior until samples arrive. Used by heavy compression / pointer-compact / soft-force. `DEBUG_TOKEN_CAL=1` for logs. |
+| **`context_policy` (C1–C4)** | Magic numbers (budget layers, heavy ratios, protect window, prune, calibrator hyperparams) loadable from `agent.json`. Omit ≡ code defaults. Types + normalize/clamp + runtime wiring + [agent.context.example.json](./agent.context.example.json) + [QUICKSTART.md](./QUICKSTART.md) §6.1. |
+
+### Reproducible eval harness (E0–E3)
+
+| Stage | Capability |
+|-------|------------|
+| **E0** | `eval/` tree, strategies (`minimal_full`, `minimal_no_pointerize`, `naive_full`, `aggressive_compress`), golden task `state_chain_01`, `npm run eval:smoke` |
+| **E1** | `npm run eval:run` → `manifest.json` · `turns.jsonl` · `summary.json` · per-run `workspace/`; Runtime event telemetry; `--dry-run --plant` without API |
+| **E2** | `npm run eval:aggregate` / `eval:compare` → `eval/reports/*.{md,json}` |
+| **E3** | Second task **`multi_doc_01`** (mid-doc needle), optional cost via `EVAL_PRICE_*_PER_1M`, `npm run eval:list` |
+
+```bash
+npm run eval:list
+npm run eval:run -- --task state_chain_01 --strategy minimal_full --dry-run --plant
+npm run eval:run -- --task multi_doc_01 --strategy minimal_full --dry-run --plant
+npm run eval:compare -- --task state_chain_01 \
+  --strategies minimal_full,minimal_no_pointerize --dry-run --plant
+```
+
+Live API compare (costs money; needs `.env`): drop `--dry-run --plant`, set `--max-turns`, optional price env for `$` column. **No public success curves yet** — publish numbers only after stable live n≥3.
+
+### Notable commits (today’s arc)
+
+`92842c4` token calibrator · `d393377`/`cfa06ef` context_policy C1/C2 · `d4ac428` C3/C4 example docs · `ca3e9f4`–`d527802` eval E0–E2 · E3 multi_doc in this drop.
 
 ---
 

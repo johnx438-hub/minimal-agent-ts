@@ -11,14 +11,17 @@ import { join, resolve } from 'node:path';
 
 import { aggregateRuns, writeAggregateReport } from './aggregate.js';
 import { compareStrategies } from './compare.js';
-import { resolveEvalRoot } from './load.js';
+import { listTaskIds, loadTaskMeta, resolveEvalRoot } from './load.js';
 import { defaultProjectRoot, runEval } from './run.js';
+import { readdirSync, existsSync } from 'node:fs';
+import { join as pathJoin } from 'node:path';
 
 function usage(): never {
   console.error(`Usage:
   eval run --task <id> --strategy <id> [run options]
   eval aggregate [--task <id>] [--strategies a,b] [--out-name name] [--no-dry-run]
   eval compare --task <id> --strategies a,b [,c] [run options] [--n <repeats>]
+  eval list
 
 Run options:
   --max-turns <n>       Override meta.max_turns
@@ -148,6 +151,27 @@ async function main(): Promise<void> {
   const projectRoot = args.projectRoot ?? defaultProjectRoot();
   const evalRoot = resolveEvalRoot(projectRoot);
   const runsDir = args.runsDir ?? join(evalRoot, 'runs');
+
+  if (args.cmd === 'list') {
+    const tasks = listTaskIds(evalRoot);
+    const stratDir = pathJoin(evalRoot, 'strategies');
+    const strategies = existsSync(stratDir)
+      ? readdirSync(stratDir)
+          .filter((f) => f.endsWith('.json'))
+          .map((f) => f.replace(/\.json$/, ''))
+          .sort()
+      : [];
+    const taskRows = tasks.map((id) => {
+      try {
+        const m = loadTaskMeta(evalRoot, id);
+        return { id, family: m.family ?? null, max_turns: m.max_turns ?? null, noise: m.noise ?? null };
+      } catch {
+        return { id, family: null, max_turns: null, noise: null };
+      }
+    });
+    console.log(JSON.stringify({ tasks: taskRows, strategies }, null, 2));
+    process.exit(0);
+  }
 
   if (args.cmd === 'run') {
     if (!args.task || !args.strategy) {

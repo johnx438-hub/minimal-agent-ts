@@ -63,11 +63,47 @@ TypeScript 实现，纯手写 ReAct 主循环，~600 个测试用例，不绑定
 | [QUICKSTART.md](./QUICKSTART.md) | 安装与常用命令 |
 | [docs/DEPS.md](./docs/DEPS.md) | 必装/可选依赖说明 |
 | [docs/ROADMAP.md](./docs/ROADMAP.md) | 项目规划与方向 |
-| [docs/EVAL_LITM.md](./docs/EVAL_LITM.md) | Lost in the Middle / 长程实验纲要与指标 |
+| [docs/EVAL_LITM.md](./docs/EVAL_LITM.md) · [eval/README.md](./eval/README.md) | LITM 实验纲要 + 可复现 harness E0–E3 |
+| [SPEC_CONTEXT_POLICY.md](./SPEC_CONTEXT_POLICY.md) · [agent.context.example.json](./agent.context.example.json) | 上下文旋钮 `context_policy` |
 | [SPEC_CONTEXT_MANAGEMENT.md](./SPEC_CONTEXT_MANAGEMENT.md) | 上下文与指针化设计细节 |
 | [SPEC_TOOLS.md](./SPEC_TOOLS.md) · [SPEC_TUI.md](./SPEC_TUI.md) · [SPEC_LLM_ROUTER.md](./SPEC_LLM_ROUTER.md) | 工具/TUI/多模型路由规范 |
 
 验证命令：`npm test` · `npm run typecheck`（约600个测试用例）
+
+---
+
+## 更新 · 2026-07-23
+
+今日主体与评测落地摘要（插在产品叙事与「快速开始」之间）。细节见 [eval/README.md](./eval/README.md) · [docs/EVAL_LITM.md](./docs/EVAL_LITM.md) · [SPEC_CONTEXT_POLICY.md](./SPEC_CONTEXT_POLICY.md)；英文同构段落见 [README.md](./README.md)。
+
+### 上下文工程
+
+| 方向 | 内容 |
+|------|------|
+| **Token 自校准** | 用 `llm_done.usage.prompt_tokens` 与本地估 token 做 session 内 EWMA 比例尺（`TokenCalibrator`）。默认 scale=1 与旧行为一致；作用于 heavy / pointer-compact / soft-force。调试：`DEBUG_TOKEN_CAL=1`。 |
+| **`context_policy`（C1–C4）** | budget / heavy / protect / prune / calibrator 超参可写入 `agent.json`；省略 = 代码默认。含 normalize/clamp、运行时接线、[agent.context.example.json](./agent.context.example.json)、[QUICKSTART.md](./QUICKSTART.md) §6.1。 |
+
+### 可复现 EVAL（E0–E3）
+
+| 阶段 | 能力 |
+|------|------|
+| **E0** | `eval/`、策略 JSON、金题 `state_chain_01`、`npm run eval:smoke` |
+| **E1** | `npm run eval:run` → manifest / turns.jsonl / summary / 每 run 独立 workspace；`--dry-run --plant` 无需 API |
+| **E2** | `eval:aggregate` / `eval:compare` → `eval/reports/*` |
+| **E3** | 第二题 **`multi_doc_01`**（中段 needle）、可选 `$`（`EVAL_PRICE_*_PER_1M`）、`npm run eval:list` |
+
+```bash
+npm run eval:list
+npm run eval:run -- --task multi_doc_01 --strategy minimal_full --dry-run --plant
+npm run eval:compare -- --task state_chain_01 \
+  --strategies minimal_full,minimal_no_pointerize --dry-run --plant
+```
+
+真 API 对比会耗额度；**尚无对外成功曲线数字**——live n≥3 稳定后再写死进 README。
+
+### 今日相关提交（节选）
+
+`92842c4` 自校准 · `d393377`/`cfa06ef` context_policy · `d4ac428` 示例文档 · `ca3e9f4`–`d527802` eval E0–E2 · 本提交含 E3 multi_doc 与 README 更新区。
 
 ---
 
