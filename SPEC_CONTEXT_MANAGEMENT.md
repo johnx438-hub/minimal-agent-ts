@@ -37,6 +37,7 @@
 | **5** | MCP / Skills | P2 | Phase 4a | ✅（含 HTTP MCP） |
 | **6** | 多角色工作流 | P2 | 稳定 ReAct | ✅ 6a–6d |
 | **L2** | Context pipeline 模块化 | 底座 | Phase 2 | ✅ L2-0～L2-6 |
+| **C\*** | `context_policy` 魔法数字 → agent.json | 调参 | L2 · 自校准 | 📋 [SPEC_CONTEXT_POLICY](./SPEC_CONTEXT_POLICY.md) 草案 |
 | **L3+** | MessageBridge / Inbound / Schedule | 底座 | — | 出站类型 ✅；入站+定时 规划中 |
 
 **原则**：先「单 Agent + 干净上下文」，再工具与运行时，再编排。产品迭代与打包见 **docs/ROADMAP.md**，本文专注上下文语义。
