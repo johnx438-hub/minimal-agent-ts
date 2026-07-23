@@ -74,37 +74,53 @@ Verify: `npm test` · `npm run typecheck` (~600 test cases)
 
 ## Updates · 2026-07-23
 
-Ship notes for today’s core+eval work (between product framing above and install steps below). Full detail: commits on `master` from `92842c4` onward; eval docs in [eval/README.md](./eval/README.md) · [docs/EVAL_LITM.md](./docs/EVAL_LITM.md) · [SPEC_CONTEXT_POLICY.md](./SPEC_CONTEXT_POLICY.md).
+Ship notes between product framing (above) and install (below). Details: [eval/NOTES_live_2026-07-23.md](./eval/NOTES_live_2026-07-23.md) · [eval/README.md](./eval/README.md) · [docs/EVAL_LITM.md](./docs/EVAL_LITM.md) · [SPEC_CONTEXT_POLICY.md](./SPEC_CONTEXT_POLICY.md).
 
-### Context engineering
+### What we optimized for (read this first)
+
+| Priority | Claim | Today’s stance |
+|----------|--------|----------------|
+| **P0** | **Event structure** — turn-marked pointer cards, timeline hot path, cold `recall_query` | Core product bet (same as the framing above); not a separate “structure score” metric yet |
+| **P1** | **Pointerize does not imply higher prompt cost** vs keeping full tool bodies | On a clean multi-turn multi_doc pair, **eager ≤ no-pointerize** on hot tokens (~1.6–2.3% lower mean/p95/Σ, n=1) — see live note |
+| **P2** | Large funnel savings under heavy pressure | **Not** the headline of this task (little early pointerize) |
+
+Skeptics often say “rewriting earlier turns into cards wastes more tokens.” Our aligned live trajectory **does not support that**; the larger product answer is still **clearer event structure**, not a giant compression percentage.
+
+### Live snapshot worth citing (narrow)
+
+- **Task**: `multi_doc_01` segmented (≤2 `docs/*` reads/turn, 7 files, large distractors)  
+- **Pair**: `minimal_pointerize_eager` (`keep=0`, `tool_deny: [context_focus]`) vs `minimal_no_pointerize` (`keep=200`)  
+- **Model**: `deepseek-v4-pro` · both **script-pass** · 8 turns / 10 tools · `repeat_tool_rate=0`  
+- **Hot path**: eager mean **15615** vs no-ptr **15870**; prompt Σ **124918** vs **126957**  
+- **Report**: [eval/reports/live_multi_doc_segmented.md](./eval/reports/live_multi_doc_segmented.md) (use `--run-ids` only — do not mix older multi_doc runs)  
+- **Full write-up**: [eval/NOTES_live_2026-07-23.md](./eval/NOTES_live_2026-07-23.md)
+
+**Not claimed:** large token savings, LITM accuracy win, or n≥3 distributions.
+
+### Context engineering shipped
 
 | Area | What landed |
 |------|-------------|
-| **Token self-calibration** | Session EWMA scale from `llm_done.usage.prompt_tokens` vs local estimate (`TokenCalibrator`). Default scale=1 → prior behavior until samples arrive. Used by heavy compression / pointer-compact / soft-force. `DEBUG_TOKEN_CAL=1` for logs. |
-| **`context_policy` (C1–C4)** | Magic numbers (budget layers, heavy ratios, protect window, prune, calibrator hyperparams) loadable from `agent.json`. Omit ≡ code defaults. Types + normalize/clamp + runtime wiring + [agent.context.example.json](./agent.context.example.json) + [QUICKSTART.md](./QUICKSTART.md) §6.1. |
+| **Token self-calibration** | Session EWMA from `prompt_tokens` / local estimate (`TokenCalibrator`); scale=1 until samples; `DEBUG_TOKEN_CAL=1` |
+| **`context_policy` (C1–C4)** | Budget / heavy / protect / prune / calibrator knobs in `agent.json`; [agent.context.example.json](./agent.context.example.json) · [QUICKSTART.md](./QUICKSTART.md) §6.1 |
 
-### Reproducible eval harness (E0–E3)
+### Eval harness (E0–E3+)
 
 | Stage | Capability |
 |-------|------------|
-| **E0** | `eval/` tree, strategies (`minimal_full`, `minimal_no_pointerize`, `naive_full`, `aggressive_compress`), golden task `state_chain_01`, `npm run eval:smoke` |
-| **E1** | `npm run eval:run` → `manifest.json` · `turns.jsonl` · `summary.json` · per-run `workspace/`; Runtime event telemetry; `--dry-run --plant` without API |
-| **E2** | `npm run eval:aggregate` / `eval:compare` → `eval/reports/*.{md,json}` |
-| **E3** | Second task **`multi_doc_01`** (mid-doc needle), optional cost via `EVAL_PRICE_*_PER_1M`, `npm run eval:list` |
+| **E0–E2** | Tasks, strategies, `eval:run` / `aggregate` / `compare`, dry-run, reports |
+| **E3+** | `multi_doc_01` (segmented reads), `minimal_pointerize_eager`, path fingerprints, `tool_deny`, aggregate `--run-ids` / `--git-sha` |
 
 ```bash
 npm run eval:list
-npm run eval:run -- --task state_chain_01 --strategy minimal_full --dry-run --plant
-npm run eval:run -- --task multi_doc_01 --strategy minimal_full --dry-run --plant
-npm run eval:compare -- --task state_chain_01 \
-  --strategies minimal_full,minimal_no_pointerize --dry-run --plant
+npm run eval:run -- --task multi_doc_01 --strategy minimal_pointerize_eager --max-turns 50
+npm run eval:run -- --task multi_doc_01 --strategy minimal_no_pointerize --max-turns 50
+npm run eval:aggregate -- --no-dry-run --run-ids <eager_id>,<nop_id> --out-name clean_pair
 ```
-
-Live API compare (costs money; needs `.env`): drop `--dry-run --plant`, set `--max-turns`, optional price env for `$` column. **No public success curves yet** — publish numbers only after stable live n≥3.
 
 ### Notable commits (today’s arc)
 
-`92842c4` token calibrator · `d393377`/`cfa06ef` context_policy C1/C2 · `d4ac428` C3/C4 example docs · `ca3e9f4`–`d527802` eval E0–E2 · E3 multi_doc in this drop.
+`92842c4` calibrator · `d393377`/`cfa06ef` context_policy · eval E0–E3 · fingerprint / `tool_deny` / segmented multi_doc · `0269a3a` live notes
 
 ---
 

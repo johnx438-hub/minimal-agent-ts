@@ -74,36 +74,53 @@ TypeScript 实现，纯手写 ReAct 主循环，~600 个测试用例，不绑定
 
 ## 更新 · 2026-07-23
 
-今日主体与评测落地摘要。细节见 [eval/README.md](./eval/README.md) · [docs/EVAL_LITM.md](./docs/EVAL_LITM.md) · [SPEC_CONTEXT_POLICY.md](./SPEC_CONTEXT_POLICY.md)；英文同构段落见 [README.md](./README.md)。
+插在产品叙事（上）与「快速开始」（下）之间。完整实验笔记：[eval/NOTES_live_2026-07-23.md](./eval/NOTES_live_2026-07-23.md) · [eval/README.md](./eval/README.md) · [docs/EVAL_LITM.md](./docs/EVAL_LITM.md) · [SPEC_CONTEXT_POLICY.md](./SPEC_CONTEXT_POLICY.md)。
 
-### 上下文工程
+### 我们优先证明什么
+
+| 优先级 | 主张 | 今日态度 |
+|--------|------|----------|
+| **P0** | **事件结构清晰**——带 `turn=` 的指针卡片、时间线热路径、冷存 `recall_query` | 产品主叙事（与上文「从 Token 到事件」一致）；尚无单独「结构分」指标 |
+| **P1** | **指针化改前文 ≠ 必然更费 token**（相对几乎不压历史） | 干净 multi_doc 对上 eager 热路径 **略低约 1.6–2.3%**（n=1） |
+| **P2** | 高压下大幅省 token | **不是**本任务头条（pointerize 触发偏晚） |
+
+常见质疑是「卡片化历史只会多烧 token」。对齐轨迹的 live **不支持这一点**；同时不要被带偏成只谈省 token——**主攻仍是事件结构化上下文**。
+
+### 值得引用的 live 快照（窄口径）
+
+- **题**：`multi_doc_01` 分段版（每 turn ≤2 个 `docs/*`，7 文件，大 distractor）  
+- **对比**：`minimal_pointerize_eager`（keep=0 + deny `context_focus`）vs `minimal_no_pointerize`（keep=200）  
+- **模型**：`deepseek-v4-pro` · 双过 · 8 turn / 10 tool · `repeat_tool_rate=0`  
+- **热路径**：eager mean **15615** vs no_ptr **15870**；prompt Σ **124918** vs **126957**  
+- **报告**：[eval/reports/live_multi_doc_segmented.md](./eval/reports/live_multi_doc_segmented.md)（务必 `--run-ids`，勿混旧 run）  
+- **笔记**：[eval/NOTES_live_2026-07-23.md](./eval/NOTES_live_2026-07-23.md)
+
+**未声称**：大幅省 token、LITM 正确率胜出、或 n≥3 分布。
+
+### 上下文工程落地
 
 | 方向 | 内容 |
 |------|------|
-| **Token 自校准** | 用 `llm_done.usage.prompt_tokens` 与本地估 token 做 session 内 EWMA 比例尺（`TokenCalibrator`）。默认 scale=1 与旧行为一致；作用于 heavy / pointer-compact / soft-force。调试：`DEBUG_TOKEN_CAL=1`。 |
-| **`context_policy`（C1–C4）** | budget / heavy / protect / prune / calibrator 超参可写入 `agent.json`；省略 = 代码默认。含 normalize/clamp、运行时接线、[agent.context.example.json](./agent.context.example.json)、[QUICKSTART.md](./QUICKSTART.md) §6.1。 |
+| **Token 自校准** | `prompt_tokens` / 本地估 EWMA（`TokenCalibrator`）；`DEBUG_TOKEN_CAL=1` |
+| **`context_policy`（C1–C4）** | budget / heavy / protect / prune / calibrator 可配；[agent.context.example.json](./agent.context.example.json) |
 
-### 可复现 EVAL（E0–E3）
+### 评测 harness（E0–E3+）
 
 | 阶段 | 能力 |
 |------|------|
-| **E0** | `eval/`、策略 JSON、金题 `state_chain_01`、`npm run eval:smoke` |
-| **E1** | `npm run eval:run` → manifest / turns.jsonl / summary / 每 run 独立 workspace；`--dry-run --plant` 无需 API |
-| **E2** | `eval:aggregate` / `eval:compare` → `eval/reports/*` |
-| **E3** | 第二题 **`multi_doc_01`**（中段 needle）、可选 `$`（`EVAL_PRICE_*_PER_1M`）、`npm run eval:list` |
+| **E0–E2** | 金题、策略、`eval:run` / aggregate / compare、dry-run、报告 |
+| **E3+** | 分段 multi_doc、`minimal_pointerize_eager`、path 指纹、`tool_deny`、aggregate `--run-ids` / `--git-sha` |
 
 ```bash
 npm run eval:list
-npm run eval:run -- --task multi_doc_01 --strategy minimal_full --dry-run --plant
-npm run eval:compare -- --task state_chain_01 \
-  --strategies minimal_full,minimal_no_pointerize --dry-run --plant
+npm run eval:run -- --task multi_doc_01 --strategy minimal_pointerize_eager --max-turns 50
+npm run eval:run -- --task multi_doc_01 --strategy minimal_no_pointerize --max-turns 50
+npm run eval:aggregate -- --no-dry-run --run-ids <eager_id>,<nop_id> --out-name clean_pair
 ```
-
-真 API 对比会耗额度；**尚无对外成功曲线数字**——live n≥3 稳定后再写死进 README。
 
 ### 今日相关提交（节选）
 
-`92842c4` 自校准 · `d393377`/`cfa06ef` context_policy · `d4ac428` 示例文档 · `ca3e9f4`–`d527802` eval E0–E2 · 本提交含 E3 multi_doc 与 README 更新区。
+`92842c4` 自校准 · context_policy · eval E0–E3 · 指纹 / tool_deny / 分段 multi_doc · `0269a3a` live 笔记
 
 ---
 
