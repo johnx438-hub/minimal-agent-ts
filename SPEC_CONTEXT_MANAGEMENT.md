@@ -3,13 +3,14 @@
 > **目标**: 让 ReAct Agent harness 具备分层上下文管理能力，支持长对话不丢失关键信息  
 > **日期**: 2026-07-15  
 > **状态**: **v2.0 与代码对齐**（Phase 1–2、4–6 ✅；L2 turn-end pipeline ✅；Phase 3 外置 MemFileCli）  
-> **产品/底座总规划**: [docs/ROADMAP.md](./docs/ROADMAP.md) · 工具面: [SPEC_TOOLS.md](./SPEC_TOOLS.md) · LLM: [SPEC_LLM_ROUTER.md](./SPEC_LLM_ROUTER.md) · 上下文旋钮收编: [SPEC_CONTEXT_POLICY.md](./SPEC_CONTEXT_POLICY.md)（草案）
+> **产品/底座总规划**: [docs/ROADMAP.md](./docs/ROADMAP.md) · 工具面: [SPEC_TOOLS.md](./SPEC_TOOLS.md) · LLM: [SPEC_LLM_ROUTER.md](./SPEC_LLM_ROUTER.md) · 上下文旋钮: [SPEC_CONTEXT_POLICY.md](./SPEC_CONTEXT_POLICY.md)（C1–C4 ✅）· 模板 [agent.context.example.json](./agent.context.example.json)
 
 ### 2026-07 现状速览（对齐代码）
 
 | 域 | 现状 | 代码锚点 |
 |----|------|----------|
 | **Turn-end 上下文** | pointerize → prune → pointer-compact → heavy compression | `src/context/pipeline.ts` → `runTurnEndPipeline` / `runTurnEndCompression` |
+| **上下文旋钮** | `agent.json` `context_policy` + `pointerize_policy`（可选） | [SPEC_CONTEXT_POLICY](./SPEC_CONTEXT_POLICY.md) · [agent.context.example.json](./agent.context.example.json) · `normalizeContextPolicy` |
 | **兼容入口** | `context-policy.ts` / `context-budget.ts` 为 **re-export** | `src/context/*` 为真源 |
 | **冷存 + 指针** | ActionStore + 指针卡片 + `recall_query` | `action-store.ts`, `pointerize.ts`, `recall.ts` |
 | **Recall 检索** | **action_id 精确** + **session 内关键词**（非向量） | `recall.ts`（**无** `@zvec/zvec` / 本地 embedding 依赖） |
@@ -37,7 +38,7 @@
 | **5** | MCP / Skills | P2 | Phase 4a | ✅（含 HTTP MCP） |
 | **6** | 多角色工作流 | P2 | 稳定 ReAct | ✅ 6a–6d |
 | **L2** | Context pipeline 模块化 | 底座 | Phase 2 | ✅ L2-0～L2-6 |
-| **C\*** | `context_policy` 魔法数字 → agent.json | 调参 | L2 · 自校准 | 📋 [SPEC_CONTEXT_POLICY](./SPEC_CONTEXT_POLICY.md) 草案 |
+| **C\*** | `context_policy` 魔法数字 → agent.json | 调参 | L2 · 自校准 | ✅ C1–C4（[SPEC](./SPEC_CONTEXT_POLICY.md) · [example](./agent.context.example.json)） |
 | **L3+** | MessageBridge / Inbound / Schedule | 底座 | — | 出站类型 ✅；入站+定时 规划中 |
 
 **原则**：先「单 Agent + 干净上下文」，再工具与运行时，再编排。产品迭代与打包见 **docs/ROADMAP.md**，本文专注上下文语义。

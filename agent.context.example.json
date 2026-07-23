@@ -1,0 +1,74 @@
+{
+  "_comment": "Context knobs template (SPEC_CONTEXT_POLICY). Merge context_policy and/or pointerize_policy into agent.json — do not replace the whole file. All fields optional: omit any key to keep code defaults (bit-identical). Defaults below mirror current hardcodes for copy-paste clarity.",
+  "_docs": "SPEC_CONTEXT_POLICY.md · SPEC_POINTERIZE_SCOPE.md · QUICKSTART.md § context knobs",
+  "_debug": "DEBUG_TOKEN_CAL=1 logs EWMA raw/actual/sample/scale per LLM turn",
+
+  "context_policy": {
+    "_budget_note": "Layer percentages are independent caps (need not sum to 1). total context size still comes from model map / MAX_CONTEXT_TOKENS.",
+    "budget": {
+      "system_pct": 0.05,
+      "current_pct": 0.1,
+      "recent_pct": 0.4,
+      "mid_pct": 0.35,
+      "early_pct": 0.1,
+      "recent_max_tokens": 80000,
+      "mid_max_summaries": 20
+    },
+    "heavy_compression": {
+      "_note": "Relative to usable = total * (1 - system_pct). first then repeat (hysteresis).",
+      "first_ratio": 0.8,
+      "repeat_ratio": 0.9
+    },
+    "protect": {
+      "_note": "Prune/compact skip window uses raw estimateTokens (not calibrator scale).",
+      "recent_tokens": 140000,
+      "user_turns": 2
+    },
+    "prune": {
+      "min_savings_tokens": 70000,
+      "max_pointer_compact_per_turn": 20
+    },
+    "token_calibrator": {
+      "_note": "EWMA: scale ← α·(prompt_tokens/local_est) + (1-α)·scale; clamped. Runtime still learns scale per session.",
+      "alpha": 0.3,
+      "scale_min": 0.5,
+      "scale_max": 2.0,
+      "min_raw": 256
+    },
+    "resume": {
+      "min_history_tokens": 4000,
+      "apply_calibrator": false
+    }
+  },
+
+  "pointerize_policy": {
+    "_note": "Keep separate from context_policy (SPEC_POINTERIZE_SCOPE). soft_force_ratio uses calibrated estimates when available.",
+    "keep_inline_turns": 2,
+    "soft_force_ratio": 0.75,
+    "preview_mode": "smart",
+    "preview_min_chars": 120,
+    "preview_max_chars": 480,
+    "preview_ratio": 0.04,
+    "preview_max_lines": 5,
+    "summary_max_chars": 120,
+    "tool_overrides": {
+      "recall_query": { "mode": "never" }
+    }
+  },
+
+  "_profiles": {
+    "_note": "Not loaded automatically — copy a block into agent.json context_policy when experimenting.",
+    "aggressive_compression": {
+      "heavy_compression": { "first_ratio": 0.55, "repeat_ratio": 0.7 },
+      "protect": { "recent_tokens": 40000, "user_turns": 1 },
+      "prune": { "min_savings_tokens": 20000 }
+    },
+    "late_compression": {
+      "heavy_compression": { "first_ratio": 0.9, "repeat_ratio": 0.95 },
+      "protect": { "recent_tokens": 200000, "user_turns": 3 }
+    },
+    "fast_calibrator": {
+      "token_calibrator": { "alpha": 1.0, "scale_min": 0.5, "scale_max": 2.0, "min_raw": 256 }
+    }
+  }
+}

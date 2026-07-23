@@ -60,6 +60,7 @@
     "agent.mcp.example.json",
     "agent.llm.example.json",
     "agent.llm.2key.example.json",
+    "agent.context.example.json",
     ".env.example",
     "README.md",
     "QUICKSTART.md",

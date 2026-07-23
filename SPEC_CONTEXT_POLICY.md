@@ -1,9 +1,10 @@
 # SPEC: Context policy（魔法数字 → `agent.json`）
 
-> **状态**: 草案 · **C1 ✅ · C2 ✅**（runtime 接线：budget / heavy / protect / prune / calibrator）  
+> **状态**: **C1–C4 ✅**（类型/loader · runtime 接线 · calibrator · 示例文档）  
 > **日期**: 2026-07-23  
 > **相关**: [SPEC_CONTEXT_MANAGEMENT.md](./SPEC_CONTEXT_MANAGEMENT.md) · [SPEC_POINTERIZE_SCOPE.md](./SPEC_POINTERIZE_SCOPE.md) · token 自校准 `src/context/token-calibrator.ts` · [docs/EVAL_LITM.md](./docs/EVAL_LITM.md)  
-> **代码**: `policy-config.ts` · `budget.ts` · `pipeline` / prune / estimate / pointer-compact · `agent.ts` · `runner.buildAgentConfig` · tests `context-policy-*.test.ts`
+> **代码**: `policy-config.ts` · `budget.ts` · pipeline · `agent.ts` · `runner.buildAgentConfig`  
+> **模板**: [agent.context.example.json](./agent.context.example.json) · [QUICKSTART.md](./QUICKSTART.md) §6.1
 
 ---
 
@@ -325,8 +326,8 @@ Env 覆盖（可选，P2）：
 | **C0** | 本 SPEC + 清单冻结 | 文档合并 ✅ |
 | **C1** | `ContextPolicy` 类型 + `normalize` + merge + 单测 clamp | omit ≡ 旧默认 ✅ |
 | **C2** | `createBudgetConfig` + heavy ratios + protect/prune 接线 | 改 agent.json 可改变阈值（集成测） ✅ |
-| **C3** | `token_calibrator` 子块 → `new TokenCalibrator(opts)` | 改 alpha 可测 EWMA |
-| **C4** | `agent.context.example.json` + QUICKSTART / SPEC_CONTEXT_MANAGEMENT 交叉链接 | 可复制片段 |
+| **C3** | `token_calibrator` 子块 → `new TokenCalibrator(opts)` | 改 alpha 可测 EWMA ✅（C2 已接线；example `fast_calibrator`） |
+| **C4** | `agent.context.example.json` + QUICKSTART / SPEC_CONTEXT_MANAGEMENT 交叉链接 | 可复制片段 ✅ |
 | **C5**（可选） | `resume.apply_calibrator` + `min_history_tokens` | #1b |
 | **C6**（可选） | advanced `chars_per_token` | 强文档警告 |
 
@@ -419,3 +420,4 @@ Env 覆盖（可选，P2）：
 | 2026-07-23 | v0.1 | 初稿：清单 + schema + 阶段；对齐 #1 TokenCalibrator 与 pointerize_policy |
 | 2026-07-23 | v0.2 | C1：types + `policy-config` normalize/merge；loader deep-merge；默认从 hardcode 导入 |
 | 2026-07-23 | v0.3 | C2：BudgetConfig heavy/resume 字段；pipeline/agent/runner 消费 ResolvedContextPolicy |
+| 2026-07-23 | v0.4 | C3/C4：`agent.context.example.json`、QUICKSTART §6.1、SPEC 交叉链接、example 单测 |

@@ -143,9 +143,46 @@ npm start -- --workflow workflows/review-loop.json "你的任务描述"
 | 文件 | 作用 |
 |------|------|
 | **`.env`** | **唯一放 API key 的地方**（从 `.env.example` 复制） |
-| `agent.json` | 模型 profile 名、`api_key_env` 变量名、工具、spawn、web 策略 |
+| `agent.json` | 模型 profile 名、`api_key_env` 变量名、工具、spawn、web 策略、**上下文旋钮** |
+| `agent.context.example.json` | 上下文 / 指针策略模板（合并进 `agent.json`，见下节） |
 | `.tui-prefs.json` | shell/web 默认、locale、verbose 等 |
 | `agents/*.md` | 子 Agent 系统提示与工具白名单 |
+
+### 6.1 上下文旋钮（`context_policy`）
+
+长会话压缩时机、保护窗、token 自校准等阈值可写在 `agent.json`，**全部可选**；省略则与代码默认一致。
+
+完整可复制模板：**[agent.context.example.json](./agent.context.example.json)**  
+设计对照：**[SPEC_CONTEXT_POLICY.md](./SPEC_CONTEXT_POLICY.md)** · 指针滑窗：**[SPEC_POINTERIZE_SCOPE.md](./SPEC_POINTERIZE_SCOPE.md)**
+
+```jsonc
+// 合并进 agent.json（片段）
+{
+  "context_policy": {
+    "heavy_compression": { "first_ratio": 0.8, "repeat_ratio": 0.9 },
+    "protect": { "recent_tokens": 140000, "user_turns": 2 },
+    "prune": { "min_savings_tokens": 70000 },
+    "token_calibrator": { "alpha": 0.3, "scale_min": 0.5, "scale_max": 2.0 }
+  },
+  "pointerize_policy": {
+    "keep_inline_turns": 2,
+    "soft_force_ratio": 0.75
+  }
+}
+```
+
+| 想做什么 | 调什么 |
+|----------|--------|
+| 更早 heavy 压缩 | `context_policy.heavy_compression.first_ratio` 调低（如 `0.55`） |
+| 更晚压缩、多留原文 | `first_ratio` 调高（如 `0.9`）；`protect.recent_tokens` 调大 |
+| 校准跟得更快 | `token_calibrator.alpha` → `1`（单 turn 贴 `prompt_tokens/local`） |
+| 对照型任务少 pointerize | `pointerize_policy.keep_inline_turns` 调高；或 spawn `pointerize_mode: "hold"` |
+
+示例文件里的 `_profiles`（`aggressive_compression` / `late_compression` / `fast_calibrator`）**不会自动加载**，需要时把对应块拷进 `context_policy`。
+
+调试 EWMA：`DEBUG_TOKEN_CAL=1`（每 turn 打 raw / actual / sample / scale）。
+
+**不要**随意改 `estimate.chars_per_token`（advanced，换尺子会影响所有阈值语义）。
 
 ## 7. 自检
 

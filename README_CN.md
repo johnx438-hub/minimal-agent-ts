@@ -379,6 +379,11 @@ MY_GW_KEY=sk-xxxxxxxx
 
 > 多个 API 做 fallback 时，利用 `fallback_profiles` 数组和 `FALLBACK=1` 环境变量自动切换。参考模板文件 `agent.llm.2key.example.json`。
 
+### 上下文压缩旋钮（可选）
+
+长会话 heavy 压缩时机、保护窗、token 自校准等可写在 `agent.json` 的 `context_policy`（**全部可选**，省略 = 代码默认）。  
+模板：[`agent.context.example.json`](./agent.context.example.json) · 说明：[SPEC_CONTEXT_POLICY.md](./SPEC_CONTEXT_POLICY.md) · [QUICKSTART.md](./QUICKSTART.md) §6.1。
+
 ---
 
 ## Web Fetch / Search 可选依赖
