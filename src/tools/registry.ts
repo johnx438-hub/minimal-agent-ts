@@ -11,7 +11,11 @@ import { CliToolProvider } from './providers/cli-provider.js';
 import { McpToolProvider } from './providers/mcp-provider.js';
 import { SkillsToolProvider } from './providers/skills-provider.js';
 import { SpawnToolProvider } from './providers/spawn-provider.js';
-import { isRoleToolAllowlisted } from './providers/tool-allowlist.js';
+import {
+  isRoleToolAllowlisted,
+  isToolDenied,
+  isToolPermitted,
+} from './providers/tool-allowlist.js';
 import type { AgentPluginConfig } from '../plugins/types.js';
 import { CODE_REVIEW_DEFINITIONS } from './code-review.js';
 import { EDIT_FILE_DEFINITIONS } from './edit-file.js';
@@ -154,8 +158,13 @@ export class ToolRegistry {
 
     // Workflow-only handoff tool (SPEC_WORKFLOW W4) — not a global builtin.
     if (config.workflowRole && !seen.has(WORKFLOW_HANDOFF_TOOL)) {
-      const allowlist = config.toolAllowlist;
-      if (isRoleToolAllowlisted(WORKFLOW_HANDOFF_TOOL, allowlist)) {
+      if (
+        isToolPermitted(
+          WORKFLOW_HANDOFF_TOOL,
+          config.toolAllowlist,
+          config.toolDeny,
+        )
+      ) {
         for (const def of WORKFLOW_HANDOFF_DEFINITIONS) {
           if (!seen.has(def.function.name)) {
             seen.add(def.function.name);
@@ -165,6 +174,12 @@ export class ToolRegistry {
       }
     }
 
+    // Eval / role denylist: drop after providers so allowlist-only code stays simple.
+    if (config.toolDeny?.length) {
+      return defs.filter(
+        (d) => !isToolDenied(d.function.name, config.toolDeny),
+      );
+    }
     return defs;
   }
 
@@ -182,6 +197,9 @@ export class ToolRegistry {
         return '[aborted]';
       }
 
+      if (isToolDenied(name, config.toolDeny)) {
+        return `error: tool ${name} is denied for this run`;
+      }
       const allowlist = config.toolAllowlist;
       if (allowlist?.length && !isRoleToolAllowlisted(name, allowlist)) {
         return `error: tool ${name} is not allowed for this role`;

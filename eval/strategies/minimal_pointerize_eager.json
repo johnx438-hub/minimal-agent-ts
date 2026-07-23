@@ -1,6 +1,7 @@
 {
   "_id": "minimal_pointerize_eager",
-  "_comment": "Stress pointerize: keep_inline_turns=0 (prior-turn tools carded ASAP) + earlier soft_force + tighter protect/prune. Use vs minimal_no_pointerize / minimal_full on multi_doc-style tasks.",
+  "_comment": "Stress pointerize: keep_inline_turns=0 + earlier soft_force + tighter protect/prune. tool_deny context_focus so the model cannot raise keep and fight the strategy.",
+  "tool_deny": ["context_focus"],
   "pointerize_policy": {
     "keep_inline_turns": 0,
     "soft_force_ratio": 0.55,

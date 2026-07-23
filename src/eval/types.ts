@@ -7,6 +7,11 @@ export interface EvalStrategyFile {
   _comment?: string;
   pointerize_policy?: PointerizePolicy;
   context_policy?: ContextPolicy;
+  /**
+   * Tool names to hide from the model for this strategy (e.g. context_focus
+   * so keep_inline boosts cannot fight pointerize_eager).
+   */
+  tool_deny?: string[];
 }
 
 export interface EvalTaskMeta {
@@ -56,6 +61,7 @@ export interface EvalManifest {
   wall_ms?: number;
   pointerize_policy?: PointerizePolicy;
   context_policy?: ContextPolicy;
+  tool_deny?: string[];
   task_meta: EvalTaskMeta;
 }
 

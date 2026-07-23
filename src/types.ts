@@ -185,6 +185,11 @@ export interface AgentConfig {
   /** When set, only these builtin/MCP tool names are exposed to the API. */
   toolAllowlist?: string[];
   /**
+   * Tool names never exposed / executable (eval strategy `tool_deny`, etc.).
+   * Applied after allowlist; e.g. `["context_focus"]`.
+   */
+  toolDeny?: string[];
+  /**
    * Path grants for multi-root tools (SPEC_SESSION_WORKSPACE).
    * When set, readable/writable resolution consults these in addition to cwd.
    */

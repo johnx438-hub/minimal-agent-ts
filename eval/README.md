@@ -29,12 +29,18 @@ Do not change config mid-run. Prefer script exit codes over model self-report.
 | ID | File | Intent |
 |----|------|--------|
 | `minimal_full` | `strategies/minimal_full.json` | Production defaults (pointerize + pipeline) |
-| `minimal_pointerize_eager` | `strategies/minimal_pointerize_eager.json` | **keep=0** + earlier soft_force — stress pointerize |
+| `minimal_pointerize_eager` | `strategies/minimal_pointerize_eager.json` | **keep=0** + soft_force + **`tool_deny: [context_focus]`** |
 | `minimal_no_pointerize` | `strategies/minimal_no_pointerize.json` | Ablation: huge keep window |
 | `naive_full` | `strategies/naive_full.json` | Approximate full hot path (late heavy + huge keep) |
 | `aggressive_compress` | `strategies/aggressive_compress.json` | Early compression stress |
 
 Merge strategy JSON **into** a working `agent.json` (or pass as overlay when E1 lands). Never put API keys in strategy files.
+
+Optional strategy fields:
+
+| Field | Effect |
+|-------|--------|
+| `tool_deny` | Hide tools from the model for this run (e.g. `["context_focus"]` so keep boosts cannot fight pointerize) |
 
 ## Tasks
 

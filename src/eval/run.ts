@@ -85,6 +85,14 @@ function applyStrategyToConfig(
     );
     config.contextPolicy = normalizeContextPolicy(pluginConfig.context_policy);
   }
+  if (strategy.tool_deny?.length) {
+    const deny = strategy.tool_deny
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    if (deny.length) {
+      config.toolDeny = [...new Set([...(config.toolDeny ?? []), ...deny])];
+    }
+  }
 }
 
 function runSetup(taskRoot: string, workdir: string): void {
@@ -284,6 +292,7 @@ export async function runEval(opts: EvalRunOptions): Promise<EvalRunResult> {
     started_at: startedAt,
     pointerize_policy: strategy.pointerize_policy,
     context_policy: strategy.context_policy,
+    tool_deny: strategy.tool_deny,
     task_meta: meta,
   };
 
