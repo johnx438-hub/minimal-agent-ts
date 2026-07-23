@@ -7,6 +7,9 @@
  *   npm run eval:compare -- --task state_chain_01 --strategies minimal_full,minimal_no_pointerize --dry-run --plant
  */
 
+// Same as main.ts / tui: load repo-root .env before profile resolution.
+import 'dotenv/config';
+
 import { join, resolve } from 'node:path';
 
 import { aggregateRuns, writeAggregateReport } from './aggregate.js';

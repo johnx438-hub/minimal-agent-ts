@@ -68,6 +68,9 @@ Artifacts land in `eval/runs/<run_id>/`:
 
 ### Live agent run (needs API key in `.env`)
 
+Uses the **same** `agent.json` profiles + `.env` as TUI — no separate eval key.  
+`api_profiles.*.api_key_env` is the **env var name** (e.g. `DEEPSEEK_API_KEY`); the secret lives only in `.env`.
+
 ```bash
 # from repo root (agent.json + .env)
 npm run eval:run -- \
@@ -83,6 +86,8 @@ Exit code: `0` if `score.sh` passes, else `1`.
 Stdout: one JSON object with `run_dir` and headline metrics.
 
 Options: `--allow-shell` · `--allow-web` · `--timeout-sec N` · `--run-id <id>` · `--project-root <dir>`.
+
+If you see `No available LLM profile in chain: deepseek-main → …`: `.env` was not loaded or the key is empty. Eval CLI loads `projectRoot/.env` (same as TUI after fix). Confirm `default_api_profile` / `api_key_env` match a non-empty line in `.env`.
 
 ## Metrics
 

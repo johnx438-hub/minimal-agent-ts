@@ -9,6 +9,8 @@ import {
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { config as loadDotenv } from 'dotenv';
+
 import { previewPolicyFromPointerize } from '../action-preview.js';
 import { mergeContextPolicy, normalizeContextPolicy } from '../context/policy-config.js';
 import type { RuntimeEvent } from '../events.js';
@@ -215,6 +217,10 @@ export interface EvalRunResult {
  */
 export async function runEval(opts: EvalRunOptions): Promise<EvalRunResult> {
   const projectRoot = opts.projectRoot;
+  // Load .env from project root (eval CLI may not inherit TUI/main dotenv).
+  // path: prefer projectRoot/.env so cwd-independent library callers work.
+  loadDotenv({ path: join(projectRoot, '.env'), override: false });
+
   const evalRoot = resolveEvalRoot(projectRoot, opts.evalRoot);
   const taskId = opts.taskId;
   const strategyId = opts.strategyId;
