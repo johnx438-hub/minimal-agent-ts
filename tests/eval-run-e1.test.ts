@@ -21,6 +21,21 @@ describe('eval telemetry helpers', () => {
     );
   });
 
+  it('collapses absolute paths to trailing segments (no prefix collision)', () => {
+    const abs1 =
+      '/home/archer/zerostack-analysis/minimal-agent-ts/eval/runs/multi_doc_01__minimal_full__x/workspace/docs/03_distractor.md';
+    const abs2 =
+      '/home/archer/zerostack-analysis/minimal-agent-ts/eval/runs/multi_doc_01__minimal_full__x/workspace/docs/04_distractor.md';
+    const rel1 = 'docs/03_distractor.md';
+    const fp1 = toolArgsFingerprint('read_file', JSON.stringify({ path: abs1 }));
+    const fp2 = toolArgsFingerprint('read_file', JSON.stringify({ path: abs2 }));
+    const fpRel = toolArgsFingerprint('read_file', JSON.stringify({ path: rel1 }));
+    assert.equal(fp1, 'read_file|path=docs/03_distractor.md');
+    assert.equal(fpRel, 'read_file|path=docs/03_distractor.md');
+    assert.notEqual(fp1, fp2);
+    assert.equal(fp2, 'read_file|path=docs/04_distractor.md');
+  });
+
   it('aggregates llm_done and tool_call into turns', () => {
     const c = new EvalTelemetryCollector();
     c.onEvent({ type: 'turn_start', turn: 1 }, 1000);

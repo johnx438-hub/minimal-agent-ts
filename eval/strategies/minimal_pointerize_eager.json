@@ -1,0 +1,25 @@
+{
+  "_id": "minimal_pointerize_eager",
+  "_comment": "Stress pointerize: keep_inline_turns=0 (prior-turn tools carded ASAP) + earlier soft_force + tighter protect/prune. Use vs minimal_no_pointerize / minimal_full on multi_doc-style tasks.",
+  "pointerize_policy": {
+    "keep_inline_turns": 0,
+    "soft_force_ratio": 0.55,
+    "preview_mode": "smart",
+    "preview_max_chars": 240,
+    "preview_max_lines": 3
+  },
+  "context_policy": {
+    "heavy_compression": {
+      "first_ratio": 0.6,
+      "repeat_ratio": 0.75
+    },
+    "protect": {
+      "recent_tokens": 50000,
+      "user_turns": 1
+    },
+    "prune": {
+      "min_savings_tokens": 20000,
+      "max_pointer_compact_per_turn": 30
+    }
+  }
+}

@@ -29,6 +29,7 @@ Do not change config mid-run. Prefer script exit codes over model self-report.
 | ID | File | Intent |
 |----|------|--------|
 | `minimal_full` | `strategies/minimal_full.json` | Production defaults (pointerize + pipeline) |
+| `minimal_pointerize_eager` | `strategies/minimal_pointerize_eager.json` | **keep=0** + earlier soft_force — stress pointerize |
 | `minimal_no_pointerize` | `strategies/minimal_no_pointerize.json` | Ablation: huge keep window |
 | `naive_full` | `strategies/naive_full.json` | Approximate full hot path (late heavy + huge keep) |
 | `aggressive_compress` | `strategies/aggressive_compress.json` | Early compression stress |
@@ -133,6 +134,10 @@ npm run eval:run -- --task multi_doc_01 --strategy minimal_full --dry-run --plan
 # both tasks × two strategies (dry matrix)
 npm run eval:compare -- --task multi_doc_01 \
   --strategies minimal_full,minimal_no_pointerize --dry-run --plant
+
+# stress pointerize (keep_inline_turns=0) vs ablation
+npm run eval:compare -- --task multi_doc_01 \
+  --strategies minimal_pointerize_eager,minimal_no_pointerize --max-turns 40
 ```
 
 ## Next

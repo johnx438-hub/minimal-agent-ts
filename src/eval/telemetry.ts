@@ -1,6 +1,37 @@
 import type { RuntimeEvent } from '../events.js';
 import type { EvalTurnRecord } from './types.js';
 
+/**
+ * Collapse absolute/relative paths so the same file fingerprints alike.
+ * Uses the last 1–2 path segments (e.g. `docs/03_distractor.md`) so long
+ * `/home/.../eval/runs/.../docs/x` prefixes do not collide when truncated.
+ */
+export function normalizePathForFingerprint(pathLike: string): string {
+  const n = pathLike.replace(/\\/g, '/').replace(/\/+/g, '/');
+  const parts = n.split('/').filter((p) => p.length > 0 && p !== '.');
+  if (parts.length === 0) return n || '.';
+  if (parts.length === 1) return parts[0];
+  // Drop Windows drive letter segment if present (e.g. C:)
+  const cleaned =
+    parts[0].length === 2 && parts[0].endsWith(':') ? parts.slice(1) : parts;
+  if (cleaned.length <= 2) return cleaned.join('/');
+  return cleaned.slice(-2).join('/');
+}
+
+function fingerprintField(key: string, value: string | number): string {
+  if (typeof value === 'number') return `${key}=${value}`;
+  const s = value;
+  if (key === 'path' || key === 'file' || key === 'cwd') {
+    return `${key}=${normalizePathForFingerprint(s)}`;
+  }
+  if (key === 'command' || key === 'url' || key === 'query' || key === 'pattern') {
+    // Keep head+tail so long commands stay distinguishable without prefix-only collision.
+    if (s.length <= 96) return `${key}=${s}`;
+    return `${key}=${s.slice(0, 48)}…${s.slice(-32)}`;
+  }
+  return `${key}=${s.slice(0, 80)}`;
+}
+
 /** Stable fingerprint for repeat-tool detection (name + coarse args). */
 export function toolArgsFingerprint(name: string, args: string): string {
   let parsed: unknown;
@@ -17,7 +48,7 @@ export function toolArgsFingerprint(name: string, args: string): string {
   const parts: string[] = [name];
   for (const k of keys) {
     if (typeof o[k] === 'string' || typeof o[k] === 'number') {
-      parts.push(`${k}=${String(o[k]).slice(0, 80)}`);
+      parts.push(fingerprintField(k, o[k] as string | number));
     }
   }
   if (parts.length === 1) {
