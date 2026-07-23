@@ -3,7 +3,9 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TASK=state_chain_01
+# Dedicated smoke sandbox (not shared with concurrent eval:run workspaces)
 WS="$ROOT/eval/tasks/$TASK/workspace"
+export EVAL_WORKDIR="$WS"
 
 bash "$ROOT/eval/scripts/setup-task.sh" "$TASK"
 

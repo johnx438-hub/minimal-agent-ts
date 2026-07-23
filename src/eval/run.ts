@@ -198,12 +198,13 @@ export async function runEval(opts: EvalRunOptions): Promise<EvalRunResult> {
   const meta = loadTaskMeta(evalRoot, taskId);
   const strategy = loadStrategy(evalRoot, strategyId);
   const taskRoot = taskDir(evalRoot, taskId);
-  const workdir = join(taskRoot, 'workspace');
   const maxTurns = opts.maxTurns ?? meta.max_turns ?? 30;
   const timeoutSec = opts.timeoutSec ?? meta.timeout_sec ?? null;
   const runId = makeRunId(taskId, strategyId, opts.runId);
   const runsDir = opts.runsDir ?? join(evalRoot, 'runs');
   const runDir = join(runsDir, runId);
+  // Per-run sandbox (avoids races when multiple evals share a task id).
+  const workdir = join(runDir, 'workspace');
   mkdirSync(runDir, { recursive: true });
 
   const started = Date.now();

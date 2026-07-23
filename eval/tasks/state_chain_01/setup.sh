@@ -5,7 +5,10 @@ set -euo pipefail
 TASK_ROOT="$(cd "$(dirname "$0")" && pwd)"
 WORKDIR="${EVAL_WORKDIR:-$TASK_ROOT/workspace}"
 
-rm -rf "$WORKDIR"
+# Idempotent clean (per-run workdir or shared task workspace)
+if [[ -e "$WORKDIR" ]]; then
+  rm -rf "$WORKDIR"
+fi
 mkdir -p "$WORKDIR/data" "$WORKDIR/noise"
 
 TOKEN="cherry-42"
@@ -39,7 +42,7 @@ process.stdout.write(header + line.repeat(80));
 done
 
 # Copy human task text into workspace for agents that only see cwd.
-cp "$TASK_ROOT/TASK.md" "$WORKDIR/TASK.md"
+cp -f "$TASK_ROOT/TASK.md" "$WORKDIR/TASK.md"
 
 # Record expected for score.sh (outside agent-facing data/ if possible — still under task root).
 # expected.json is task-static; do not put it inside workdir.

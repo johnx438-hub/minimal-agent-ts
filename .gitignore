@@ -31,6 +31,9 @@ npm-debug.log*
 # Eval harness run artifacts (manifest / jsonl / sandboxes)
 eval/runs/
 eval/tasks/**/workspace/
+# Generated reports (force-add selected ones if publishing numbers)
+eval/reports/*
+!eval/reports/.gitkeep
 
 # Local TUI prefs (test artifacts)
 .tui-prefs.json

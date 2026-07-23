@@ -1,6 +1,6 @@
 # EVAL · Lost in the Middle 与长程 Agent 实验纲要
 
-> **状态**: Draft v1.2（2026-07-23）· **E0–E1 ✅**（`eval:run` + manifest/JSONL/summary；dry-run 无 API）  
+> **状态**: Draft v1.3（2026-07-23）· **E0–E2 ✅**（run · aggregate · compare 报告）  
 > **目标**: 用可复现的对比实验，说明 minimal-agent-ts 的存在意义——在**原生消息数组**上做细粒度上下文工程，而不是再堆一层 Memory/RAG/状态机外挂。  
 > **原则**: 不宣称银弹；先少而硬的任务与指标；数字必须可复现。  
 > **相关**: [README.md](../README.md) · [eval/README.md](../eval/README.md) · [SPEC_CONTEXT_MANAGEMENT.md](../SPEC_CONTEXT_MANAGEMENT.md) · [SPEC_POINTERIZE_SCOPE.md](../SPEC_POINTERIZE_SCOPE.md) · [docs/ROADMAP.md](./ROADMAP.md)
@@ -290,8 +290,9 @@ eval/
 - [x] **E1**: `npm run eval:run` · `src/eval/*` · manifest + turns.jsonl + summary · Runtime 事件采集  
 - [x] `naive_full` / 消融的**稳定开关**（`eval/strategies/*.json` → run 时 merge）  
 - [x] `score.sh` 约定与 1 道金题端到端（本地 dry-run + 可选 live API）  
-- [ ] **E2**: 主图 / 多 run 聚合表（CSV/JSONL → markdown）  
+- [x] **E2**: `eval:aggregate` / `eval:compare` → `eval/reports/*.md`  
 - [ ] API cache 字段各厂商差异的归一化层  
+- [ ] 第二题族 / live n≥3 主图进 README  
 
 ---
 
@@ -349,14 +350,21 @@ eval/
 | 2026-07-20 | v1.0 | 首版：问题分层、解法地图、变量/指标、任务族、分期、遥测缺口、对外表述 |
 | 2026-07-23 | v1.1 | E0：`eval/` 骨架、strategies、`state_chain_01`、本地 smoke |
 | 2026-07-23 | v1.2 | E1：`src/eval` run CLI、telemetry、dry-run 产物 |
+| 2026-07-23 | v1.3 | E2：aggregate / compare → reports markdown |
 
 ---
 
 ## 11. 下一步（实现清单）
 
 1. ~~建立 `eval/tasks/` 与至少 1 道金题 + `score.sh`~~ ✅ E0  
-2. ~~导出每轮 JSONL + `eval run`~~ ✅ E1（`npm run eval:run`）  
-3. **E2**: 跑通 `minimal_full` vs `minimal_no_pointerize` 小 n 对比 + 聚合表  
-4. 把第一张主图链回 README「实验与数字」（有稳定数字后再写）  
+2. ~~导出每轮 JSONL + `eval run`~~ ✅ E1  
+3. ~~聚合表 + 双策略 compare~~ ✅ E2（`npm run eval:compare`）  
+4. Live API 小 n 对比 + 有趋势后 README「实验与数字」  
+5. 第二题族（multi_doc / repo_long）  
 
-操作入口：[eval/README.md](../eval/README.md) · `npm run eval:smoke` · `npm run eval:run -- --dry-run --plant --task state_chain_01 --strategy minimal_full`
+操作入口：[eval/README.md](../eval/README.md)  
+
+```bash
+npm run eval:compare -- --task state_chain_01 \
+  --strategies minimal_full,minimal_no_pointerize --dry-run --plant
+```

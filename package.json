@@ -82,7 +82,9 @@
     "eval:setup": "bash eval/scripts/setup-task.sh",
     "eval:score": "bash eval/scripts/score-task.sh",
     "eval:smoke": "bash eval/scripts/smoke-state-chain.sh",
-    "eval:run": "tsx src/eval/cli.ts run"
+    "eval:run": "tsx src/eval/cli.ts run",
+    "eval:aggregate": "tsx src/eval/cli.ts aggregate",
+    "eval:compare": "tsx src/eval/cli.ts compare"
   },
   "devDependencies": {
     "@types/dotenv-safe": "^9.1.0",

@@ -1,6 +1,6 @@
 # Eval harness (Lost-in-Middle / long-horizon)
 
-> **Status**: **E0 ✅ · E1 ✅** — `eval:run` writes manifest / turns.jsonl / summary; dry-run without API.  
+> **Status**: **E0–E2 ✅** — run · aggregate · compare (markdown report).  
 > **Spec**: [docs/EVAL_LITM.md](../docs/EVAL_LITM.md) · knobs: [SPEC_CONTEXT_POLICY.md](../SPEC_CONTEXT_POLICY.md)
 
 ## Layout
@@ -54,6 +54,7 @@ Artifacts land in `eval/runs/<run_id>/`:
 | File | Content |
 |------|---------|
 | `manifest.json` | git_sha, model, strategy, policies, paths |
+| `workspace/` | per-run sandbox (setup output; agent cwd) |
 | `turns.jsonl` | per-turn usage / tools / compression |
 | `events.jsonl` | raw RuntimeEvents (LLM runs only) |
 | `summary.json` | task_success, repeat_tool_rate, hot_tokens_* |
@@ -87,7 +88,34 @@ Options: `--allow-shell` · `--allow-web` · `--timeout-sec N` · `--run-id <id>
 | `hot_tokens_mean` / `p95` | `llm_done.usage.prompt_tokens` |
 | `turns_used` | turns with events |
 
-## Next (E2)
+## Aggregate & compare (E2)
 
-- Aggregate multi-run table (`minimal_full` vs `minimal_no_pointerize`)
-- Optional markdown report under `eval/reports/`
+```bash
+# Table over existing eval/runs (includes dry-run by default)
+npm run eval:aggregate -- --task state_chain_01 --out-name latest_state_chain
+
+# Exclude dry-run (live API only)
+npm run eval:aggregate -- --task state_chain_01 --no-dry-run --out-name live_only
+
+# Run two strategies then write a compare report under eval/reports/
+npm run eval:compare -- \
+  --task state_chain_01 \
+  --strategies minimal_full,minimal_no_pointerize \
+  --dry-run --plant \
+  --out-name cmp_pointer_ablation
+
+# Live API compare (costs money)
+npm run eval:compare -- \
+  --task state_chain_01 \
+  --strategies minimal_full,minimal_no_pointerize \
+  --max-turns 30 --n 1
+```
+
+Reports: `eval/reports/<name>.md` + `.json`  
+Columns: n · success_rate · turns̄ · hot_tokens̄ · repeat_tool̄ · tools̄ · dry_n
+
+## Next (E3 / packaging)
+
+- Second task family (`multi_doc` / `repo_long`)
+- Cost column when price table available
+- README「实验与数字」once live n≥3 shows a stable trend
