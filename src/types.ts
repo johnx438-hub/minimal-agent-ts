@@ -237,6 +237,11 @@ export interface AgentConfig {
    * When omitted, runAgent creates one per run. Tests may inject a fixed scale.
    */
   tokenCalibrator?: import('./context/token-calibrator.js').TokenCalibrator;
+  /**
+   * Normalized context_policy (SPEC_CONTEXT_POLICY). From buildAgentConfig /
+   * normalizeContextPolicy(plugin.context_policy). Omit → code defaults at use sites.
+   */
+  contextPolicy?: import('./context/policy-config.js').ResolvedContextPolicy;
 }
 
 export type SpawnLifecycleEvent =

@@ -36,6 +36,11 @@ import {
   estimateToolDefsTokens,
 } from './context/budget.js';
 import {
+  normalizeContextPolicy,
+  tokenCalibratorOptionsFromPolicy,
+  type ResolvedContextPolicy,
+} from './context/policy-config.js';
+import {
   TokenCalibrator,
   readPromptTokensFromUsage,
 } from './context/token-calibrator.js';
@@ -127,9 +132,17 @@ function stripSystemMessages(msgs: ChatMessage[]): ChatMessage[] {
   return msgs.filter((m) => m.role !== 'system');
 }
 
+function resolveContextPolicy(config: AgentConfig): ResolvedContextPolicy {
+  return (
+    config.contextPolicy ??
+    normalizeContextPolicy(config.llmPluginConfig?.context_policy)
+  );
+}
+
 function resolveInitialMessages(
   opts: RunAgentOptions,
   calibrator?: TokenCalibrator,
+  contextPolicy?: ResolvedContextPolicy,
 ): {
   messages: ChatMessage[];
   userTask: ChatMessage;
@@ -150,7 +163,7 @@ function resolveInitialMessages(
   }
 
   const history = stripLoopGuardInjections(stripSystemMessages(session.current_messages));
-  const budget = createBudgetConfig(config.model);
+  const budget = createBudgetConfig(config.model, contextPolicy);
   const raw = estimateTokens(session.current_messages);
   const est = calibrator ? calibrator.apply(raw) : raw;
 
@@ -236,11 +249,20 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
   const loopGuard = new LoopGuard(loopGuardConfig);
   const turnCeiling = resolveTurnCeiling(config.maxTurns, loopGuardConfig.hardCeiling);
 
+  // Resolved context_policy (omit / empty → same hard-coded defaults as C0).
+  const contextPolicy = resolveContextPolicy(config);
+
   // Session-scoped scale: local estimate → API prompt_tokens (default identity).
-  const calibrator = config.tokenCalibrator ?? new TokenCalibrator();
+  const calibrator =
+    config.tokenCalibrator ??
+    new TokenCalibrator(tokenCalibratorOptionsFromPolicy(contextPolicy));
   let calibratorModel = config.model;
 
-  const { messages: initial, userTask } = resolveInitialMessages(opts, calibrator);
+  const { messages: initial, userTask } = resolveInitialMessages(
+    opts,
+    calibrator,
+    contextPolicy,
+  );
   const messages = [...initial];
 
   const tracker = sessionId
@@ -250,7 +272,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
     tracker.onUserMessage(userTask, 1);
   }
 
-  const budget = createBudgetConfig(config.model);
+  const budget = createBudgetConfig(config.model, contextPolicy);
 
   const observePromptUsage = (
     apiMessages: ChatMessage[],
@@ -311,6 +333,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
           configRef: config,
           previewPolicy: config.previewPolicy ?? DEFAULT_PREVIEW_POLICY,
           calibrator,
+          contextPolicy,
         },
         onStep,
       );
@@ -387,6 +410,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         configRef: config,
         previewPolicy: config.previewPolicy ?? DEFAULT_PREVIEW_POLICY,
         calibrator,
+        contextPolicy,
       },
       onStep,
     );

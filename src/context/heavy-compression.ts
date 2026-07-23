@@ -74,6 +74,10 @@ export interface CompressionEventOptions {
   skipPointerCompact?: boolean;
   /** When set, threshold uses calibrated estimate (API-aligned). */
   calibrator?: { apply(raw: number): number };
+  /** Protect / compact knobs from resolved context_policy. */
+  protect?: import('./estimate.js').ProtectWindowOptions;
+  maxPointerCompactPerTurn?: number;
+  pruneMinSavings?: number;
 }
 
 /**
@@ -90,6 +94,9 @@ export function runCompressionEvent(opts: CompressionEventOptions): boolean {
     userTask,
     skipPointerCompact,
     calibrator,
+    protect,
+    maxPointerCompactPerTurn,
+    pruneMinSavings,
   } = opts;
   const visible = assembleApiMessages(messages);
   const isRepeat = hasCompressionNotice(messages);
@@ -100,9 +107,17 @@ export function runCompressionEvent(opts: CompressionEventOptions): boolean {
     return false;
   }
 
-  applyPrune(messages, currentTurn);
+  const pruneOpts = {
+    minSavings: pruneMinSavings,
+    protect,
+  };
+  applyPrune(messages, currentTurn, pruneOpts);
   if (!skipPointerCompact) {
-    compactPointerCardsUntilUnderBudget(messages, currentTurn, budget, calibrator);
+    compactPointerCardsUntilUnderBudget(messages, currentTurn, budget, {
+      calibrator,
+      protect,
+      maxPerTurn: maxPointerCompactPerTurn,
+    });
   }
 
   if (session && session.tasks.length > 0 && !hasTaskSummaryBlock(messages)) {

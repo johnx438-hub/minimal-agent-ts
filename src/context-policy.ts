@@ -30,6 +30,7 @@ export {
   defaultResolvedContextPolicy,
   mergeContextPolicy,
   normalizeContextPolicy,
+  tokenCalibratorOptionsFromPolicy,
   type ResolvedContextPolicy,
 } from './context/policy-config.js';
 

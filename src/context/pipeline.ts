@@ -54,13 +54,33 @@ export function runTurnEndPipeline(ctx: TurnContext): TurnPipelineResult {
     return EMPTY_PIPELINE_RESULT;
   }
 
+  const policy = ctx.contextPolicy;
+  const protect = policy
+    ? {
+        recentTokens: policy.protect.recent_tokens,
+        userTurns: policy.protect.user_turns,
+      }
+    : undefined;
+  const pruneOpts = policy
+    ? {
+        minSavings: policy.prune.min_savings_tokens,
+        protect,
+      }
+    : protect
+      ? { protect }
+      : undefined;
+
   const pointerized = runPointerizeStage(ctx);
-  const pruned = maybePrune(ctx.messages, ctx.turn);
+  const pruned = maybePrune(ctx.messages, ctx.turn, pruneOpts);
   const pointer_compacted = maybeCompactPointerCards(
     ctx.messages,
     ctx.turn,
     ctx.budget,
-    ctx.calibrator,
+    {
+      calibrator: ctx.calibrator,
+      protect,
+      maxPerTurn: policy?.prune.max_pointer_compact_per_turn,
+    },
   );
   const heavy_compression = runCompressionEvent({
     messages: ctx.messages,
@@ -70,6 +90,9 @@ export function runTurnEndPipeline(ctx: TurnContext): TurnPipelineResult {
     userTask: ctx.userTask,
     skipPointerCompact: true,
     calibrator: ctx.calibrator,
+    protect,
+    maxPointerCompactPerTurn: policy?.prune.max_pointer_compact_per_turn,
+    pruneMinSavings: policy?.prune.min_savings_tokens,
   });
 
   return { pointerized, pruned, pointer_compacted, heavy_compression };

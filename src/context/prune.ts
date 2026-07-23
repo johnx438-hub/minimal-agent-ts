@@ -2,8 +2,15 @@ import {
   canPrune,
   estimatePruneSavings,
   protectedIndices,
+  type ProtectWindowOptions,
 } from './estimate.js';
 import type { ChatMessage } from '../types.js';
+
+/** Optional prune thresholds (SPEC_CONTEXT_POLICY). */
+export interface PruneOptions {
+  minSavings?: number;
+  protect?: ProtectWindowOptions;
+}
 
 /**
  * Min estimated savings before prune (Phase 2c).
@@ -44,8 +51,13 @@ export function releaseAllCompactedContent(messages: ChatMessage[]): number {
 
 export { estimatePruneSavings } from './estimate.js';
 
-export function shouldPrune(messages: ChatMessage[], currentTurn: number): boolean {
-  return estimatePruneSavings(messages, currentTurn) >= PRUNE_MIN_SAVINGS;
+export function shouldPrune(
+  messages: ChatMessage[],
+  currentTurn: number,
+  opts?: PruneOptions,
+): boolean {
+  const min = opts?.minSavings ?? PRUNE_MIN_SAVINGS;
+  return estimatePruneSavings(messages, currentTurn, opts?.protect) >= min;
 }
 
 function compactToolResponsesForAssistant(
@@ -70,8 +82,12 @@ function compactToolResponsesForAssistant(
 }
 
 /** Mark eligible messages compacted_at (in-place). Returns count pruned. */
-export function applyPrune(messages: ChatMessage[], currentTurn: number): number {
-  const protectedSet = protectedIndices(messages, currentTurn);
+export function applyPrune(
+  messages: ChatMessage[],
+  currentTurn: number,
+  opts?: PruneOptions,
+): number {
+  const protectedSet = protectedIndices(messages, currentTurn, opts?.protect);
   const now = Date.now();
   let count = 0;
 
@@ -100,9 +116,13 @@ export function applyPrune(messages: ChatMessage[], currentTurn: number): number
 /**
  * Lightweight prune pass (no notice/replay) when savings exceed threshold.
  */
-export function maybePrune(messages: ChatMessage[], currentTurn: number): number {
-  if (!shouldPrune(messages, currentTurn)) {
+export function maybePrune(
+  messages: ChatMessage[],
+  currentTurn: number,
+  opts?: PruneOptions,
+): number {
+  if (!shouldPrune(messages, currentTurn, opts)) {
     return 0;
   }
-  return applyPrune(messages, currentTurn);
+  return applyPrune(messages, currentTurn, opts);
 }

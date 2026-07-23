@@ -1,6 +1,7 @@
 import type { PreviewPolicy } from '../action-preview.js';
 import type { PointerizeMode, PointerizePolicy } from '../plugins/types.js';
 import type { BudgetConfig } from './budget.js';
+import type { ResolvedContextPolicy } from './policy-config.js';
 import type { TokenCalibrator } from './token-calibrator.js';
 import type { AgentConfig, ChatMessage, SessionFile } from '../types.js';
 
@@ -23,6 +24,11 @@ export interface TurnContext {
    * When set, heavy / pointer-compact / soft-force use calibrated estimates.
    */
   calibrator?: TokenCalibrator;
+  /**
+   * Normalized context_policy (SPEC_CONTEXT_POLICY C2).
+   * Protect / prune / compact thresholds; budget ratios already on `budget`.
+   */
+  contextPolicy?: ResolvedContextPolicy;
 }
 
 /** Stage counters emitted by runTurnEndPipeline (maps to compression events). */

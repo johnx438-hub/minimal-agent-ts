@@ -21,7 +21,19 @@ function estimateOne(msg: ChatMessage): number {
   return estimateTokens([msg]);
 }
 
-export function protectedIndices(messages: ChatMessage[], currentTurn: number): Set<number> {
+/** Optional protect window overrides (SPEC_CONTEXT_POLICY). Omit → module defaults. */
+export interface ProtectWindowOptions {
+  recentTokens?: number;
+  userTurns?: number;
+}
+
+export function protectedIndices(
+  messages: ChatMessage[],
+  currentTurn: number,
+  opts?: ProtectWindowOptions,
+): Set<number> {
+  const protectUserTurns = opts?.userTurns ?? PROTECT_USER_TURNS;
+  const protectRecentTokens = opts?.recentTokens ?? PROTECT_RECENT_TOKENS;
   const protectedSet = new Set<number>();
 
   for (let i = 0; i < messages.length; i++) {
@@ -31,7 +43,7 @@ export function protectedIndices(messages: ChatMessage[], currentTurn: number): 
   }
 
   let userCount = 0;
-  for (let i = messages.length - 1; i >= 0 && userCount < PROTECT_USER_TURNS; i--) {
+  for (let i = messages.length - 1; i >= 0 && userCount < protectUserTurns; i--) {
     if (messages[i].role === 'user') {
       protectedSet.add(i);
       userCount++;
@@ -45,7 +57,7 @@ export function protectedIndices(messages: ChatMessage[], currentTurn: number): 
       recentTokens += t;
       continue;
     }
-    if (recentTokens + t > PROTECT_RECENT_TOKENS) {
+    if (recentTokens + t > protectRecentTokens) {
       break;
     }
     protectedSet.add(i);
@@ -73,8 +85,12 @@ export function canPrune(msg: ChatMessage): boolean {
   return msg.role === 'tool' || msg.role === 'assistant';
 }
 
-export function estimatePruneSavings(messages: ChatMessage[], currentTurn: number): number {
-  const protectedSet = protectedIndices(messages, currentTurn);
+export function estimatePruneSavings(
+  messages: ChatMessage[],
+  currentTurn: number,
+  protect?: ProtectWindowOptions,
+): number {
+  const protectedSet = protectedIndices(messages, currentTurn, protect);
   let savings = 0;
   for (let i = 0; i < messages.length; i++) {
     if (protectedSet.has(i)) continue;

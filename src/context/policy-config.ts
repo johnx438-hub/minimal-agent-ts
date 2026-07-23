@@ -1,8 +1,9 @@
 /**
- * context_policy load helpers (SPEC_CONTEXT_POLICY C1).
+ * context_policy load helpers (SPEC_CONTEXT_POLICY).
  *
  * Defaults are imported from existing hard-coded constants so omit ≡ current
- * behavior. normalizeContextPolicy clamps bad JSON; does not wire runtime yet (C2+).
+ * behavior. normalizeContextPolicy clamps bad JSON.
+ * C2: createBudgetConfig / pipeline / TokenCalibrator consume ResolvedContextPolicy.
  */
 
 import {
@@ -20,6 +21,7 @@ import {
   DEFAULT_MIN_RAW,
   DEFAULT_SCALE_MAX,
   DEFAULT_SCALE_MIN,
+  type TokenCalibratorOptions,
 } from './token-calibrator.js';
 import type { ContextPolicy } from '../plugins/types.js';
 
@@ -288,5 +290,17 @@ export function normalizeContextPolicy(
           ? resumeIn.apply_calibrator
           : d.resume.apply_calibrator,
     },
+  };
+}
+
+/** Map resolved policy → TokenCalibrator constructor options. */
+export function tokenCalibratorOptionsFromPolicy(
+  policy: ResolvedContextPolicy,
+): TokenCalibratorOptions {
+  return {
+    alpha: policy.token_calibrator.alpha,
+    min: policy.token_calibrator.scale_min,
+    max: policy.token_calibrator.scale_max,
+    minRaw: policy.token_calibrator.min_raw,
   };
 }

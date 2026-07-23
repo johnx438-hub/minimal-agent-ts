@@ -5,11 +5,21 @@ import {
   type BudgetConfig,
 } from './budget.js';
 import { assembleApiMessages } from './assemble.js';
-import { isImmune, protectedIndices } from './estimate.js';
+import {
+  isImmune,
+  protectedIndices,
+  type ProtectWindowOptions,
+} from './estimate.js';
 import type { ChatMessage } from '../types.js';
 
 /** Max pointer cards downgraded per turn (secondary compact). */
 export const MAX_POINTER_COMPACT_PER_TURN = 20;
+
+export interface PointerCompactOptions {
+  maxPerTurn?: number;
+  protect?: ProtectWindowOptions;
+  calibrator?: { apply(raw: number): number };
+}
 
 function canCompactPointerCard(msg: ChatMessage): boolean {
   if (msg.role !== 'tool') return false;
@@ -20,7 +30,8 @@ function canCompactPointerCard(msg: ChatMessage): boolean {
 }
 
 export function pointerCompactThreshold(budget: BudgetConfig): number {
-  return usableContextTokens(budget) * FIRST_HEAVY_COMPRESSION_RATIO;
+  const ratio = budget.first_heavy_ratio ?? FIRST_HEAVY_COMPRESSION_RATIO;
+  return usableContextTokens(budget) * ratio;
 }
 
 export function shouldCompactPointerCards(
@@ -33,8 +44,9 @@ export function shouldCompactPointerCards(
 function findOldestCompactablePointerIndex(
   messages: ChatMessage[],
   currentTurn: number,
+  protect?: ProtectWindowOptions,
 ): number {
-  const protectedSet = protectedIndices(messages, currentTurn);
+  const protectedSet = protectedIndices(messages, currentTurn, protect);
   for (let i = 0; i < messages.length; i++) {
     if (protectedSet.has(i)) continue;
     if (canCompactPointerCard(messages[i])) return i;
@@ -59,11 +71,17 @@ export function compactPointerCardsUntilUnderBudget(
   messages: ChatMessage[],
   currentTurn: number,
   budget: BudgetConfig,
-  calibrator?: { apply(raw: number): number },
+  calibratorOrOpts?: { apply(raw: number): number } | PointerCompactOptions,
 ): number {
+  const opts: PointerCompactOptions =
+    calibratorOrOpts && typeof (calibratorOrOpts as { apply?: unknown }).apply === 'function'
+      ? { calibrator: calibratorOrOpts as { apply(raw: number): number } }
+      : ((calibratorOrOpts as PointerCompactOptions | undefined) ?? {});
+  const calibrator = opts.calibrator;
+  const maxPerTurn = opts.maxPerTurn ?? MAX_POINTER_COMPACT_PER_TURN;
   let compacted = 0;
 
-  while (compacted < MAX_POINTER_COMPACT_PER_TURN) {
+  while (compacted < maxPerTurn) {
     const visible = assembleApiMessages(messages);
     const raw = estimateTokens(visible);
     const tokens = calibrator ? calibrator.apply(raw) : raw;
@@ -71,7 +89,11 @@ export function compactPointerCardsUntilUnderBudget(
       break;
     }
 
-    const index = findOldestCompactablePointerIndex(messages, currentTurn);
+    const index = findOldestCompactablePointerIndex(
+      messages,
+      currentTurn,
+      opts.protect,
+    );
     if (index < 0) {
       break;
     }
@@ -91,13 +113,18 @@ export function maybeCompactPointerCards(
   messages: ChatMessage[],
   currentTurn: number,
   budget: BudgetConfig,
-  calibrator?: { apply(raw: number): number },
+  calibratorOrOpts?: { apply(raw: number): number } | PointerCompactOptions,
 ): number {
+  const opts: PointerCompactOptions =
+    calibratorOrOpts && typeof (calibratorOrOpts as { apply?: unknown }).apply === 'function'
+      ? { calibrator: calibratorOrOpts as { apply(raw: number): number } }
+      : ((calibratorOrOpts as PointerCompactOptions | undefined) ?? {});
+  const calibrator = opts.calibrator;
   const visible = assembleApiMessages(messages);
   const raw = estimateTokens(visible);
   const tokens = calibrator ? calibrator.apply(raw) : raw;
   if (!shouldCompactPointerCards(tokens, budget)) {
     return 0;
   }
-  return compactPointerCardsUntilUnderBudget(messages, currentTurn, budget, calibrator);
+  return compactPointerCardsUntilUnderBudget(messages, currentTurn, budget, opts);
 }

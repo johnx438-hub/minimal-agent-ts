@@ -1,5 +1,6 @@
 import type { ChatMessage, SessionFile, TaskSummaryDoc } from '../types.js';
 import { estimateVisionTokens, getMessageText } from '../vision.js';
+import type { ResolvedContextPolicy } from './policy-config.js';
 
 /** Budget configuration for context window management. */
 export interface BudgetConfig {
@@ -15,10 +16,26 @@ export interface BudgetConfig {
   // Absolute caps (prevent excessive growth on large-context models)
   recent_max_tokens: number;   // Max tokens for recent layer
   mid_max_summaries: number;   // Max number of task summaries in mid layer
+
+  /** First heavy compression vs usable (SPEC_CONTEXT_POLICY). Default 0.8. */
+  first_heavy_ratio: number;
+  /** Repeat heavy vs usable (hysteresis). Default 0.9. */
+  repeat_heavy_ratio: number;
+  /** Floor for resume live-history budget. Default MIN_RESUME_HISTORY_TOKENS. */
+  min_resume_history_tokens: number;
 }
 
 /** Default budget when model unknown and MAX_CONTEXT_TOKENS unset. */
 export const DEFAULT_CONTEXT_TOKENS = 200_000;
+
+/** First heavy compression: 80% of usable context. */
+export const FIRST_HEAVY_COMPRESSION_RATIO = 0.8;
+
+/** Subsequent heavy compression: 90% of usable context (hysteresis). */
+export const REPEAT_HEAVY_COMPRESSION_RATIO = 0.9;
+
+/** Minimum live-history tokens kept on resume even when layers are large. */
+export const MIN_RESUME_HISTORY_TOKENS = 4_000;
 
 /** Default budget configuration. */
 export const DEFAULT_BUDGET: BudgetConfig = {
@@ -30,6 +47,9 @@ export const DEFAULT_BUDGET: BudgetConfig = {
   early_pct: 0.1,          // 10%
   recent_max_tokens: 80_000,
   mid_max_summaries: 20,
+  first_heavy_ratio: FIRST_HEAVY_COMPRESSION_RATIO,
+  repeat_heavy_ratio: REPEAT_HEAVY_COMPRESSION_RATIO,
+  min_resume_history_tokens: MIN_RESUME_HISTORY_TOKENS,
 };
 
 /** Model context limits mapping (no API probe; see api-docs.deepseek.com). */
@@ -77,14 +97,39 @@ export function getMaxContextTokens(model: string): number {
 
 /**
  * Create budget config for a given model.
+ * Optional resolved context_policy (SPEC_CONTEXT_POLICY C2) overrides layer % and heavy ratios.
  */
-export function createBudgetConfig(model: string): BudgetConfig {
+export function createBudgetConfig(
+  model: string,
+  contextPolicy?: ResolvedContextPolicy | null,
+): BudgetConfig {
   const total = getMaxContextTokens(model);
-  const recentCap = Math.floor(total * DEFAULT_BUDGET.recent_pct);
+  const b = contextPolicy?.budget;
+  const heavy = contextPolicy?.heavy_compression;
+  const resume = contextPolicy?.resume;
+
+  const system_pct = b?.system_pct ?? DEFAULT_BUDGET.system_pct;
+  const current_pct = b?.current_pct ?? DEFAULT_BUDGET.current_pct;
+  const recent_pct = b?.recent_pct ?? DEFAULT_BUDGET.recent_pct;
+  const mid_pct = b?.mid_pct ?? DEFAULT_BUDGET.mid_pct;
+  const early_pct = b?.early_pct ?? DEFAULT_BUDGET.early_pct;
+  const recent_max_base = b?.recent_max_tokens ?? DEFAULT_BUDGET.recent_max_tokens;
+  const mid_max_summaries = b?.mid_max_summaries ?? DEFAULT_BUDGET.mid_max_summaries;
+  const recentCap = Math.floor(total * recent_pct);
+
   return {
-    ...DEFAULT_BUDGET,
     total,
-    recent_max_tokens: Math.max(DEFAULT_BUDGET.recent_max_tokens, recentCap),
+    system_pct,
+    current_pct,
+    recent_pct,
+    mid_pct,
+    early_pct,
+    recent_max_tokens: Math.max(recent_max_base, recentCap),
+    mid_max_summaries,
+    first_heavy_ratio: heavy?.first_ratio ?? DEFAULT_BUDGET.first_heavy_ratio,
+    repeat_heavy_ratio: heavy?.repeat_ratio ?? DEFAULT_BUDGET.repeat_heavy_ratio,
+    min_resume_history_tokens:
+      resume?.min_history_tokens ?? DEFAULT_BUDGET.min_resume_history_tokens,
   };
 }
 
@@ -155,12 +200,6 @@ export function estimateSummaryTokens(summary: TaskSummaryDoc): number {
   return estimateTextTokens(text);
 }
 
-/** First heavy compression: 80% of usable context. */
-export const FIRST_HEAVY_COMPRESSION_RATIO = 0.8;
-
-/** Subsequent heavy compression: 90% of usable context (hysteresis). */
-export const REPEAT_HEAVY_COMPRESSION_RATIO = 0.9;
-
 export function usableContextTokens(budget: BudgetConfig): number {
   return budget.total * (1 - budget.system_pct);
 }
@@ -169,7 +208,9 @@ export function heavyCompressionThreshold(
   budget: BudgetConfig,
   isRepeat: boolean,
 ): number {
-  const ratio = isRepeat ? REPEAT_HEAVY_COMPRESSION_RATIO : FIRST_HEAVY_COMPRESSION_RATIO;
+  const ratio = isRepeat
+    ? (budget.repeat_heavy_ratio ?? REPEAT_HEAVY_COMPRESSION_RATIO)
+    : (budget.first_heavy_ratio ?? FIRST_HEAVY_COMPRESSION_RATIO);
   return usableContextTokens(budget) * ratio;
 }
 
@@ -252,9 +293,6 @@ export function layerBudgets(budget: BudgetConfig): LayerBudgets {
   };
 }
 
-/** Minimum live-history tokens kept on resume even when layers are large. */
-export const MIN_RESUME_HISTORY_TOKENS = 4_000;
-
 /**
  * Token budget for live `current_messages` after task-layer summaries are built.
  * Leaves room for system + new user task; caps by recent_max so long sessions
@@ -269,7 +307,8 @@ export function resumeHistoryBudget(
   const currentReserve = Math.floor(budget.total * budget.current_pct);
   const remaining = usable - layerTokens - currentReserve;
   const capped = Math.min(budget.recent_max_tokens, remaining);
-  return Math.max(MIN_RESUME_HISTORY_TOKENS, Math.floor(capped));
+  const floor = budget.min_resume_history_tokens ?? MIN_RESUME_HISTORY_TOKENS;
+  return Math.max(floor, Math.floor(capped));
 }
 
 /**

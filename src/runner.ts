@@ -7,6 +7,7 @@ import { loadAgentPluginConfig } from './plugins/config-loader.js';
 import { discoverSkills } from './plugins/skills.js';
 import { runAgent, type AgentResult } from './agent.js';
 import { previewPolicyFromPointerize } from './action-preview.js';
+import { normalizeContextPolicy } from './context/policy-config.js';
 import {
   emitJsonEvent,
   formatCompressionSummary,
@@ -215,6 +216,8 @@ export function buildAgentConfig(opts: BuildConfigOptions): {
   const recallAutoFullMaxChars = pluginConfig.recall_policy?.auto_full_max_chars ?? 24_000;
   const previewPolicy = previewPolicyFromPointerize(pluginConfig.pointerize_policy);
   const loopGuardMode = parseLoopGuardMode(env('LOOP_GUARD', 'inject'));
+  // SPEC_CONTEXT_POLICY C2: normalize once (omit ≡ code defaults).
+  const contextPolicy = normalizeContextPolicy(pluginConfig.context_policy);
 
   const config: AgentConfig = {
     apiKey: '',
@@ -237,6 +240,7 @@ export function buildAgentConfig(opts: BuildConfigOptions): {
     previewPolicy,
     spawnPolicy: pluginConfig.spawn_policy,
     llmPluginConfig: pluginConfig,
+    contextPolicy,
   };
 
   configureAgentLlmBinding(config, pluginConfig);
