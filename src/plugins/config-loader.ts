@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 
+import { mergeContextPolicy } from '../context/policy-config.js';
 import type { AgentPluginConfig } from './types.js';
 
 const DEFAULT_BUILTIN_TOOLS = [
@@ -58,6 +59,7 @@ function mergeConfig(base: AgentPluginConfig, patch: Partial<AgentPluginConfig>)
     skills_dirs: patch.skills_dirs ?? base.skills_dirs,
     mcp_policy: { ...base.mcp_policy, ...patch.mcp_policy },
     pointerize_policy: { ...base.pointerize_policy, ...patch.pointerize_policy },
+    context_policy: mergeContextPolicy(base.context_policy, patch.context_policy),
     recall_policy: { ...base.recall_policy, ...patch.recall_policy },
     web_fetch_policy: { ...base.web_fetch_policy, ...patch.web_fetch_policy },
     web_search: { ...base.web_search, ...patch.web_search },

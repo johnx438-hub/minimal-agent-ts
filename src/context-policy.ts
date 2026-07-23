@@ -27,6 +27,13 @@ export {
 } from './context/token-calibrator.js';
 
 export {
+  defaultResolvedContextPolicy,
+  mergeContextPolicy,
+  normalizeContextPolicy,
+  type ResolvedContextPolicy,
+} from './context/policy-config.js';
+
+export {
   PRUNE_MIN_SAVINGS,
   releaseCompactedContent,
   releaseAllCompactedContent,

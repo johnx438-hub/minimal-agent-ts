@@ -253,7 +253,7 @@ export function layerBudgets(budget: BudgetConfig): LayerBudgets {
 }
 
 /** Minimum live-history tokens kept on resume even when layers are large. */
-const MIN_RESUME_HISTORY_TOKENS = 4_000;
+export const MIN_RESUME_HISTORY_TOKENS = 4_000;
 
 /**
  * Token budget for live `current_messages` after task-layer summaries are built.

@@ -99,6 +99,68 @@ export interface RecallPolicy {
   auto_full_max_chars?: number;
 }
 
+/**
+ * Optional context budget / lifecycle knobs (SPEC_CONTEXT_POLICY).
+ * All fields optional; omit → source-code defaults (bit-identical).
+ * Prefer {@link import('../context/policy-config.js').normalizeContextPolicy} at use sites.
+ */
+export interface ContextBudgetPolicy {
+  system_pct?: number;
+  current_pct?: number;
+  recent_pct?: number;
+  mid_pct?: number;
+  early_pct?: number;
+  recent_max_tokens?: number;
+  mid_max_summaries?: number;
+}
+
+export interface ContextHeavyCompressionPolicy {
+  /** First heavy event vs usable context. Default 0.8. */
+  first_ratio?: number;
+  /** Repeat heavy vs usable (hysteresis). Default 0.9. */
+  repeat_ratio?: number;
+}
+
+export interface ContextProtectPolicy {
+  /** Raw-estimate token window protected from prune. Default 140_000. */
+  recent_tokens?: number;
+  /** Trailing user turns always protected. Default 2. */
+  user_turns?: number;
+}
+
+export interface ContextPrunePolicy {
+  min_savings_tokens?: number;
+  max_pointer_compact_per_turn?: number;
+}
+
+export interface ContextTokenCalibratorPolicy {
+  alpha?: number;
+  scale_min?: number;
+  scale_max?: number;
+  min_raw?: number;
+}
+
+/** Advanced: changing chars_per_token retunes every estimate (tests + thresholds). */
+export interface ContextEstimatePolicy {
+  chars_per_token?: number;
+}
+
+export interface ContextResumePolicy {
+  min_history_tokens?: number;
+  /** When true, resume shouldCompress / history slice use calibrator.apply. Default false. */
+  apply_calibrator?: boolean;
+}
+
+export interface ContextPolicy {
+  budget?: ContextBudgetPolicy;
+  heavy_compression?: ContextHeavyCompressionPolicy;
+  protect?: ContextProtectPolicy;
+  prune?: ContextPrunePolicy;
+  token_calibrator?: ContextTokenCalibratorPolicy;
+  estimate?: ContextEstimatePolicy;
+  resume?: ContextResumePolicy;
+}
+
 export interface WebSearchCachePolicy {
   enabled?: boolean;
   /** Relative to workspace root. Default `.cache/web-fetch`. */
@@ -258,6 +320,11 @@ export interface AgentPluginConfig {
   skills_dirs?: string[];
   mcp_policy?: McpPolicy;
   pointerize_policy?: PointerizePolicy;
+  /**
+   * SPEC_CONTEXT_POLICY: budget / heavy / protect / prune / token_calibrator knobs.
+   * Partial JSON; call normalizeContextPolicy before applying to runtime.
+   */
+  context_policy?: ContextPolicy;
   recall_policy?: RecallPolicy;
   web_fetch_policy?: WebFetchPolicy;
   web_search?: WebSearchPolicy;
