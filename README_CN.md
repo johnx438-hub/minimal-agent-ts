@@ -74,7 +74,7 @@ TypeScript 实现，纯手写 ReAct 主循环，~600 个测试用例，不绑定
 
 ## 更新 · 2026-07-23
 
-今日主体与评测落地摘要（插在产品叙事与「快速开始」之间）。细节见 [eval/README.md](./eval/README.md) · [docs/EVAL_LITM.md](./docs/EVAL_LITM.md) · [SPEC_CONTEXT_POLICY.md](./SPEC_CONTEXT_POLICY.md)；英文同构段落见 [README.md](./README.md)。
+今日主体与评测落地摘要。细节见 [eval/README.md](./eval/README.md) · [docs/EVAL_LITM.md](./docs/EVAL_LITM.md) · [SPEC_CONTEXT_POLICY.md](./SPEC_CONTEXT_POLICY.md)；英文同构段落见 [README.md](./README.md)。
 
 ### 上下文工程
 
