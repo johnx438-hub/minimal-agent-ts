@@ -111,6 +111,35 @@ export function estimateTokens(messages: ChatMessage[]): number {
   return total;
 }
 
+/**
+ * Rough token estimate for chat-completions `tools` array (JSON schema on the wire).
+ * Used with message estimates when calibrating against usage.prompt_tokens.
+ */
+export function estimateToolDefsTokens(tools: unknown): number {
+  if (tools == null) return 0;
+  if (!Array.isArray(tools) || tools.length === 0) return 0;
+  try {
+    const json = JSON.stringify(tools);
+    if (!json) return 0;
+    return estimateTextTokens(json) + tools.length * 4;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Prompt-side estimate: messages + optional tool defs, optionally scaled by calibrator.
+ * When cal is omitted, returns raw local estimate (tests / default path).
+ */
+export function estimatePromptTokens(
+  messages: ChatMessage[],
+  tools?: unknown,
+  cal?: { apply(raw: number): number } | null,
+): number {
+  const raw = estimateTokens(messages) + estimateToolDefsTokens(tools);
+  return cal ? cal.apply(raw) : raw;
+}
+
 /** Estimate token count for a task summary document. */
 export function estimateSummaryTokens(summary: TaskSummaryDoc): number {
   const text = [

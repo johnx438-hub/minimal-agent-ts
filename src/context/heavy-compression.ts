@@ -72,6 +72,8 @@ export interface CompressionEventOptions {
   userTask: ChatMessage;
   /** Skip pointer secondary compact when pipeline stage 2 already ran. */
   skipPointerCompact?: boolean;
+  /** When set, threshold uses calibrated estimate (API-aligned). */
+  calibrator?: { apply(raw: number): number };
 }
 
 /**
@@ -80,17 +82,27 @@ export interface CompressionEventOptions {
  * Returns true if event was applied.
  */
 export function runCompressionEvent(opts: CompressionEventOptions): boolean {
-  const { messages, session, currentTurn, budget, userTask, skipPointerCompact } = opts;
+  const {
+    messages,
+    session,
+    currentTurn,
+    budget,
+    userTask,
+    skipPointerCompact,
+    calibrator,
+  } = opts;
   const visible = assembleApiMessages(messages);
   const isRepeat = hasCompressionNotice(messages);
+  const raw = estimateTokens(visible);
+  const est = calibrator ? calibrator.apply(raw) : raw;
 
-  if (!shouldRunHeavyCompression(estimateTokens(visible), budget, isRepeat)) {
+  if (!shouldRunHeavyCompression(est, budget, isRepeat)) {
     return false;
   }
 
   applyPrune(messages, currentTurn);
   if (!skipPointerCompact) {
-    compactPointerCardsUntilUnderBudget(messages, currentTurn, budget);
+    compactPointerCardsUntilUnderBudget(messages, currentTurn, budget, calibrator);
   }
 
   if (session && session.tasks.length > 0 && !hasTaskSummaryBlock(messages)) {

@@ -111,6 +111,7 @@ export function shouldForcePointerize(
   messages: ChatMessage[],
   budget: BudgetConfig | undefined,
   policy?: PointerizePolicy | null,
+  calibrator?: { apply(raw: number): number },
 ): boolean {
   if (!budget) return false;
   const ratio =
@@ -120,7 +121,9 @@ export function shouldForcePointerize(
       : DEFAULT_SOFT_FORCE_RATIO;
   const usable = usableContextTokens(budget);
   if (usable <= 0) return false;
-  return estimateTokens(messages) > usable * ratio;
+  const raw = estimateTokens(messages);
+  const est = calibrator ? calibrator.apply(raw) : raw;
+  return est > usable * ratio;
 }
 
 /** @deprecated Use buildPointerCard; kept for tests. */

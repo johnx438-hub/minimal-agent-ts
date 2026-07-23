@@ -33,8 +33,12 @@ import {
   createBudgetConfig,
   shouldCompress,
   estimateTokens,
-  type BudgetConfig,
+  estimateToolDefsTokens,
 } from './context/budget.js';
+import {
+  TokenCalibrator,
+  readPromptTokensFromUsage,
+} from './context/token-calibrator.js';
 import { scheduleToolCalls } from './tool-scheduler.js';
 import { executeTool, getToolDefinitions } from './tools.js';
 import {
@@ -123,7 +127,10 @@ function stripSystemMessages(msgs: ChatMessage[]): ChatMessage[] {
   return msgs.filter((m) => m.role !== 'system');
 }
 
-function resolveInitialMessages(opts: RunAgentOptions): {
+function resolveInitialMessages(
+  opts: RunAgentOptions,
+  calibrator?: TokenCalibrator,
+): {
   messages: ChatMessage[];
   userTask: ChatMessage;
 } {
@@ -144,11 +151,10 @@ function resolveInitialMessages(opts: RunAgentOptions): {
 
   const history = stripLoopGuardInjections(stripSystemMessages(session.current_messages));
   const budget = createBudgetConfig(config.model);
+  const raw = estimateTokens(session.current_messages);
+  const est = calibrator ? calibrator.apply(raw) : raw;
 
-  if (
-    session.tasks.length > 0 &&
-    shouldCompress(estimateTokens(session.current_messages), budget)
-  ) {
+  if (session.tasks.length > 0 && shouldCompress(est, budget)) {
     const compressed = stripSystemMessages(buildContext(session, budget));
     return { messages: [system, ...compressed, userTask], userTask };
   }
@@ -230,7 +236,11 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
   const loopGuard = new LoopGuard(loopGuardConfig);
   const turnCeiling = resolveTurnCeiling(config.maxTurns, loopGuardConfig.hardCeiling);
 
-  const { messages: initial, userTask } = resolveInitialMessages(opts);
+  // Session-scoped scale: local estimate → API prompt_tokens (default identity).
+  const calibrator = config.tokenCalibrator ?? new TokenCalibrator();
+  let calibratorModel = config.model;
+
+  const { messages: initial, userTask } = resolveInitialMessages(opts, calibrator);
   const messages = [...initial];
 
   const tracker = sessionId
@@ -241,6 +251,25 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
   }
 
   const budget = createBudgetConfig(config.model);
+
+  const observePromptUsage = (
+    apiMessages: ChatMessage[],
+    tools: unknown,
+    usage: unknown,
+  ): void => {
+    const model = toolConfig.model ?? config.model;
+    if (model !== calibratorModel) {
+      calibrator.reset();
+      calibratorModel = model;
+    }
+    const raw =
+      estimateTokens(apiMessages) + estimateToolDefsTokens(tools);
+    const actual = readPromptTokensFromUsage(usage);
+    if (actual !== undefined) {
+      calibrator.observe(raw, actual);
+    }
+  };
+
   try {
   for (let turn = 1; ; turn++) {
     if (abortSignal?.aborted) {
@@ -281,24 +310,27 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
           pointerizeFocus: config.pointerizeFocus,
           configRef: config,
           previewPolicy: config.previewPolicy ?? DEFAULT_PREVIEW_POLICY,
+          calibrator,
         },
         onStep,
       );
 
+      const forcedApiMessages = assembleApiMessages(messages, {
+        cwd: config.cwd,
+        vision: config.llmPluginConfig?.vision,
+        preserveReasoning: config.llm?.preserveReasoning,
+      });
       const { message, finishReason, usage } = await invokeLlmTurnWithFallback({
         turn,
         config: toolConfig,
-        apiMessages: assembleApiMessages(messages, {
-          cwd: config.cwd,
-          vision: config.llmPluginConfig?.vision,
-          preserveReasoning: config.llm?.preserveReasoning,
-        }),
+        apiMessages: forcedApiMessages,
         tools: [],
         stream,
         onStep,
       });
 
       onStep?.(buildLlmDoneStepEvent(turn, finishReason, usage, config));
+      observePromptUsage(forcedApiMessages, [], usage);
 
       if (message.tool_calls && message.tool_calls.length > 0) {
         const violationMsg: ChatMessage = {
@@ -354,25 +386,28 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentResult> {
         pointerizeFocus: config.pointerizeFocus,
         configRef: config,
         previewPolicy: config.previewPolicy ?? DEFAULT_PREVIEW_POLICY,
+        calibrator,
       },
       onStep,
     );
 
     const toolDefs = getToolDefinitions(toolConfig);
+    const apiMessages = assembleApiMessages(messages, {
+      cwd: config.cwd,
+      vision: config.llmPluginConfig?.vision,
+      preserveReasoning: config.llm?.preserveReasoning,
+    });
     const { message, finishReason, usage } = await invokeLlmTurnWithFallback({
       turn,
       config: toolConfig,
-      apiMessages: assembleApiMessages(messages, {
-        cwd: config.cwd,
-        vision: config.llmPluginConfig?.vision,
-        preserveReasoning: config.llm?.preserveReasoning,
-      }),
+      apiMessages,
       tools: toolDefs,
       stream,
       onStep,
     });
 
     onStep?.(buildLlmDoneStepEvent(turn, finishReason, usage, config));
+    observePromptUsage(apiMessages, toolDefs, usage);
 
     if (message.tool_calls && message.tool_calls.length > 0) {
       throwIfAborted(abortSignal);

@@ -59,12 +59,14 @@ export function compactPointerCardsUntilUnderBudget(
   messages: ChatMessage[],
   currentTurn: number,
   budget: BudgetConfig,
+  calibrator?: { apply(raw: number): number },
 ): number {
   let compacted = 0;
 
   while (compacted < MAX_POINTER_COMPACT_PER_TURN) {
     const visible = assembleApiMessages(messages);
-    const tokens = estimateTokens(visible);
+    const raw = estimateTokens(visible);
+    const tokens = calibrator ? calibrator.apply(raw) : raw;
     if (!shouldCompactPointerCards(tokens, budget)) {
       break;
     }
@@ -89,10 +91,13 @@ export function maybeCompactPointerCards(
   messages: ChatMessage[],
   currentTurn: number,
   budget: BudgetConfig,
+  calibrator?: { apply(raw: number): number },
 ): number {
   const visible = assembleApiMessages(messages);
-  if (!shouldCompactPointerCards(estimateTokens(visible), budget)) {
+  const raw = estimateTokens(visible);
+  const tokens = calibrator ? calibrator.apply(raw) : raw;
+  if (!shouldCompactPointerCards(tokens, budget)) {
     return 0;
   }
-  return compactPointerCardsUntilUnderBudget(messages, currentTurn, budget);
+  return compactPointerCardsUntilUnderBudget(messages, currentTurn, budget, calibrator);
 }

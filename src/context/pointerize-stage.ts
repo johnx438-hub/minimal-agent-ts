@@ -11,6 +11,7 @@ export function runPointerizeStage(ctx: TurnContext): number {
     ctx.messages,
     ctx.budget,
     ctx.pointerizePolicy,
+    ctx.calibrator,
   );
   const n = materializePriorTurnTools(ctx.messages, ctx.turn, {
     keepInlineTurns: ctx.keepInlineTurns ?? 2,

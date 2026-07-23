@@ -232,6 +232,11 @@ export interface AgentConfig {
    * Enables workflow_handoff tool; never set on main-agent runs.
    */
   workflowRole?: import('./workflow/handoff-tool.js').WorkflowRoleRuntime;
+  /**
+   * Optional session-scoped token calibrator (prompt_tokens / local estimate).
+   * When omitted, runAgent creates one per run. Tests may inject a fixed scale.
+   */
+  tokenCalibrator?: import('./context/token-calibrator.js').TokenCalibrator;
 }
 
 export type SpawnLifecycleEvent =

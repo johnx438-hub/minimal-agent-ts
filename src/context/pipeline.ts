@@ -60,6 +60,7 @@ export function runTurnEndPipeline(ctx: TurnContext): TurnPipelineResult {
     ctx.messages,
     ctx.turn,
     ctx.budget,
+    ctx.calibrator,
   );
   const heavy_compression = runCompressionEvent({
     messages: ctx.messages,
@@ -68,6 +69,7 @@ export function runTurnEndPipeline(ctx: TurnContext): TurnPipelineResult {
     budget: ctx.budget,
     userTask: ctx.userTask,
     skipPointerCompact: true,
+    calibrator: ctx.calibrator,
   });
 
   return { pointerized, pruned, pointer_compacted, heavy_compression };

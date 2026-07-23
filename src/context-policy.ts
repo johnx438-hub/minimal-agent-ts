@@ -14,6 +14,19 @@ export {
 } from './context/estimate.js';
 
 export {
+  TokenCalibrator,
+  readPromptTokensFromUsage,
+  ratioSample,
+  ewmaUpdate,
+  DEFAULT_CALIBRATOR_ALPHA,
+  DEFAULT_SCALE_MIN,
+  DEFAULT_SCALE_MAX,
+  DEFAULT_MIN_RAW,
+  type TokenCalibratorOptions,
+  type TokenCalibratorSnapshot,
+} from './context/token-calibrator.js';
+
+export {
   PRUNE_MIN_SAVINGS,
   releaseCompactedContent,
   releaseAllCompactedContent,
