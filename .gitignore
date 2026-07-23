@@ -28,6 +28,10 @@ Thumbs.db
 npm-debug.log*
 .cache/
 
+# Eval harness run artifacts (manifest / jsonl / sandboxes)
+eval/runs/
+eval/tasks/**/workspace/
+
 # Local TUI prefs (test artifacts)
 .tui-prefs.json
 .tui-prefs-test.json

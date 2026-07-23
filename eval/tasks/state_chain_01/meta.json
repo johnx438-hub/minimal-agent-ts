@@ -1,0 +1,10 @@
+{
+  "id": "state_chain_01",
+  "family": "state_chain",
+  "noise": "high",
+  "max_turns": 30,
+  "timeout_sec": 1800,
+  "tools": "default",
+  "acceptance": "score.sh",
+  "description": "Multi-step token chain with large noise files; score via answer.json on disk."
+}

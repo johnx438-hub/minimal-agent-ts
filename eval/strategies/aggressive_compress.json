@@ -1,0 +1,21 @@
+{
+  "_id": "aggressive_compress",
+  "_comment": "Stress early compression (from agent.context.example.json _profiles).",
+  "pointerize_policy": {
+    "keep_inline_turns": 2,
+    "soft_force_ratio": 0.75
+  },
+  "context_policy": {
+    "heavy_compression": {
+      "first_ratio": 0.55,
+      "repeat_ratio": 0.7
+    },
+    "protect": {
+      "recent_tokens": 40000,
+      "user_turns": 1
+    },
+    "prune": {
+      "min_savings_tokens": 20000
+    }
+  }
+}

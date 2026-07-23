@@ -63,7 +63,7 @@ Single monorepo. **Default path = terminal TUI + core**; the browser UI is **not
 | [QUICKSTART.md](./QUICKSTART.md) | Install & common commands |
 | [docs/DEPS.md](./docs/DEPS.md) | Required/optional deps |
 | [docs/ROADMAP.md](./docs/ROADMAP.md) | Project direction |
-| [docs/EVAL_LITM.md](./docs/EVAL_LITM.md) | Lost in the Middle / long-horizon eval framework |
+| [docs/EVAL_LITM.md](./docs/EVAL_LITM.md) · [eval/README.md](./eval/README.md) | Lost in the Middle eval plan + E0 harness scaffold |
 | [SPEC_CONTEXT_MANAGEMENT.md](./SPEC_CONTEXT_MANAGEMENT.md) | Context & pointerize design details |
 | [SPEC_CONTEXT_POLICY.md](./SPEC_CONTEXT_POLICY.md) · [agent.context.example.json](./agent.context.example.json) | Tunable context knobs (`context_policy` in agent.json) |
 | [SPEC_TOOLS.md](./SPEC_TOOLS.md) · [SPEC_TUI.md](./SPEC_TUI.md) · [SPEC_LLM_ROUTER.md](./SPEC_LLM_ROUTER.md) | Tools / TUI / multi-model router specs |

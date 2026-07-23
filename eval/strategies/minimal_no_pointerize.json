@@ -1,0 +1,21 @@
+{
+  "_id": "minimal_no_pointerize",
+  "_comment": "Ablation: keep almost all tool turns inline (soft force still applies under extreme pressure).",
+  "pointerize_policy": {
+    "keep_inline_turns": 200,
+    "soft_force_ratio": 0.95
+  },
+  "context_policy": {
+    "heavy_compression": {
+      "first_ratio": 0.95,
+      "repeat_ratio": 0.98
+    },
+    "protect": {
+      "recent_tokens": 500000,
+      "user_turns": 10
+    },
+    "prune": {
+      "min_savings_tokens": 500000
+    }
+  }
+}

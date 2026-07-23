@@ -1,0 +1,9 @@
+{
+  "_id": "minimal_full",
+  "_comment": "Production-like defaults. Empty overlays = code defaults for context/pointerize.",
+  "pointerize_policy": {
+    "keep_inline_turns": 2,
+    "soft_force_ratio": 0.75
+  },
+  "context_policy": {}
+}

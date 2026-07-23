@@ -78,7 +78,10 @@
     "spawn:list": "tsx src/spawn-cli.ts list",
     "spawn:status": "tsx src/spawn-cli.ts status",
     "spawn:kill": "tsx src/spawn-cli.ts kill",
-    "spawn:tail": "tsx src/spawn-cli.ts tail"
+    "spawn:tail": "tsx src/spawn-cli.ts tail",
+    "eval:setup": "bash eval/scripts/setup-task.sh",
+    "eval:score": "bash eval/scripts/score-task.sh",
+    "eval:smoke": "bash eval/scripts/smoke-state-chain.sh"
   },
   "devDependencies": {
     "@types/dotenv-safe": "^9.1.0",

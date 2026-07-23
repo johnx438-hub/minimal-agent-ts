@@ -1,0 +1,22 @@
+{
+  "_id": "naive_full",
+  "_comment": "Approximate full hot-path baseline: huge keep + very late compression/prune. Not a separate harness — same runtime, knobs only.",
+  "pointerize_policy": {
+    "keep_inline_turns": 500,
+    "soft_force_ratio": 0.95
+  },
+  "context_policy": {
+    "heavy_compression": {
+      "first_ratio": 0.95,
+      "repeat_ratio": 0.98
+    },
+    "protect": {
+      "recent_tokens": 1000000,
+      "user_turns": 20
+    },
+    "prune": {
+      "min_savings_tokens": 1000000,
+      "max_pointer_compact_per_turn": 1
+    }
+  }
+}
