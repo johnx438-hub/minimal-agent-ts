@@ -3,7 +3,7 @@
 > **目标**: 让 ReAct Agent harness 具备分层上下文管理能力，支持长对话不丢失关键信息  
 > **日期**: 2026-07-15  
 > **状态**: **v2.0 与代码对齐**（Phase 1–2、4–6 ✅；L2 turn-end pipeline ✅；Phase 3 外置 MemFileCli）  
-> **产品/底座总规划**: [docs/ROADMAP.md](./docs/ROADMAP.md) · 工具面: [SPEC_TOOLS.md](./SPEC_TOOLS.md) · LLM: [SPEC_LLM_ROUTER.md](./SPEC_LLM_ROUTER.md)
+> **产品/底座总规划**: [docs/ROADMAP.md](./docs/ROADMAP.md) · 工具面: [SPEC_TOOLS.md](./SPEC_TOOLS.md) · LLM: [SPEC_LLM_ROUTER.md](./SPEC_LLM_ROUTER.md) · 上下文旋钮收编: [SPEC_CONTEXT_POLICY.md](./SPEC_CONTEXT_POLICY.md)（草案）
 
 ### 2026-07 现状速览（对齐代码）
 
